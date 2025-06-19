@@ -1,0 +1,7 @@
+Flask
+pandas
+pyarrow
+torch
+numpy>=1.24.0
+transformers
+chronos-forecasting @ git+https://github.com/amazon-science/chronos-forecasting@main
