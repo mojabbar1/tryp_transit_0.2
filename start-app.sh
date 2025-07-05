@@ -57,6 +57,24 @@ cleanup() {
 # Set up signal handlers
 trap cleanup SIGINT SIGTERM
 
+# Check environment variables
+echo -e "\n${BLUE}📋 Environment Setup${NC}"
+if [ ! -f "src/.env.local" ]; then
+    echo -e "${YELLOW}⚠️  Frontend environment file not found. Creating from template...${NC}"
+    if [ -f "src/.env.example" ]; then
+        cp src/.env.example src/.env.local
+        echo -e "${YELLOW}✅ Created src/.env.local from template${NC}"
+        echo -e "${YELLOW}📝 Please edit src/.env.local and add your API keys:${NC}"
+        echo -e "${YELLOW}   - OPENAI_API_KEY: Get from https://platform.openai.com/api-keys${NC}"
+        echo -e "${YELLOW}   - NEXT_PUBLIC_TOMTOM_API_KEY: Get from https://developer.tomtom.com/${NC}"
+    else
+        echo -e "${RED}❌ src/.env.example not found. Please create environment configuration.${NC}"
+        exit 1
+    fi
+else
+    echo -e "${GREEN}✅ Frontend environment file found${NC}"
+fi
+
 # Setup frontend
 echo -e "\n${BLUE}📦 Setting up frontend...${NC}"
 cd src
@@ -93,20 +111,28 @@ if [ ! -d "venv" ]; then
         echo -e "${RED}❌ Failed to create virtual environment${NC}"
         exit 1
     fi
+    
+    # Activate virtual environment and install dependencies
+    echo "Installing Python dependencies..."
+    source venv/bin/activate
+    python -m pip install --upgrade pip setuptools wheel
+    python -m pip install -r requirements.txt
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}❌ Failed to install Python dependencies${NC}"
+        exit 1
+    fi
+else
+    echo "Virtual environment already exists"
 fi
-
-# Activate virtual environment and install dependencies
-echo "Activating virtual environment and installing dependencies..."
-source venv/bin/activate
-pip install -r requirements.txt >/dev/null 2>&1
 
 # Start backend in background
 echo -e "${GREEN}🚀 Starting backend on http://localhost:5001${NC}"
+source venv/bin/activate
 python app.py &
 BACKEND_PID=$!
 
 # Wait a moment for backend to start
-sleep 3
+sleep 5
 
 # Check if services are running
 echo -e "\n${BLUE}🔍 Checking service status...${NC}"
@@ -128,6 +154,8 @@ echo -e "\n${GREEN}🎉 Application is starting up!${NC}"
 echo -e "${BLUE}📱 Frontend: http://localhost:3000${NC}"
 echo -e "${BLUE}🔧 Backend: http://localhost:5001${NC}"
 echo -e "${BLUE}🧪 Test page: http://localhost:3000/test${NC}"
+echo -e "\n${YELLOW}📝 Note: Models are using mock predictions (chronos-forecasting not available)${NC}"
+echo -e "${YELLOW}📝 For API keys, edit src/.env.local with your OpenAI and TomTom keys${NC}"
 echo -e "\n${YELLOW}Press Ctrl+C to stop all services${NC}"
 
 # Keep script running
