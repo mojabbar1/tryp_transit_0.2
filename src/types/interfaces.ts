@@ -47,3 +47,38 @@ export interface TravelContextProps {
 export interface BusStopCoordinates {
   [key: string]: LocationInterface;
 }
+
+// Enhanced interfaces for Phase 2 transit insights
+export interface IncentiveDetails {
+  type: 'eCredit' | 'partnerDiscount' | 'funReward';
+  description: string;
+  value: string;
+}
+
+export interface AdditionalRide {
+  departureTime?: string; // HH:MM format
+  travelTime: number;
+  trafficDensity: 'Light' | 'Medium' | 'Heavy';
+}
+
+export interface TransitInsightResponse {
+  travelTime: number | null;
+  trafficDensity: 'Light' | 'Medium' | 'Heavy' | null;
+  costSavingsPerTrip: string | null;
+  nudgeMessage: string | null;
+  incentiveDetails: IncentiveDetails | null;
+  additionalRides: AdditionalRide[] | null;
+}
+
+// Form submission interface
+export interface TransitInsightRequest {
+  fromLocation: string;
+  toLocation: string;
+  timeToDestination: string; // ISO string
+}
+
+// Error response interface
+export interface ApiErrorResponse {
+  error: string;
+  details?: string;
+}

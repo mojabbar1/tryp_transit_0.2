@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
-import { RequestBody } from '@/types/interfaces';
+import { RequestBody, TransitInsightResponse, ApiErrorResponse } from '@/types/interfaces';
 import { convertToUTC } from '@/lib/convertToUTC';
 
 const openai = new OpenAI({
@@ -11,30 +11,31 @@ const openai = new OpenAI({
 const TOMTOM_API_KEY = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
 
 export async function POST(req: NextRequest) {
-  const { departure, destination, timeToDestination }: RequestBody =
-    await req.json();
-
-  if (!departure || !destination || !timeToDestination) {
-    return NextResponse.json(
-      { error: 'Missing required parameters.' },
-      { status: 400 },
-    );
-  }
-
-  const departureLatitude = departure.lat;
-  const departureLongitude = departure.lng;
-  const destinationLatitude = destination.lat;
-  const destinationLongitude = destination.lng;
-
-  const bbox = `${Math.min(departureLatitude!, destinationLatitude)},${Math.min(
-    departureLongitude,
-    destinationLongitude,
-  )},${Math.max(departureLatitude, destinationLatitude)},${Math.max(
-    departureLongitude,
-    destinationLongitude,
-  )}`;
-
   try {
+    const body: RequestBody = await req.json();
+    const { departure, destination, timeToDestination } = body;
+
+    // Validate required fields
+    if (!departure || !destination || !timeToDestination) {
+      return NextResponse.json<ApiErrorResponse>(
+        { error: 'Missing required fields: departure, destination, timeToDestination' },
+        { status: 400 }
+      );
+    }
+
+    const departureLatitude = departure.lat;
+    const departureLongitude = departure.lng;
+    const destinationLatitude = destination.lat;
+    const destinationLongitude = destination.lng;
+
+    const bbox = `${Math.min(departureLatitude!, destinationLatitude)},${Math.min(
+      departureLongitude,
+      destinationLongitude,
+    )},${Math.max(departureLatitude, destinationLatitude)},${Math.max(
+      departureLongitude,
+      destinationLongitude,
+    )}`;
+
     // Parse timeToDestination (HH:MM) → JS Date
     const [hours, minutes] = timeToDestination.split(':').map(Number);
     const now = new Date();
@@ -51,8 +52,17 @@ export async function POST(req: NextRequest) {
       destinationTime.setDate(destinationTime.getDate() + 1);
     }
 
-    // Compute hours_until_destination
-    const hours_until_destination = Math.max(0, (destinationTime.getTime() - now.getTime()) / (1000 * 60 * 60));
+    // Improved hours calculation logic with validation
+    const hours_until_destination = Math.max(0, Math.floor(
+      (destinationTime.getTime() - now.getTime()) / (1000 * 60 * 60)
+    ));
+    
+    // Add validation and warning
+    if (hours_until_destination > 48) {
+      console.warn(`Long prediction horizon: ${hours_until_destination} hours. Accuracy may be reduced.`);
+    }
+    
+    console.log(`Hours until destination: ${hours_until_destination}`);
 
     const flowResponseCurrent = await axios.get(
       `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json`,
@@ -88,10 +98,42 @@ export async function POST(req: NextRequest) {
       },
     );
 
-    // Call ridership API
-    const ridershipResponse = await axios.get(
-      `${process.env.RIDERSHIP_API_BASE_URL}/predict/hourly/${Math.floor(hours_until_destination)}`
-    );
+    // Improved ridership API call with better error handling
+    let predictedHourlyRidership: number | null = null;
+    
+    if (hours_until_destination > 0) {
+      try {
+        const ridershipApiUrl = `${process.env.RIDERSHIP_API_BASE_URL || 'http://localhost:5001'}/predict/hourly/${hours_until_destination}`;
+        console.log(`Calling ridership API: ${ridershipApiUrl}`);
+        
+        const ridershipResponse = await axios.get(ridershipApiUrl, {
+          timeout: 10000, // 10 second timeout
+          headers: {
+            'Accept': 'application/json'
+          }
+        });
+        
+        // Handle different possible response formats
+        if (typeof ridershipResponse.data === 'number') {
+          predictedHourlyRidership = ridershipResponse.data;
+        } else if (ridershipResponse.data && typeof ridershipResponse.data.prediction === 'number') {
+          predictedHourlyRidership = ridershipResponse.data.prediction;
+        } else if (Array.isArray(ridershipResponse.data) && ridershipResponse.data.length > 0) {
+          predictedHourlyRidership = ridershipResponse.data[0];
+        }
+        
+        console.log(`Ridership prediction: ${predictedHourlyRidership}`);
+      } catch (error) {
+        console.error('Ridership API call failed:', {
+          error: error instanceof Error ? error.message : String(error),
+          url: `${process.env.RIDERSHIP_API_BASE_URL || 'http://localhost:5001'}/predict/hourly/${hours_until_destination}`,
+          hours: hours_until_destination
+        });
+        predictedHourlyRidership = null;
+      }
+    } else {
+      console.log('Skipping ridership prediction for immediate departure');
+    }
 
     const trafficData: any = {
       flow: {
@@ -99,18 +141,54 @@ export async function POST(req: NextRequest) {
         destination: flowResponseDestination.data,
       },
       incidents: incidentResponse.data,
-      ridership: { predictedHourly: ridershipResponse.data },
+      ridership: { predictedHourly: predictedHourlyRidership },
     };
 
     const utcTime = convertToUTC(timeToDestination);
 
-    const prompt = `Given the following traffic data: ${JSON.stringify(
-      trafficData,
-    )}, and current location: ${JSON.stringify(
-      departure,
-    )}, destination: ${JSON.stringify(
-      destination,
-    )}, and destination time: ${utcTime}, what is the estimated travel time from the current location to the destination in minutes? Also, estimate the current traffic density based on the flow and incidents data I want the traffic density categorizeed as either Light, Medium, or Heavy. Also, can you make an estimate of how many US dollars (in the format 1.20 is $1.20) are saved for one trip by riding the bus versus driving btaking into account gas prices and distance from ${departure} to ${destination}. The predicted bus passenger count around the destination time is approximately ${ridershipResponse.data} people. Also cound you send an array of length 3 containing rides with similiar values for traffic density but higher density and travel times but slower and I want them to be considered runner up rides. I want the rides inside the array to include a "travelTime" and a "trafficDensity". Please return the response as JSON with "travelTime", "trafficDensity", "costSavingsPerTrip", and "additionalRides" fields only.`;
+    // Build ridership context conditionally
+    let ridershipPromptSegment = '';
+    if (predictedHourlyRidership !== null && typeof predictedHourlyRidership === 'number') {
+      ridershipPromptSegment = ` The predicted bus passenger count around the destination time is approximately ${Math.round(predictedHourlyRidership)} people.`;
+    }
+
+    // Enhanced OpenAI prompt for nudge messages and diverse incentives
+    const prompt = `You are a transit optimization assistant. Based on the provided data, generate compelling transit insights.
+
+CONTEXT:
+- Traffic data: ${JSON.stringify(trafficData)}
+- Route: ${JSON.stringify(departure)} → ${JSON.stringify(destination)}
+- Departure time: ${timeToDestination}${ridershipPromptSegment}
+
+TASK: Create a JSON response that encourages bus ridership with these exact fields:
+
+{
+  "travelTime": (integer, estimated bus travel time in minutes, consider traffic conditions),
+  "trafficDensity": (string, exactly one of: "Light", "Medium", "Heavy"),
+  "costSavingsPerTrip": (string, estimated USD savings vs driving, like "2.50" or "3.00"),
+  "nudgeMessage": (string, compelling 1-2 sentence message highlighting specific benefits. Examples: "Skip the traffic jam! Take the bus and arrive relaxed while others sit in traffic." or "Save 15 minutes and $4 in parking - let someone else do the driving!"),
+  "incentiveDetails": {
+    "type": (string, exactly one of: "eCredit", "partnerDiscount", "funReward"),
+    "description": (string, specific reward description),
+    "value": (string, monetary or item value)
+  },
+  "additionalRides": [
+    {
+      "departureTime": (string, HH:MM format, optional),
+      "travelTime": (integer, minutes),
+      "trafficDensity": (string, "Light", "Medium", or "Heavy")
+    }
+  ]
+}
+
+INCENTIVE GUIDELINES:
+- "eCredit": Offer $0.50-$2.00 credit (e.g., "$1.50 e-credit for your next ride!")
+- "partnerDiscount": Local business discount (e.g., "20% off coffee at downtown cafes!")  
+- "funReward": Engaging reward (e.g., "Free drink token for participating bars!")
+
+Make the nudgeMessage specific to the time, route, and traffic conditions. Focus on tangible benefits: time saved, stress avoided, money saved, convenience gained.
+
+Respond ONLY with valid JSON - no additional text or formatting.`;
 
     const stream = await openai.chat.completions.create({
       model: 'gpt-3.5-turbo',
@@ -123,13 +201,37 @@ export async function POST(req: NextRequest) {
       result += chunk.choices[0]?.delta?.content || '';
     }
 
-    const responseObject = JSON.parse(result);
-
-    return NextResponse.json(responseObject);
+    // Enhanced response parsing and validation
+    try {
+      const responseObject = JSON.parse(result) as TransitInsightResponse;
+      
+      // Validate required fields
+      const requiredFields = ['travelTime', 'trafficDensity', 'costSavingsPerTrip', 'nudgeMessage', 'incentiveDetails'];
+      const missingFields = requiredFields.filter(field => !(field in responseObject));
+      
+      if (missingFields.length > 0) {
+        console.warn(`OpenAI response missing fields: ${missingFields.join(', ')}`);
+      }
+      
+      // Validate incentive structure
+      if (responseObject.incentiveDetails && typeof responseObject.incentiveDetails === 'object') {
+        const incentiveFields = ['type', 'description', 'value'];
+        const missingIncentiveFields = incentiveFields.filter(field => !(field in responseObject.incentiveDetails!));
+        if (missingIncentiveFields.length > 0) {
+          console.warn(`Incentive details missing fields: ${missingIncentiveFields.join(', ')}`);
+        }
+      }
+      
+      return NextResponse.json<TransitInsightResponse>(responseObject);
+    } catch (parseError) {
+      console.error('Failed to parse OpenAI response as JSON:', parseError);
+      console.error('Raw OpenAI response:', result);
+      return NextResponse.json<ApiErrorResponse>({ error: 'Invalid response format from AI service' }, { status: 500 });
+    }
   } catch (error) {
-    console.error(error);
-    return NextResponse.json(
-      { error: 'Internal Server Error.' },
+    console.error('Transit insights API error:', error);
+    return NextResponse.json<ApiErrorResponse>(
+      { error: 'Internal Server Error.', details: error instanceof Error ? error.message : String(error) },
       { status: 500 },
     );
   }
