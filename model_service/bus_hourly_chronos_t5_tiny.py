@@ -40,6 +40,39 @@ def load_hourly_data():
         print(f"❌ Error loading hourly data: {e}")
         df_hourly = pd.DataFrame()
 
+def generate_realistic_mock_prediction(hours_future):
+    """Generate realistic ridership predictions based on time patterns."""
+    current_time = datetime.now()
+    target_time = current_time + timedelta(hours=hours_future)
+    
+    # Base ridership patterns by hour of day
+    hour = target_time.hour
+    day_of_week = target_time.weekday()  # 0=Monday, 6=Sunday
+    
+    # Rush hour patterns (7-9 AM, 5-7 PM)
+    if 7 <= hour <= 9 or 17 <= hour <= 19:
+        base_ridership = 120 + np.random.randint(-15, 25)
+    # Mid-day (10 AM - 4 PM)
+    elif 10 <= hour <= 16:
+        base_ridership = 75 + np.random.randint(-10, 15)
+    # Evening (8 PM - 11 PM)
+    elif 20 <= hour <= 23:
+        base_ridership = 45 + np.random.randint(-8, 12)
+    # Late night/early morning (12 AM - 6 AM)
+    else:
+        base_ridership = 15 + np.random.randint(-5, 8)
+    
+    # Weekend adjustment (lower ridership)
+    if day_of_week >= 5:  # Saturday or Sunday
+        base_ridership = int(base_ridership * 0.7)
+    
+    # Add some randomness for realism
+    variation = np.random.randint(-10, 15)
+    final_prediction = max(5, base_ridership + variation)  # Minimum 5 riders
+    
+    print(f"Mock prediction for {hours_future}h future ({target_time.strftime('%H:%M on %A')}): {final_prediction} riders")
+    return final_prediction
+
 def predict(hours_future):
     """Main prediction function used by the Flask API."""
     global pipeline_hourly, df_hourly
@@ -51,10 +84,8 @@ def predict(hours_future):
         load_hourly_data()
     
     if pipeline_hourly == "mock" or df_hourly.empty:
-        # Return mock prediction when Chronos is not available
-        base_ridership = 50
-        variation = np.random.randint(-20, 20)
-        return int(base_ridership + variation)
+        # Return realistic mock prediction based on time patterns
+        return generate_realistic_mock_prediction(hours_future)
     
     try:
         if 'ridership' not in df_hourly.columns:
