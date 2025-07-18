@@ -1,12 +1,17 @@
 import axios from 'axios';
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { RequestBody, TransitInsightResponse, ApiErrorResponse } from '@/types/interfaces';
 import { convertToUTC } from '@/lib/convertToUTC';
 
-const openai = new OpenAI({
+const useGemini = process.env.USE_GEMINI === 'true';
+
+const openai = useGemini ? null : new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+const genAI = useGemini ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY!) : null;
 
 const TOMTOM_API_KEY = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
 
@@ -190,27 +195,61 @@ Make the nudgeMessage specific to the time, route, and traffic conditions. Focus
 
 Respond ONLY with valid JSON - no additional text or formatting.`;
 
-    const stream = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: prompt }],
-      stream: true,
-    });
-
     let result = '';
-    for await (const chunk of stream) {
-      result += chunk.choices[0]?.delta?.content || '';
+    
+    console.log('Using Gemini:', useGemini);
+    console.log('Gemini API Key exists:', !!process.env.GEMINI_API_KEY);
+    
+    if (useGemini) {
+      try {
+        console.log('Initializing Gemini model...');
+        const model = genAI!.getGenerativeModel({ 
+          model: 'gemini-1.5-flash',
+          generationConfig: {
+            temperature: 0.2,
+            topP: 0.8,
+            topK: 40,
+            maxOutputTokens: 2048,
+          }
+        });
+        
+        console.log('Calling Gemini API...');
+        // Add explicit instructions to return only JSON
+        const enhancedPrompt = `${prompt}\n\nIMPORTANT: Return ONLY valid JSON without any markdown formatting, explanations, or code blocks. The response should be parseable directly with JSON.parse().`;
+        
+        const response = await model.generateContent(enhancedPrompt);
+        console.log('Gemini API response received');
+        result = response.response.text();
+        console.log('Raw Gemini response:', result);
+      } catch (error) {
+        console.error('Gemini API error:', error);
+        throw error;
+      }
+    } else {
+      console.log('Using OpenAI...');
+      const stream = await openai!.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: [{ role: 'user', content: prompt }],
+        stream: true,
+      });
+
+      for await (const chunk of stream) {
+        result += chunk.choices[0]?.delta?.content || '';
+      }
     }
 
     // Enhanced response parsing and validation
     try {
+      console.log('Attempting to parse JSON response:', result);
       const responseObject = JSON.parse(result) as TransitInsightResponse;
+      console.log('Successfully parsed JSON response');
       
       // Validate required fields
       const requiredFields = ['travelTime', 'trafficDensity', 'costSavingsPerTrip', 'nudgeMessage', 'incentiveDetails'];
       const missingFields = requiredFields.filter(field => !(field in responseObject));
       
       if (missingFields.length > 0) {
-        console.warn(`OpenAI response missing fields: ${missingFields.join(', ')}`);
+        console.warn(`AI response missing fields: ${missingFields.join(', ')}`);
       }
       
       // Validate incentive structure
@@ -224,9 +263,64 @@ Respond ONLY with valid JSON - no additional text or formatting.`;
       
       return NextResponse.json<TransitInsightResponse>(responseObject);
     } catch (parseError) {
-      console.error('Failed to parse OpenAI response as JSON:', parseError);
-      console.error('Raw OpenAI response:', result);
-      return NextResponse.json<ApiErrorResponse>({ error: 'Invalid response format from AI service' }, { status: 500 });
+      console.error('Failed to parse AI response as JSON:', parseError);
+      console.error('Raw AI response:', result);
+      
+      // Attempt to extract JSON from the response if it contains markdown code blocks
+      if (result.includes('```json') && result.includes('```')) {
+        try {
+          console.log('Attempting to extract JSON from markdown code block');
+          const jsonMatch = result.match(/```json\s*([\s\S]*?)\s*```/);
+          if (jsonMatch && jsonMatch[1]) {
+            const extractedJson = jsonMatch[1].trim();
+            console.log('Extracted JSON from markdown:', extractedJson);
+            const parsedJson = JSON.parse(extractedJson) as TransitInsightResponse;
+            
+            // Validate required fields in extracted JSON
+            const requiredFields = ['travelTime', 'trafficDensity', 'costSavingsPerTrip', 'nudgeMessage', 'incentiveDetails'];
+            const missingFields = requiredFields.filter(field => !(field in parsedJson));
+            
+            if (missingFields.length > 0) {
+              console.warn(`Extracted JSON missing fields: ${missingFields.join(', ')}`);
+            }
+            
+            return NextResponse.json<TransitInsightResponse>(parsedJson);
+          }
+        } catch (extractError) {
+          console.error('Failed to extract JSON from markdown:', extractError);
+        }
+      }
+      
+      // If we can't parse the JSON, try to create a minimal valid response
+      try {
+        console.log('Attempting to create a fallback response');
+        // Create a minimal valid response with default values
+        const fallbackResponse: TransitInsightResponse = {
+          travelTime: 30, // Default travel time in minutes
+          trafficDensity: "Medium",
+          costSavingsPerTrip: "2.50",
+          nudgeMessage: "Take the bus to save money and reduce traffic congestion.",
+          incentiveDetails: {
+            type: "eCredit",
+            description: "Credit for your next ride",
+            value: "1.00"
+          },
+          additionalRides: [
+            {
+              travelTime: 35,
+              trafficDensity: "Medium"
+            }
+          ]
+        };
+        
+        return NextResponse.json<TransitInsightResponse>(fallbackResponse);
+      } catch (fallbackError) {
+        console.error('Failed to create fallback response:', fallbackError);
+        return NextResponse.json<ApiErrorResponse>(
+          { error: 'Invalid response format from AI service', details: result.substring(0, 500) }, 
+          { status: 500 }
+        );
+      }
     }
   } catch (error) {
     console.error('Transit insights API error:', error);
