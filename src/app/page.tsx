@@ -15,19 +15,46 @@ export default function TransitInsightsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [retryCount, setRetryCount] = useState(0);
+  const [demoMode, setDemoMode] = useState<string | null>(null);
+  const [loadingStep, setLoadingStep] = useState(0);
+  const [loadingProgress, setLoadingProgress] = useState(0);
   const maxRetries = 2;
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const loadingSteps = [
+    "Analyzing traffic patterns...",
+    "Calculating ridership predictions...",
+    "Generating personalized insights..."
+  ];
+
   const handleSubmit = async (e: React.FormEvent, isRetry = false) => {
     e.preventDefault();
-    
+
     if (!isRetry) {
       setRetryCount(0);
     }
-    
+
     setIsLoading(true);
+    setLoadingStep(0);
+    setLoadingProgress(0);
     setError(null);
     if (!isRetry) setData(null);
+
+    // Start loading animation sequence
+    let loadingInterval: NodeJS.Timeout | null = null;
+    if (!isRetry) {
+      loadingInterval = setInterval(() => {
+        setLoadingStep(prev => {
+          const next = prev + 1;
+          setLoadingProgress((next / loadingSteps.length) * 100);
+          if (next >= loadingSteps.length) {
+            if (loadingInterval) clearInterval(loadingInterval);
+            return loadingSteps.length - 1;
+          }
+          return next;
+        });
+      }, 1000);
+    }
 
     // Validate inputs
     if (!departureStop || !destinationStop || !arrivalTime) {
@@ -47,16 +74,22 @@ export default function TransitInsightsPage() {
     }
 
     try {
-      const response = await fetch('/api/transit-insights', {
+      // Use demo API if in demo mode, otherwise use regular API
+      const apiEndpoint = demoMode ? '/api/transit-insights-demo' : '/api/transit-insights';
+      const requestBody = demoMode
+        ? { demoScenario: demoMode }
+        : {
+          departure: departureCoords,
+          destination: destinationCoords,
+          timeToDestination: arrivalTime,
+        };
+
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          departure: departureCoords,
-          destination: destinationCoords,
-          timeToDestination: arrivalTime,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
@@ -68,19 +101,19 @@ export default function TransitInsightsPage() {
       setData(result);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-      
+
       if (retryCount < maxRetries && !isRetry) {
         console.log(`Attempt failed, retrying... (${retryCount + 1}/${maxRetries})`);
         setRetryCount(prev => prev + 1);
-        
+
         // Clear any existing timeout
         if (timeoutRef.current) {
           clearTimeout(timeoutRef.current);
         }
-        
+
         // Exponential backoff: 1s, 2s delays
         timeoutRef.current = setTimeout(() => {
-          const syntheticEvent = { preventDefault: () => {} } as React.FormEvent;
+          const syntheticEvent = { preventDefault: () => { } } as React.FormEvent;
           handleSubmit(syntheticEvent, true);
         }, 1000 * (retryCount + 1));
       } else {
@@ -88,11 +121,45 @@ export default function TransitInsightsPage() {
         setIsLoading(false);
       }
     }
-    
+
     // Only set loading to false if this is the final attempt or a successful retry
     if (retryCount >= maxRetries || isRetry) {
       setIsLoading(false);
     }
+  };
+
+  const handleDemoScenario = (scenario: string) => {
+    setDemoMode(scenario);
+    setError(null);
+    setData(null);
+
+    // Pre-fill form based on scenario
+    switch (scenario) {
+      case 'rush-hour':
+        setDepartureStop('King St & Meeting St');
+        setDestinationStop('MUSC - Ashley Ave');
+        setArrivalTime('08:30');
+        break;
+      case 'weekend':
+        setDepartureStop('Charleston City Market');
+        setDestinationStop('Folly Beach Park & Ride');
+        setArrivalTime('14:00');
+        break;
+      case 'night-out':
+        setDepartureStop('Upper King St Entertainment District');
+        setDestinationStop('College of Charleston');
+        setArrivalTime('23:30');
+        break;
+    }
+
+    // Auto-submit after 1 second
+    setTimeout(() => {
+      const form = document.querySelector('form');
+      if (form) {
+        const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+        form.dispatchEvent(submitEvent);
+      }
+    }, 1000);
   };
 
   // Cleanup timeout on unmount
@@ -113,10 +180,79 @@ export default function TransitInsightsPage() {
           <h1 className="text-4xl font-bold text-gray-800 mb-2">
             🚌 Tryp Transit Insights
           </h1>
-          <p className="text-gray-600">
+          <p className="text-gray-600 mb-4">
             Get real-time transit insights with AI-powered recommendations
           </p>
+          <div className="flex justify-center space-x-4">
+            <a
+              href="/dashboard"
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
+            >
+              📊 Investor Dashboard
+            </a>
+            <a
+              href="/test"
+              className="inline-flex items-center px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            >
+              🧪 Test Interface
+            </a>
+          </div>
         </div>
+
+        {/* Demo Scenarios Section */}
+        <Card className="mb-6 bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200">
+          <CardHeader>
+            <CardTitle className="text-center text-purple-800">🎯 Demo Scenarios</CardTitle>
+            <p className="text-center text-purple-600 text-sm">Try these pre-configured scenarios to see Tryp Transit in action</p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <Button
+                onClick={() => handleDemoScenario('rush-hour')}
+                className="bg-red-500 hover:bg-red-600 text-white p-4 h-auto flex flex-col items-center space-y-2"
+              >
+                <span className="text-2xl">🚌</span>
+                <span className="font-semibold">Rush Hour Commute</span>
+                <span className="text-xs opacity-90">High traffic, great savings</span>
+              </Button>
+
+              <Button
+                onClick={() => handleDemoScenario('weekend')}
+                className="bg-blue-500 hover:bg-blue-600 text-white p-4 h-auto flex flex-col items-center space-y-2"
+              >
+                <span className="text-2xl">🌅</span>
+                <span className="font-semibold">Weekend Trip</span>
+                <span className="text-xs opacity-90">Leisure focus, scenic route</span>
+              </Button>
+
+              <Button
+                onClick={() => handleDemoScenario('night-out')}
+                className="bg-purple-500 hover:bg-purple-600 text-white p-4 h-auto flex flex-col items-center space-y-2"
+              >
+                <span className="text-2xl">🌙</span>
+                <span className="font-semibold">Night Out</span>
+                <span className="text-xs opacity-90">Safety focus, well-lit stops</span>
+              </Button>
+            </div>
+
+            {demoMode && (
+              <div className="text-center mb-4">
+                <div className="inline-flex items-center px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm">
+                  <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+                  Demo Active: {demoMode}
+                </div>
+                <Button
+                  onClick={() => setDemoMode(null)}
+                  variant="outline"
+                  size="sm"
+                  className="ml-2"
+                >
+                  Clear Demo
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card className="mb-6">
           <CardHeader>
@@ -180,11 +316,10 @@ export default function TransitInsightsPage() {
               <Button
                 type="submit"
                 disabled={isLoading}
-                className={`w-full py-3 px-4 rounded-md font-medium transition-colors ${
-                  isLoading
-                    ? 'bg-gray-400 cursor-not-allowed text-gray-200'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
-                }`}
+                className={`w-full py-3 px-4 rounded-md font-medium transition-colors ${isLoading
+                  ? 'bg-gray-400 cursor-not-allowed text-gray-200'
+                  : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
               >
                 {isLoading ? (
                   retryCount > 0 ? `Retrying... (${retryCount}/${maxRetries})` : 'Analyzing Trip...'
@@ -196,21 +331,61 @@ export default function TransitInsightsPage() {
           </CardContent>
         </Card>
 
-        {/* Enhanced Loading State */}
+        {/* Enhanced Multi-Step Loading State */}
         {isLoading && (
-          <div className="mt-8 text-center">
-            <div className="inline-flex items-center px-6 py-4 bg-blue-50 rounded-lg border border-blue-200">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-3"></div>
-              <div>
-                <p className="text-xl text-blue-700 font-semibold">
-                  {retryCount > 0 ? `Retrying Request (${retryCount}/${maxRetries})` : 'Analyzing Your Trip'}
-                </p>
-                <p className="text-blue-600 text-sm mt-1">
-                  {retryCount > 0 
+          <div className="mt-8 max-w-2xl mx-auto">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200 p-6">
+              <div className="text-center mb-6">
+                <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-100 rounded-full mb-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+                <h3 className="text-xl font-semibold text-blue-800 mb-2">
+                  {retryCount > 0 ? `Retrying Request (${retryCount}/${maxRetries})` : 'Processing Your Request'}
+                </h3>
+                <p className="text-blue-600">
+                  {retryCount > 0
                     ? 'Previous attempt failed, automatically retrying...'
-                    : 'Checking traffic patterns, transit schedules, and calculating savings...'
+                    : loadingSteps[loadingStep]
                   }
                 </p>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="mb-4">
+                <div className="flex justify-between text-sm text-blue-600 mb-2">
+                  <span>Progress</span>
+                  <span>{Math.round(loadingProgress)}%</span>
+                </div>
+                <div className="w-full bg-blue-200 rounded-full h-2">
+                  <div
+                    className="bg-gradient-to-r from-blue-500 to-indigo-500 h-2 rounded-full transition-all duration-1000 ease-out"
+                    style={{ width: `${loadingProgress}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              {/* Loading Steps */}
+              <div className="space-y-2">
+                {loadingSteps.map((step, index) => (
+                  <div key={index} className={`flex items-center text-sm ${index < loadingStep ? 'text-green-600' :
+                    index === loadingStep ? 'text-blue-600' :
+                      'text-gray-400'
+                    }`}>
+                    <div className={`w-4 h-4 rounded-full mr-3 flex items-center justify-center ${index < loadingStep ? 'bg-green-500' :
+                      index === loadingStep ? 'bg-blue-500 animate-pulse' :
+                        'bg-gray-300'
+                      }`}>
+                      {index < loadingStep ? (
+                        <span className="text-white text-xs">✓</span>
+                      ) : index === loadingStep ? (
+                        <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                      ) : (
+                        <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+                      )}
+                    </div>
+                    {step}
+                  </div>
+                ))}
               </div>
             </div>
           </div>
@@ -234,7 +409,7 @@ export default function TransitInsightsPage() {
                     <li>Network connectivity issues</li>
                     <li>Invalid location data</li>
                   </ul>
-                  <button 
+                  <button
                     onClick={() => {
                       setError(null);
                       setRetryCount(0);
@@ -265,14 +440,32 @@ export default function TransitInsightsPage() {
                 🚌 Your Trip Insights
               </h2>
 
-              {/* Nudge Message - Most Prominent */}
+              {/* Nudge Message - THE MAGIC MOMENT */}
               {data.nudgeMessage && (
-                <div className="mb-6 p-4 bg-gradient-to-r from-green-100 to-blue-100 border-l-4 border-green-500 rounded-r-lg">
-                  <div className="flex items-start">
-                    <div className="text-2xl mr-3">💡</div>
-                    <div>
-                      <h3 className="font-semibold text-lg text-green-800 mb-2">Smart Transit Tip</h3>
-                      <p className="text-green-700 text-lg">{data.nudgeMessage}</p>
+                <div className="mb-8 p-6 bg-gradient-to-r from-green-50 via-blue-50 to-purple-50 border-2 border-green-400 rounded-xl shadow-lg relative overflow-hidden">
+                  {/* Animated background effect */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-green-400/10 via-blue-400/10 to-purple-400/10 animate-pulse"></div>
+
+                  <div className="relative flex items-start">
+                    <div className="text-4xl mr-4 animate-bounce">💡</div>
+                    <div className="flex-1">
+                      <h3 className="font-bold text-2xl text-green-800 mb-3 flex items-center">
+                        ✨ AI-Powered Transit Insight
+                        <span className="ml-2 px-2 py-1 bg-green-200 text-green-800 text-xs rounded-full">SMART</span>
+                      </h3>
+                      <p className="text-green-700 text-xl font-medium leading-relaxed mb-4">
+                        {data.nudgeMessage}
+                      </p>
+                      <div className="flex items-center text-sm text-green-600">
+                        <span className="flex items-center mr-4">
+                          <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
+                          Real-time Analysis
+                        </span>
+                        <span className="flex items-center">
+                          <span className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></span>
+                          Personalized for You
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -286,14 +479,14 @@ export default function TransitInsightsPage() {
                     {data.travelTime !== null ? `${data.travelTime} mins` : 'N/A'}
                   </p>
                 </div>
-                
+
                 <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
                   <h3 className="font-semibold text-lg text-yellow-800 mb-2">🚦 Traffic Density</h3>
                   <p className="text-2xl font-bold text-yellow-600">
                     {data.trafficDensity || 'N/A'}
                   </p>
                 </div>
-                
+
                 <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                   <h3 className="font-semibold text-lg text-green-800 mb-2">💰 You Save</h3>
                   <p className="text-2xl font-bold text-green-600">
@@ -342,11 +535,10 @@ export default function TransitInsightsPage() {
                             {ride.travelTime} mins travel time
                           </span>
                         </div>
-                        <div className={`px-2 py-1 rounded text-sm font-medium ${
-                          ride.trafficDensity === 'Light' ? 'bg-green-100 text-green-800' :
+                        <div className={`px-2 py-1 rounded text-sm font-medium ${ride.trafficDensity === 'Light' ? 'bg-green-100 text-green-800' :
                           ride.trafficDensity === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                          'bg-red-100 text-red-800'
-                        }`}>
+                            'bg-red-100 text-red-800'
+                          }`}>
                           {ride.trafficDensity} Traffic
                         </div>
                       </div>
