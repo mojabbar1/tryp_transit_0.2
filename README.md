@@ -83,6 +83,7 @@ npm run dev
 
 ### Required API Keys
 - **OpenAI API Key**: Get from [OpenAI Platform](https://platform.openai.com/api-keys)
+- **Gemini API Key**: (instead of OpenAI)
 - **TomTom API Key**: Get from [TomTom Developer](https://developer.tomtom.com/)
 
 ### Frontend (`src/.env.local`)
