@@ -13,7 +13,9 @@
     "db:migrate": "npx prisma migrate dev",
     "db:status": "npx prisma migrate status",
     "demo:setup": "tsx scripts/setupDemo.ts",
-    "demo:reset": "tsx scripts/resetDemo.ts"
+    "demo:reset": "tsx scripts/resetDemo.ts",
+    "test:apis": "tsx scripts/testApis.ts",
+    "beer:demo": "npm run demo:reset && echo '🍺 Demo ready! Navigate to /rewards'"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
