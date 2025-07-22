@@ -180,10 +180,20 @@ export default function TransitInsightsPage() {
           <h1 className="text-4xl font-bold text-gray-800 mb-2">
             🚌 Tryp Transit Insights
           </h1>
-          <p className="text-gray-600 mb-4">
+          <p className="text-gray-600 mb-2">
             Get real-time transit insights with AI-powered recommendations
           </p>
+          <div className="inline-flex items-center px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-sm font-medium mb-4">
+            <span className="w-2 h-2 bg-amber-500 rounded-full mr-2 animate-pulse"></span>
+            🍺 NEW: Earn FREE BEER rewards for using transit!
+          </div>
           <div className="flex justify-center space-x-4">
+            <a
+              href="/rewards"
+              className="inline-flex items-center px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium"
+            >
+              🍺 FREE BEER Rewards
+            </a>
             <a
               href="/dashboard"
               className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
