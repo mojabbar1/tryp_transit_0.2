@@ -64,3 +64,52 @@ Common fixes:
 rm -rf .next
 npm run build
 ```
+
+## Testing Issues
+
+### Test Failures
+**Problem**: Jest tests failing with module resolution errors
+**Solution**:
+```bash
+# Clear Jest cache
+npm test -- --clearCache
+# Reinstall testing dependencies
+npm install @testing-library/react @testing-library/jest-dom --save-dev
+```
+
+### Mock Issues
+**Problem**: Prisma client mocks not working
+**Solution**: 
+- Check `jest.setup.js` has proper Prisma mocks
+- Verify environment variables are set in test setup
+- Use `jest.clearAllMocks()` in beforeEach blocks
+
+### Component Test Failures
+**Problem**: React components not rendering in tests
+**Solution**:
+```bash
+# Verify testing library setup
+npm run test -- --verbose
+# Check for missing dependencies
+npm install jest-environment-jsdom --save-dev
+```
+
+## Performance Issues
+
+### Slow AI Responses
+**Problem**: Gemini API taking too long
+**Solution**:
+- Check API timeout settings (default 10 seconds)
+- Verify network connectivity
+- Use fallback templates when AI fails
+- Clear nudge cache: restart application
+
+### Database Performance
+**Problem**: Slow database queries
+**Solution**:
+```bash
+# Check database indexes
+npx prisma db push
+# Optimize queries in RewardManager
+# Consider connection pooling for production
+```

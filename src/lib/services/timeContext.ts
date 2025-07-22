@@ -41,16 +41,18 @@ export function getBeerNudgeContext(currentTime: Date = new Date()): BeerNudgeCo
   };
 }
 
-export function getBeerContextMessage(context: BeerNudgeContext): string {
-  switch (context.contextType) {
+export function getBeerContextMessage(context: BeerNudgeContext | string): string {
+  const contextType = typeof context === 'string' ? context : context.contextType;
+  
+  switch (contextType) {
     case 'TGIF_HAPPY_HOUR':
-      return 'Perfect timing for happy hour!';
+      return '🍻 Perfect timing for Friday happy hour!';
     case 'WEEKEND_RELAXATION': 
-      return 'Great way to enjoy your weekend!';
+      return '🍺 Great way to enjoy your weekend!';
     case 'WEEKDAY_UNWIND':
-      return 'Perfect way to unwind after work!';
+      return '🍺 Perfect way to unwind after work!';
     case 'LATE_NIGHT_SOCIAL':
-      return 'Great for a nightcap with friends!';
+      return '🍺 Great for a nightcap with friends!';
     default:
       return 'Enjoy a well-deserved beer!';
   }

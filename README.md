@@ -444,6 +444,24 @@ npm run dev        # Start the application
 # Navigate to /rewards for full beer experience
 ```
 
+### 🧪 **Testing Infrastructure**
+
+**Comprehensive Test Suite:**
+```bash
+npm test              # Run all tests
+npm run test:unit     # Unit tests only
+npm run test:integration  # Integration tests only
+npm run test:e2e      # End-to-end tests only
+npm run test:coverage # Test coverage report
+npm run test:apis     # API endpoint testing
+```
+
+**Test Coverage:**
+- **40+ Unit Tests**: Services, components, and utilities
+- **Integration Tests**: API endpoints with mocked dependencies
+- **E2E Tests**: Complete user flows from selection to celebration
+- **Component Tests**: React rendering and interaction testing
+
 **Demo Highlights:**
 - 🍺 **Alice**: 6/7 beer progress (perfect "almost there" moment)
 - 🤖 **AI Nudging**: Time-contextual beer messaging with Gemini
