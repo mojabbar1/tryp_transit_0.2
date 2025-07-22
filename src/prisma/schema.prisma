@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// CRITICAL: Define enums at schema level for type safety
+enum RewardType {
+  ECREDIT
+  FREE_COFFEE
+  FREE_APPETIZER
+  FREE_BEER        // FLAGSHIP FEATURE
+}
+
+enum PartnerCategory {
+  COFFEE
+  RESTAURANT
+  RETAIL
+  ECREDIT
+  BAR              // REQUIRED FOR BEER REWARDS
+}
+
+model UserProfile {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+  
+  // Relations
+  rewardProgress UserRewardProgress[]
+  tripCompletions TripCompletion[]
+  
+  @@map("user_profiles")
+}
+
+model Partner {
+  id             String          @id @default(cuid())
+  name           String
+  category       PartnerCategory // Now uses enum for type safety
+  address        String
+  lat            Float
+  lng            Float
+  operatingHours Json            // Consistent format: {open: "16:00", close: "23:59"}
+  createdAt      DateTime        @default(now())
+  
+  // Relations
+  rewards Reward[]
+  
+  @@index([lat, lng])
+  @@map("partners")
+}
+
+model Reward {
+  id            String     @id @default(cuid())
+  partnerId     String
+  title         String
+  description   String
+  requiredTrips Int
+  timeWindow    String?    // "week", "2weeks", null for no limit
+  rewardType    RewardType // Now uses enum for type safety
+  createdAt     DateTime   @default(now())
+  
+  // Relations
+  partner        Partner                @relation(fields: [partnerId], references: [id])
+  userProgress   UserRewardProgress[]
+  
+  @@map("rewards")
+}
+
+model UserRewardProgress {
+  id             String    @id @default(cuid())
+  userId         String
+  rewardId       String
+  completedTrips Int       @default(0)
+  lastTripDate   DateTime?
+  isEarned       Boolean   @default(false)
+  redemptionCode String?
+  earnedAt       DateTime?
+  expiresAt      DateTime?
+  resetDate      DateTime? // For weekly/bi-weekly resets
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  
+  // Relations
+  user   UserProfile @relation(fields: [userId], references: [id])
+  reward Reward      @relation(fields: [rewardId], references: [id])
+  
+  @@unique([userId, rewardId])
+  @@map("user_reward_progress")
+}
+
+model TripCompletion {
+  id          String   @id @default(cuid())
+  userId      String
+  completedAt DateTime @default(now())
+  
+  // Relations
+  user UserProfile @relation(fields: [userId], references: [id])
+  
+  @@map("trip_completions")
+}
