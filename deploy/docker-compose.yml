@@ -1,0 +1,52 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tryp
+      POSTGRES_USER: tryp
+      POSTGRES_PASSWORD: tryp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tryp -d tryp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional ML service; remove if not needed for the demo
+  ml:
+    build:
+      context: ../model_service
+    ports:
+      - "5001:5001"
+    depends_on:
+      - postgres
+
+  web:
+    build:
+      context: ..
+      dockerfile: ./deploy/Dockerfile.web
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: "postgresql://tryp:tryp@postgres:5432/tryp?sslmode=disable"
+      NEXT_PUBLIC_TOMTOM_API_KEY: "CHANGEME"
+      # Uncomment if ML is enabled and used by the app
+      # RIDERSHIP_API_BASE_URL: "http://ml:5001"
+      # Optional AI keys for live AI
+      # GOOGLE_GEMINI_API_KEY: ""
+      # OPENAI_API_KEY: ""
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ml:
+        condition: service_started
+
+volumes:
+  pgdata:
+
+
+
