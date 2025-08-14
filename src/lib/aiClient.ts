@@ -8,33 +8,35 @@ export interface AIClient {
 
 class GeminiClient implements AIClient {
   async generateTextJSON(prompt: string, options: AIClientOptions = {}): Promise<string> {
-    const timeoutMs = options.timeoutMs ?? 10000
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY
     if (!apiKey) throw new Error('GEMINI_API_KEY not set')
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), timeoutMs)
-    try {
-      const enhancedPrompt = `${prompt}\n\nIMPORTANT: Return ONLY valid JSON. No markdown, code fences, or explanations.`
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: enhancedPrompt }] }] }),
-          signal: controller.signal,
-        }
-      )
-      if (!res.ok) {
-        throw new Error(`Gemini HTTP ${res.status}`)
-      }
-      const data = (await res.json()) as any
-      const text: string | undefined = data?.candidates?.[0]?.content?.parts?.[0]?.text
+    // Use official SDK for reliability (same as /api/test-gemini)
+    const { GoogleGenerativeAI } = await import('@google/generative-ai')
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        responseMimeType: 'application/json'
+      },
+    })
+    const enhancedPrompt = `${prompt}\n\nIMPORTANT: Return ONLY valid JSON. No markdown, code fences, or explanations.`
+    const timeoutMs = options.timeoutMs ?? 10000
+    const timeoutPromise = new Promise<string>((_, reject) => {
+      const t = setTimeout(() => {
+        clearTimeout(t)
+        reject(new Error('Gemini timeout'))
+      }, timeoutMs)
+    })
+    const genPromise = (async () => {
+      const response = await model.generateContent(enhancedPrompt)
+      const text = response.response.text()
       if (!text) throw new Error('Gemini empty response')
       return text
-    } finally {
-      clearTimeout(timeout)
-    }
+    })()
+    return Promise.race([genPromise, timeoutPromise]) as Promise<string>
   }
 }
 

@@ -6,8 +6,10 @@ import { RequestBody, TransitInsightResponse, ApiErrorResponse } from '@/types/i
 import { transitInsightsSchema } from '@/lib/schemas/transitInsights';
 import { runPreflight, TOMTOM_API_KEY, DEMO_MODE } from '@/lib/config'
 import { convertToUTC } from '@/lib/convertToUTC';
+import { busStopCoordinates } from '@/app/data/busStopCoordinates';
 
 export async function POST(req: NextRequest) {
+  let routeLabelForCatch: string | null = null
   try {
     // Preflight on first request (simple static flag)
     // Note: In serverless, consider a more robust cache
@@ -41,6 +43,24 @@ export async function POST(req: NextRequest) {
     const departureLongitude = departure.lng;
     const destinationLatitude = destination.lat;
     const destinationLongitude = destination.lng;
+
+    // Find nearest named stops (best-effort) to make messages feel specific
+    const nearestStopName = (lat: number, lng: number): string | null => {
+      let nearest: string | null = null
+      let minDist = Number.POSITIVE_INFINITY
+      for (const [name, coords] of Object.entries(busStopCoordinates)) {
+        const d = Math.hypot((coords.lat - lat), (coords.lng - lng))
+        if (d < minDist) { minDist = d; nearest = name }
+      }
+      // Rough threshold so we do not claim mismatched locations (~1km)
+      return minDist < 0.01 ? nearest : null
+    }
+    const fromName = nearestStopName(departureLatitude, departureLongitude)
+    const toName = nearestStopName(destinationLatitude, destinationLongitude)
+    const routeLabel = fromName && toName
+      ? `${fromName} → ${toName}`
+      : `${departureLatitude.toFixed(3)},${departureLongitude.toFixed(3)} → ${destinationLatitude.toFixed(3)},${destinationLongitude.toFixed(3)}`
+    routeLabelForCatch = routeLabel
 
     const bbox = `${Math.min(departureLatitude!, destinationLatitude)},${Math.min(
       departureLongitude,
@@ -78,6 +98,26 @@ export async function POST(req: NextRequest) {
     
     logger.info('hours_until_destination', { hours_until_destination });
 
+    // If demo mode is enabled, return a deterministic response immediately
+    if (DEMO_MODE) {
+      const demoResponse: TransitInsightResponse = {
+        travelTime: 28,
+        trafficDensity: 'Medium',
+        costSavingsPerTrip: '3.00',
+        nudgeMessage: 'Beat the traffic and save a few bucks—take the bus and arrive relaxed!',
+        incentiveDetails: {
+          type: 'eCredit',
+          description: 'Automatic $1.00 credit on your next ride',
+          value: '1.00',
+        },
+        additionalRides: [
+          { travelTime: 26, trafficDensity: 'Light' },
+          { travelTime: 32, trafficDensity: 'Medium' }
+        ],
+      }
+      return NextResponse.json<TransitInsightResponse>(demoResponse)
+    }
+
     let flowResponseCurrent: any = { data: { flowSegmentData: { currentSpeed: null } } }
     let flowResponseDestination: any = { data: { flowSegmentData: { currentSpeed: null } } }
     let incidentResponse: any = { data: { incidents: [] } }
@@ -85,54 +125,33 @@ export async function POST(req: NextRequest) {
     if (!TOMTOM_API_KEY) {
       logger.warn('tomtom_key_missing', { note: 'Proceeding with defaults', demoMode: DEMO_MODE })
     } else {
-      try {
-        flowResponseCurrent = await axios.get(
-          `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json`,
-          {
-            params: {
-              key: TOMTOM_API_KEY,
-              point: `${departureLatitude},${departureLongitude}`,
-            },
-            timeout: 8000,
+      const requests = [
+        axios.get(`https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json`, {
+          params: { key: TOMTOM_API_KEY, point: `${departureLatitude},${departureLongitude}` },
+          timeout: 5000,
+        }),
+        axios.get(`https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json`, {
+          params: { key: TOMTOM_API_KEY, point: `${destinationLatitude},${destinationLongitude}` },
+          timeout: 5000,
+        }),
+        axios.get(`https://api.tomtom.com/traffic/services/5/incidentDetails`, {
+          params: {
+            key: TOMTOM_API_KEY,
+            bbox: bbox,
+            fields: '{incidents{type,geometry{type,coordinates},properties{iconCategory}}}',
+            language: 'en-GB',
+            timeValidityFilter: 'present',
           },
-        );
-      } catch (e) {
-        logger.warn('tomtom_flow_current_failed', { error: e instanceof Error ? e.message : String(e) })
-      }
-
-      try {
-        flowResponseDestination = await axios.get(
-          `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json`,
-          {
-            params: {
-              key: TOMTOM_API_KEY,
-              point: `${destinationLatitude},${destinationLongitude}`,
-            },
-            timeout: 8000,
-          },
-        );
-      } catch (e) {
-        logger.warn('tomtom_flow_destination_failed', { error: e instanceof Error ? e.message : String(e) })
-      }
-
-      try {
-        incidentResponse = await axios.get(
-          `https://api.tomtom.com/traffic/services/5/incidentDetails`,
-          {
-            params: {
-              key: TOMTOM_API_KEY,
-              bbox: bbox,
-              fields:
-                '{incidents{type,geometry{type,coordinates},properties{iconCategory}}}',
-              language: 'en-GB',
-              timeValidityFilter: 'present',
-            },
-            timeout: 8000,
-          },
-        );
-      } catch (e) {
-        logger.warn('tomtom_incidents_failed', { error: e instanceof Error ? e.message : String(e) })
-      }
+          timeout: 5000,
+        }),
+      ]
+      const [flowCurRes, flowDestRes, incidentRes] = await Promise.allSettled(requests)
+      if (flowCurRes.status === 'fulfilled') flowResponseCurrent = flowCurRes.value
+      else logger.warn('tomtom_flow_current_failed', { error: (flowCurRes as any).reason?.message || String((flowCurRes as any).reason) })
+      if (flowDestRes.status === 'fulfilled') flowResponseDestination = flowDestRes.value
+      else logger.warn('tomtom_flow_destination_failed', { error: (flowDestRes as any).reason?.message || String((flowDestRes as any).reason) })
+      if (incidentRes.status === 'fulfilled') incidentResponse = incidentRes.value
+      else logger.warn('tomtom_incidents_failed', { error: (incidentRes as any).reason?.message || String((incidentRes as any).reason) })
     }
 
     // Improved ridership API call with better error handling
@@ -144,7 +163,7 @@ export async function POST(req: NextRequest) {
         logger.apiEvent('ridership_api_call', { url: ridershipApiUrl });
         
         const ridershipResponse = await axios.get(ridershipApiUrl, {
-          timeout: 10000, // 10 second timeout
+          timeout: 3000,
           headers: {
             'Accept': 'application/json'
           }
@@ -185,12 +204,12 @@ export async function POST(req: NextRequest) {
       ridershipPromptSegment = ` The predicted bus passenger count around the destination time is approximately ${Math.round(predictedHourlyRidership)} people.`;
     }
 
-    // Enhanced OpenAI prompt for nudge messages and diverse incentives
-    const prompt = `You are a transit optimization assistant. Based on the provided data, generate compelling transit insights.
+    // Enhanced prompt: require specificity and persuasive framing
+    const prompt = `You are a transit optimization assistant. Based on the provided data, generate compelling, specific transit insights for this exact trip.
 
 CONTEXT:
 - Traffic data: ${JSON.stringify(trafficData)}
-- Route: ${JSON.stringify(departure)} → ${JSON.stringify(destination)}
+- Route: ${routeLabel}
 - Departure time: ${timeToDestination}${ridershipPromptSegment}
 
 TASK: Create a JSON response that encourages bus ridership with these exact fields:
@@ -199,7 +218,7 @@ TASK: Create a JSON response that encourages bus ridership with these exact fiel
   "travelTime": (integer, estimated bus travel time in minutes, consider traffic conditions),
   "trafficDensity": (string, exactly one of: "Light", "Medium", "Heavy"),
   "costSavingsPerTrip": (string, estimated USD savings vs driving, like "2.50" or "3.00"),
-  "nudgeMessage": (string, compelling 1-2 sentence message highlighting specific benefits. Examples: "Skip the traffic jam! Take the bus and arrive relaxed while others sit in traffic." or "Save 15 minutes and $4 in parking - let someone else do the driving!"),
+  "nudgeMessage": (string, 1-2 sentences. Be SPECIFIC: reference the route label "${routeLabel}", the trafficDensity you selected, the approximate travelTime and costSavingsPerTrip. Use behavioral psychology: loss aversion ("don’t lose $X or Y minutes in traffic"), scarcity/urgency ("leave by HH:MM" if helpful), and social proof ("many riders choose this corridor"). If ridership is low, reference comfort ("less crowded"); if heavy, emphasize reliability/savings.),
   "incentiveDetails": {
     "type": (string, exactly one of: "eCredit", "partnerDiscount", "funReward"),
     "description": (string, specific reward description),
@@ -225,24 +244,22 @@ Respond ONLY with valid JSON - no additional text or formatting.`;
 
     let result: string
     try {
-      result = await aiClient.generateTextJSON(prompt, { timeoutMs: 10000 });
+      result = await aiClient.generateTextJSON(prompt, { timeoutMs: 6000 });
     } catch (aiError) {
       logger.error('ai_call_failed', { error: aiError instanceof Error ? aiError.message : String(aiError) })
       const fallbackResponse: TransitInsightResponse = {
-        travelTime: 30,
-        trafficDensity: "Medium",
-        costSavingsPerTrip: "2.50",
-        nudgeMessage: "Take the bus to save money and reduce traffic congestion.",
+        travelTime: 28,
+        trafficDensity: flowResponseCurrent?.data?.flowSegmentData?.currentSpeed ? 'Medium' : 'Light',
+        costSavingsPerTrip: '3.00',
+        nudgeMessage: `Skip delays on ${routeLabel}: bus is ~28 mins and saves about $3 today. Arrive relaxed and avoid parking hassle.`,
         incentiveDetails: {
-          type: "eCredit",
-          description: "Credit for your next ride",
-          value: "1.00"
+          type: 'eCredit',
+          description: 'Automatic $1.00 credit on your next ride',
+          value: '1.00'
         },
         additionalRides: [
-          {
-            travelTime: 35,
-            trafficDensity: "Medium"
-          }
+          { travelTime: 26, trafficDensity: 'Light' },
+          { travelTime: 32, trafficDensity: 'Medium' }
         ]
       };
       return NextResponse.json<TransitInsightResponse>(fallbackResponse);
@@ -277,6 +294,26 @@ Respond ONLY with valid JSON - no additional text or formatting.`;
         }
       }
       
+      // Compose behavior-based persuasive message (overrides generic LLM copy)
+      try {
+        const tt = responseObject.travelTime ?? 28
+        const cs = responseObject.costSavingsPerTrip ?? '3.00'
+        const td = (responseObject.trafficDensity ?? 'Medium') as 'Light'|'Medium'|'Heavy'
+        const savingsNum = parseFloat(cs)
+        const savingsText = isNaN(savingsNum) ? 'avoid parking costs' : `save ~$${savingsNum.toFixed(0)}`
+        const lead = `${routeLabel || 'This route'}: `
+        let msg: string
+        if (td === 'Heavy') {
+          msg = `${lead}traffic Heavy. Bus is ~${tt} mins — don’t lose time in jams; ${savingsText}. Leave now to arrive relaxed.`
+        } else if (td === 'Light') {
+          const crowd = (typeof predictedHourlyRidership === 'number' && predictedHourlyRidership < 20) ? ' (more seats likely)' : ''
+          msg = `${lead}traffic Light${crowd}. Bus is ~${tt} mins; ${savingsText}. Ride now for a calmer trip.`
+        } else {
+          const proof = (typeof predictedHourlyRidership === 'number' && predictedHourlyRidership >= 40) ? ' Popular corridor — skip parking hassle.' : ''
+          msg = `${lead}bus is ~${tt} mins; traffic ${td}. ${savingsText}.${proof ? ' ' + proof : ''}`
+        }
+        responseObject.nudgeMessage = msg
+      } catch { /* ignore post-process errors */ }
       return NextResponse.json<TransitInsightResponse>(responseObject);
     } catch (parseError) {
       logger.error('ai_response_parse_error', { error: parseError instanceof Error ? parseError.message : String(parseError) });
@@ -299,6 +336,24 @@ Respond ONLY with valid JSON - no additional text or formatting.`;
               logger.warn('ai_response_extracted_missing_fields', { missingFields });
             }
             
+            // Compose behavior-based persuasive message on extracted JSON
+            const tt = (parsedJson as any).travelTime ?? 28
+            const cs = (parsedJson as any).costSavingsPerTrip ?? '3.00'
+            const td = ((parsedJson as any).trafficDensity ?? 'Medium') as 'Light'|'Medium'|'Heavy'
+            const savingsNum = parseFloat(cs)
+            const savingsText = isNaN(savingsNum) ? 'avoid parking costs' : `save ~$${savingsNum.toFixed(0)}`
+            const lead = `${routeLabel || 'This route'}: `
+            let msg: string
+            if (td === 'Heavy') {
+              msg = `${lead}traffic Heavy. Bus is ~${tt} mins — don’t lose time in jams; ${savingsText}. Leave now to arrive relaxed.`
+            } else if (td === 'Light') {
+              const crowd = (typeof predictedHourlyRidership === 'number' && predictedHourlyRidership < 20) ? ' (more seats likely)' : ''
+              msg = `${lead}traffic Light${crowd}. Bus is ~${tt} mins; ${savingsText}. Ride now for a calmer trip.`
+            } else {
+              const proof = (typeof predictedHourlyRidership === 'number' && predictedHourlyRidership >= 40) ? ' Popular corridor — skip parking hassle.' : ''
+              msg = `${lead}bus is ~${tt} mins; traffic ${td}. ${savingsText}.${proof ? ' ' + proof : ''}`
+            }
+            (parsedJson as any).nudgeMessage = msg
             return NextResponse.json<TransitInsightResponse>(parsedJson);
           }
         } catch (extractError) {
@@ -309,22 +364,20 @@ Respond ONLY with valid JSON - no additional text or formatting.`;
       // If we can't parse the JSON, try to create a minimal valid response
       try {
         logger.info('ai_response_creating_fallback');
-        // Create a minimal valid response with default values
+        // Create a specific deterministic response
         const fallbackResponse: TransitInsightResponse = {
-          travelTime: 30, // Default travel time in minutes
-          trafficDensity: "Medium",
-          costSavingsPerTrip: "2.50",
-          nudgeMessage: "Take the bus to save money and reduce traffic congestion.",
+          travelTime: 28,
+          trafficDensity: flowResponseCurrent?.data?.flowSegmentData?.currentSpeed ? 'Medium' : 'Light',
+          costSavingsPerTrip: '3.00',
+          nudgeMessage: `${routeLabel}: bus is ~28 mins; traffic ${flowResponseCurrent?.data?.flowSegmentData?.currentSpeed ? 'building' : 'light'}. Save ~$3 and skip parking stress—leave now to arrive relaxed.`,
           incentiveDetails: {
-            type: "eCredit",
-            description: "Credit for your next ride",
-            value: "1.00"
+            type: 'eCredit',
+            description: 'Automatic $1.00 credit on your next ride',
+            value: '1.00'
           },
           additionalRides: [
-            {
-              travelTime: 35,
-              trafficDensity: "Medium"
-            }
+            { travelTime: 26, trafficDensity: 'Light' },
+            { travelTime: 32, trafficDensity: 'Medium' }
           ]
         };
         
@@ -339,21 +392,20 @@ Respond ONLY with valid JSON - no additional text or formatting.`;
     }
   } catch (error) {
     logger.error('transit_insights_api_error', { error: error instanceof Error ? error.message : String(error) });
+    // Specific deterministic fallback even if an unexpected error occurred
     const fallbackResponse: TransitInsightResponse = {
-      travelTime: 30,
-      trafficDensity: "Medium",
-      costSavingsPerTrip: "2.50",
-      nudgeMessage: "Take the bus to save money and reduce traffic congestion.",
+      travelTime: 28,
+      trafficDensity: 'Medium',
+      costSavingsPerTrip: '3.00',
+      nudgeMessage: `${routeLabelForCatch || 'This route'}: bus is ~28 mins; traffic Medium. Save ~$3 and skip parking stress—leave now to arrive relaxed.`,
       incentiveDetails: {
-        type: "eCredit",
-        description: "Credit for your next ride",
-        value: "1.00"
+        type: 'eCredit',
+        description: 'Automatic $1.00 credit on your next ride',
+        value: '1.00'
       },
       additionalRides: [
-        {
-          travelTime: 35,
-          trafficDensity: "Medium"
-        }
+        { travelTime: 26, trafficDensity: 'Light' },
+        { travelTime: 32, trafficDensity: 'Medium' }
       ]
     };
     return NextResponse.json<TransitInsightResponse>(fallbackResponse);

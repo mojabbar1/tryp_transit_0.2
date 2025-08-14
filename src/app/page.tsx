@@ -99,6 +99,9 @@ export default function TransitInsightsPage() {
 
       const result: TransitInsightResponse = await response.json();
       setData(result);
+      // Ensure loading stops on successful first attempt
+      setIsLoading(false);
+      setLoadingProgress(100);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
 

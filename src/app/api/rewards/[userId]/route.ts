@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RewardManager } from '@/lib/services/rewardManager';
 import { logger } from '@/lib/logger';
+import { DEMO_MODE } from '@/lib/config'
 
 export async function GET(
   request: NextRequest,
@@ -22,11 +23,28 @@ export async function GET(
 
     logger.apiEvent('rewards_status_started', { userId });
 
+    // If in demo mode and database may be unavailable, return deterministic demo data
+    if (DEMO_MODE) {
+      logger.apiEvent('rewards_status_demo_mode', { userId })
+      const demoProgress: any[] = []
+      return NextResponse.json({
+        success: true,
+        progress: demoProgress,
+        summary: {
+          totalRewards: demoProgress.length,
+          earnedRewards: 0,
+          activeRewards: demoProgress.length,
+          beerProgress: null
+        },
+        responseTime: Date.now() - startTime
+      })
+    }
+
     const rewardManager = new RewardManager();
-    
+
     // Initialize user rewards if they don't exist
     await rewardManager.initializeUserRewards(userId);
-    
+
     // Get user progress
     const progress = await rewardManager.getUserProgress(userId);
 
@@ -103,12 +121,23 @@ export async function GET(
     });
     
     logger.error('rewards_status_error', { error: error instanceof Error ? error.message : String(error) });
-    return NextResponse.json(
-      { 
-        error: 'Failed to fetch rewards status',
-        fallbackMessage: 'Unable to load rewards. Please try again.'
-      },
-      { status: 500 }
-    );
+    if (DEMO_MODE) {
+      // In demo mode, never fail hard — return an empty but valid structure
+      return NextResponse.json({
+        success: true,
+        progress: [],
+        summary: {
+          totalRewards: 0,
+          earnedRewards: 0,
+          activeRewards: 0,
+          beerProgress: null
+        },
+        responseTime
+      })
+    }
+    return NextResponse.json({ 
+      error: 'Failed to fetch rewards status',
+      fallbackMessage: 'Unable to load rewards. Please try again.'
+    }, { status: 500 });
   }
 }
