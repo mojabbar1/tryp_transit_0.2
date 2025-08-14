@@ -157,7 +157,7 @@ export default function TripCompletionButton({
       {/* Last completion indicator */}
       {lastCompleted && (
         <div className="text-center text-sm text-gray-600">
-          <p>Trip completed at {lastCompleted.toLocaleTimeString()}</p>
+          <p>Trip completed at {new Date(lastCompleted).toISOString().slice(11,16)} UTC</p>
           <p className="text-xs text-gray-500 mt-1">
             Rewards updated • Check your progress above
           </p>
@@ -169,7 +169,7 @@ export default function TripCompletionButton({
         <div className="bg-gradient-to-r from-amber-100 to-orange-100 border border-amber-300 rounded-lg p-3">
           <div className="text-center">
             <p className="text-amber-800 font-medium text-sm">
-              🍺 You're about to earn your FREE BEER!
+              🍺 You&apos;re about to earn your FREE BEER!
             </p>
             <p className="text-amber-700 text-xs mt-1">
               Complete this trip and celebrate your week of smart commuting

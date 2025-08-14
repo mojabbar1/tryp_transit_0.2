@@ -1,22 +1,31 @@
 import axios from 'axios';
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { logger } from '@/lib/logger'
+import { aiClient } from '@/lib/aiClient';
 import { RequestBody, TransitInsightResponse, ApiErrorResponse } from '@/types/interfaces';
+import { transitInsightsSchema } from '@/lib/schemas/transitInsights';
+import { runPreflight, TOMTOM_API_KEY, DEMO_MODE } from '@/lib/config'
 import { convertToUTC } from '@/lib/convertToUTC';
-
-const useGemini = process.env.USE_GEMINI === 'true';
-
-const openai = useGemini ? null : new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const genAI = useGemini ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY!) : null;
-
-const TOMTOM_API_KEY = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
 
 export async function POST(req: NextRequest) {
   try {
+    // Preflight on first request (simple static flag)
+    // Note: In serverless, consider a more robust cache
+    ;(global as any).__preflightRun = (global as any).__preflightRun || false
+    if (!(global as any).__preflightRun) {
+      const pre = runPreflight()
+      if (!pre.success) {
+        if (process.env.NODE_ENV !== 'production') {
+          logger.warn('preflight_failed_nonprod_continue', { message: pre.message })
+        } else {
+          logger.error('preflight_failed', { message: pre.message })
+          return NextResponse.json({ error: 'System configuration error' }, { status: 500 })
+        }
+      } else {
+        logger.info('preflight_passed', { message: pre.message })
+      }
+      ;(global as any).__preflightRun = true
+    }
     const body: RequestBody = await req.json();
     const { departure, destination, timeToDestination } = body;
 
@@ -64,44 +73,67 @@ export async function POST(req: NextRequest) {
     
     // Add validation and warning
     if (hours_until_destination > 48) {
-      console.warn(`Long prediction horizon: ${hours_until_destination} hours. Accuracy may be reduced.`);
+      logger.warn('long_prediction_horizon', { hours_until_destination });
     }
     
-    console.log(`Hours until destination: ${hours_until_destination}`);
+    logger.info('hours_until_destination', { hours_until_destination });
 
-    const flowResponseCurrent = await axios.get(
-      `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json`,
-      {
-        params: {
-          key: TOMTOM_API_KEY,
-          point: `${departureLatitude},${departureLongitude}`,
-        },
-      },
-    );
+    let flowResponseCurrent: any = { data: { flowSegmentData: { currentSpeed: null } } }
+    let flowResponseDestination: any = { data: { flowSegmentData: { currentSpeed: null } } }
+    let incidentResponse: any = { data: { incidents: [] } }
 
-    const flowResponseDestination = await axios.get(
-      `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json`,
-      {
-        params: {
-          key: TOMTOM_API_KEY,
-          point: `${destinationLatitude},${destinationLongitude}`,
-        },
-      },
-    );
+    if (!TOMTOM_API_KEY) {
+      logger.warn('tomtom_key_missing', { note: 'Proceeding with defaults', demoMode: DEMO_MODE })
+    } else {
+      try {
+        flowResponseCurrent = await axios.get(
+          `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json`,
+          {
+            params: {
+              key: TOMTOM_API_KEY,
+              point: `${departureLatitude},${departureLongitude}`,
+            },
+            timeout: 8000,
+          },
+        );
+      } catch (e) {
+        logger.warn('tomtom_flow_current_failed', { error: e instanceof Error ? e.message : String(e) })
+      }
 
-    const incidentResponse = await axios.get(
-      `https://api.tomtom.com/traffic/services/5/incidentDetails`,
-      {
-        params: {
-          key: TOMTOM_API_KEY,
-          bbox: bbox,
-          fields:
-            '{incidents{type,geometry{type,coordinates},properties{iconCategory}}}',
-          language: 'en-GB',
-          timeValidityFilter: 'present',
-        },
-      },
-    );
+      try {
+        flowResponseDestination = await axios.get(
+          `https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json`,
+          {
+            params: {
+              key: TOMTOM_API_KEY,
+              point: `${destinationLatitude},${destinationLongitude}`,
+            },
+            timeout: 8000,
+          },
+        );
+      } catch (e) {
+        logger.warn('tomtom_flow_destination_failed', { error: e instanceof Error ? e.message : String(e) })
+      }
+
+      try {
+        incidentResponse = await axios.get(
+          `https://api.tomtom.com/traffic/services/5/incidentDetails`,
+          {
+            params: {
+              key: TOMTOM_API_KEY,
+              bbox: bbox,
+              fields:
+                '{incidents{type,geometry{type,coordinates},properties{iconCategory}}}',
+              language: 'en-GB',
+              timeValidityFilter: 'present',
+            },
+            timeout: 8000,
+          },
+        );
+      } catch (e) {
+        logger.warn('tomtom_incidents_failed', { error: e instanceof Error ? e.message : String(e) })
+      }
+    }
 
     // Improved ridership API call with better error handling
     let predictedHourlyRidership: number | null = null;
@@ -109,7 +141,7 @@ export async function POST(req: NextRequest) {
     if (hours_until_destination > 0) {
       try {
         const ridershipApiUrl = `${process.env.RIDERSHIP_API_BASE_URL || 'http://localhost:5001'}/predict/hourly/${hours_until_destination}`;
-        console.log(`Calling ridership API: ${ridershipApiUrl}`);
+        logger.apiEvent('ridership_api_call', { url: ridershipApiUrl });
         
         const ridershipResponse = await axios.get(ridershipApiUrl, {
           timeout: 10000, // 10 second timeout
@@ -127,17 +159,13 @@ export async function POST(req: NextRequest) {
           predictedHourlyRidership = ridershipResponse.data[0];
         }
         
-        console.log(`Ridership prediction: ${predictedHourlyRidership}`);
+        logger.apiEvent('ridership_prediction', { predictedHourlyRidership });
       } catch (error) {
-        console.error('Ridership API call failed:', {
-          error: error instanceof Error ? error.message : String(error),
-          url: `${process.env.RIDERSHIP_API_BASE_URL || 'http://localhost:5001'}/predict/hourly/${hours_until_destination}`,
-          hours: hours_until_destination
-        });
+        logger.error('ridership_api_failed', { error: error instanceof Error ? error.message : String(error), url: `${process.env.RIDERSHIP_API_BASE_URL || 'http://localhost:5001'}/predict/hourly/${hours_until_destination}`, hours: hours_until_destination });
         predictedHourlyRidership = null;
       }
     } else {
-      console.log('Skipping ridership prediction for immediate departure');
+      logger.info('ridership_skip_immediate_departure');
     }
 
     const trafficData: any = {
@@ -195,61 +223,49 @@ Make the nudgeMessage specific to the time, route, and traffic conditions. Focus
 
 Respond ONLY with valid JSON - no additional text or formatting.`;
 
-    let result = '';
-    
-    console.log('Using Gemini:', useGemini);
-    console.log('Gemini API Key exists:', !!process.env.GEMINI_API_KEY);
-    
-    if (useGemini) {
-      try {
-        console.log('Initializing Gemini model...');
-        const model = genAI!.getGenerativeModel({ 
-          model: 'gemini-1.5-flash',
-          generationConfig: {
-            temperature: 0.2,
-            topP: 0.8,
-            topK: 40,
-            maxOutputTokens: 2048,
+    let result: string
+    try {
+      result = await aiClient.generateTextJSON(prompt, { timeoutMs: 10000 });
+    } catch (aiError) {
+      logger.error('ai_call_failed', { error: aiError instanceof Error ? aiError.message : String(aiError) })
+      const fallbackResponse: TransitInsightResponse = {
+        travelTime: 30,
+        trafficDensity: "Medium",
+        costSavingsPerTrip: "2.50",
+        nudgeMessage: "Take the bus to save money and reduce traffic congestion.",
+        incentiveDetails: {
+          type: "eCredit",
+          description: "Credit for your next ride",
+          value: "1.00"
+        },
+        additionalRides: [
+          {
+            travelTime: 35,
+            trafficDensity: "Medium"
           }
-        });
-        
-        console.log('Calling Gemini API...');
-        // Add explicit instructions to return only JSON
-        const enhancedPrompt = `${prompt}\n\nIMPORTANT: Return ONLY valid JSON without any markdown formatting, explanations, or code blocks. The response should be parseable directly with JSON.parse().`;
-        
-        const response = await model.generateContent(enhancedPrompt);
-        console.log('Gemini API response received');
-        result = response.response.text();
-        console.log('Raw Gemini response:', result);
-      } catch (error) {
-        console.error('Gemini API error:', error);
-        throw error;
-      }
-    } else {
-      console.log('Using OpenAI...');
-      const stream = await openai!.chat.completions.create({
-        model: 'gpt-3.5-turbo',
-        messages: [{ role: 'user', content: prompt }],
-        stream: true,
-      });
-
-      for await (const chunk of stream) {
-        result += chunk.choices[0]?.delta?.content || '';
-      }
+        ]
+      };
+      return NextResponse.json<TransitInsightResponse>(fallbackResponse);
     }
 
     // Enhanced response parsing and validation
     try {
-      console.log('Attempting to parse JSON response:', result);
+      logger.apiEvent('ai_response_received');
       const responseObject = JSON.parse(result) as TransitInsightResponse;
-      console.log('Successfully parsed JSON response');
+      try {
+        // Best-effort validation if provider returns extended fields
+        transitInsightsSchema.parse(responseObject)
+      } catch (e) {
+        logger.warn('ai_response_schema_mismatch', { error: (e as Error).message })
+      }
+      logger.apiEvent('ai_response_parsed');
       
       // Validate required fields
       const requiredFields = ['travelTime', 'trafficDensity', 'costSavingsPerTrip', 'nudgeMessage', 'incentiveDetails'];
       const missingFields = requiredFields.filter(field => !(field in responseObject));
       
       if (missingFields.length > 0) {
-        console.warn(`AI response missing fields: ${missingFields.join(', ')}`);
+        logger.warn('ai_response_missing_fields', { missingFields });
       }
       
       // Validate incentive structure
@@ -257,23 +273,22 @@ Respond ONLY with valid JSON - no additional text or formatting.`;
         const incentiveFields = ['type', 'description', 'value'];
         const missingIncentiveFields = incentiveFields.filter(field => !(field in responseObject.incentiveDetails!));
         if (missingIncentiveFields.length > 0) {
-          console.warn(`Incentive details missing fields: ${missingIncentiveFields.join(', ')}`);
+          logger.warn('ai_response_incentive_missing_fields', { missingIncentiveFields });
         }
       }
       
       return NextResponse.json<TransitInsightResponse>(responseObject);
     } catch (parseError) {
-      console.error('Failed to parse AI response as JSON:', parseError);
-      console.error('Raw AI response:', result);
+      logger.error('ai_response_parse_error', { error: parseError instanceof Error ? parseError.message : String(parseError) });
       
       // Attempt to extract JSON from the response if it contains markdown code blocks
       if (result.includes('```json') && result.includes('```')) {
         try {
-          console.log('Attempting to extract JSON from markdown code block');
+          logger.info('ai_response_extracting_markdown_json');
           const jsonMatch = result.match(/```json\s*([\s\S]*?)\s*```/);
           if (jsonMatch && jsonMatch[1]) {
             const extractedJson = jsonMatch[1].trim();
-            console.log('Extracted JSON from markdown:', extractedJson);
+            logger.info('ai_response_markdown_json_extracted');
             const parsedJson = JSON.parse(extractedJson) as TransitInsightResponse;
             
             // Validate required fields in extracted JSON
@@ -281,19 +296,19 @@ Respond ONLY with valid JSON - no additional text or formatting.`;
             const missingFields = requiredFields.filter(field => !(field in parsedJson));
             
             if (missingFields.length > 0) {
-              console.warn(`Extracted JSON missing fields: ${missingFields.join(', ')}`);
+              logger.warn('ai_response_extracted_missing_fields', { missingFields });
             }
             
             return NextResponse.json<TransitInsightResponse>(parsedJson);
           }
         } catch (extractError) {
-          console.error('Failed to extract JSON from markdown:', extractError);
+          logger.error('ai_response_extract_markdown_failed', { error: extractError instanceof Error ? extractError.message : String(extractError) });
         }
       }
       
       // If we can't parse the JSON, try to create a minimal valid response
       try {
-        console.log('Attempting to create a fallback response');
+        logger.info('ai_response_creating_fallback');
         // Create a minimal valid response with default values
         const fallbackResponse: TransitInsightResponse = {
           travelTime: 30, // Default travel time in minutes
@@ -315,7 +330,7 @@ Respond ONLY with valid JSON - no additional text or formatting.`;
         
         return NextResponse.json<TransitInsightResponse>(fallbackResponse);
       } catch (fallbackError) {
-        console.error('Failed to create fallback response:', fallbackError);
+        logger.error('ai_response_fallback_failed', { error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError) });
         return NextResponse.json<ApiErrorResponse>(
           { error: 'Invalid response format from AI service', details: result.substring(0, 500) }, 
           { status: 500 }
@@ -323,10 +338,24 @@ Respond ONLY with valid JSON - no additional text or formatting.`;
       }
     }
   } catch (error) {
-    console.error('Transit insights API error:', error);
-    return NextResponse.json<ApiErrorResponse>(
-      { error: 'Internal Server Error.', details: error instanceof Error ? error.message : String(error) },
-      { status: 500 },
-    );
+    logger.error('transit_insights_api_error', { error: error instanceof Error ? error.message : String(error) });
+    const fallbackResponse: TransitInsightResponse = {
+      travelTime: 30,
+      trafficDensity: "Medium",
+      costSavingsPerTrip: "2.50",
+      nudgeMessage: "Take the bus to save money and reduce traffic congestion.",
+      incentiveDetails: {
+        type: "eCredit",
+        description: "Credit for your next ride",
+        value: "1.00"
+      },
+      additionalRides: [
+        {
+          travelTime: 35,
+          trafficDensity: "Medium"
+        }
+      ]
+    };
+    return NextResponse.json<TransitInsightResponse>(fallbackResponse);
   }
 }

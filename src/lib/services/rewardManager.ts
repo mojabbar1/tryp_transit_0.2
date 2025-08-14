@@ -1,7 +1,5 @@
-import { PrismaClient } from '@prisma/client';
 import { logger } from '../logger';
-
-const prisma = new PrismaClient();
+import { prisma } from '../prisma';
 
 interface TripCompletionResult {
   updatedProgress: any[];

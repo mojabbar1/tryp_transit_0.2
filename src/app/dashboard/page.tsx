@@ -54,7 +54,7 @@ export default function InvestorDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-green-700">
-                  {metrics.activeUsers.toLocaleString()}
+                  {metrics.activeUsers.toLocaleString('en-US')}
                 </div>
                 <p className="text-green-600 text-sm mt-1">+34% this month</p>
               </CardContent>
@@ -66,7 +66,7 @@ export default function InvestorDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-blue-700">
-                  {metrics.timeSavedHours.toLocaleString()}
+                  {metrics.timeSavedHours.toLocaleString('en-US')}
                 </div>
                 <p className="text-blue-600 text-sm mt-1">This month</p>
               </CardContent>
@@ -138,7 +138,7 @@ export default function InvestorDashboard() {
               </CardHeader>
               <CardContent>
                 <div className="text-3xl font-bold text-orange-700">
-                  {metrics.apiCalls.toLocaleString()}
+                  {metrics.apiCalls.toLocaleString('en-US')}
                 </div>
                 <p className="text-orange-600 text-sm mt-1">99.9% uptime</p>
               </CardContent>

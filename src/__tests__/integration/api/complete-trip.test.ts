@@ -17,7 +17,8 @@ jest.mock('@/lib/services/rewardManager', () => ({
 jest.mock('@/lib/logger', () => ({
   logger: {
     apiEvent: jest.fn(),
-    beerRewardEvent: jest.fn()
+    beerRewardEvent: jest.fn(),
+    error: jest.fn()
   }
 }))
 

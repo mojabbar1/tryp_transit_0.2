@@ -154,7 +154,8 @@ export interface UserRewardProgress {
 export interface NudgeContext {
   userId: string;
   userName: string;
-  currentProgress: UserRewardProgress[];
+  // Progress items may include populated reward relation for richer context
+  currentProgress: Array<UserRewardProgress & { reward?: Reward }>;
   nearbyPartners: Partner[];
   timeOfDay: string;
 }

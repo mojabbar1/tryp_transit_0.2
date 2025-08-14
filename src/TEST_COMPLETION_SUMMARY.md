@@ -63,3 +63,12 @@ The FREE BEER Transit Incentives MVP has a solid testing foundation with:
 - Component behavior testing
 
 The minor E2E issues don't impact the core functionality and can be addressed in future iterations.
+
+---
+
+Updated: 2025-08-13 16:49:56 UTC
+
+- Ran baseline tests: 8 passed, 1 failed (E2E), 9 total; 51 passed, 2 failed, 53 total
+- Baseline build: failed during lint/type check due to react/no-unescaped-entities and one react-hooks warning
+  - Files with lint errors: `app/rewards/page.tsx`, `components/rewards/TripCompletionButton.tsx`, `components/rewards/UserSelector.tsx`, and duplicate paths under `src/components/...`
+  - Action needed: escape unescaped quotes or adjust ESLint config/disable rules where appropriate; investigate duplicate `src/src` inclusion causing double lint paths

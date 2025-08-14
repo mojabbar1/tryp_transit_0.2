@@ -66,6 +66,16 @@ class Logger {
     });
   }
 
+  error(event: string, data?: any) {
+    this.log({
+      timestamp: new Date(),
+      level: 'error',
+      category: 'system',
+      event,
+      data,
+    });
+  }
+
   nudgeEvent(event: 'generated' | 'fallback_used' | 'ai_failed' | 'cache_hit' | 'cache_cleared', userId: string, data?: any) {
     this.log({
       timestamp: new Date(),

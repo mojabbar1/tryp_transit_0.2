@@ -9,15 +9,27 @@
  * - Carol with earned rewards ready for redemption
  */
 
-import { PrismaClient } from '@prisma/client';
 import { logger } from '../lib/logger';
-
-const prisma = new PrismaClient();
+import { validateSecurity, runPreflight } from '../lib/config';
+import { prisma } from '../lib/prisma';
 
 async function setupDemo() {
   console.log('🍺 Setting up FREE BEER demo environment...');
   
   try {
+    console.log('🔒 Validating security...')
+    const security = validateSecurity()
+    if (!security.secure) {
+      console.error('❌ Security violations found:')
+      security.violations.forEach(v => console.error(`   - ${v}`))
+      process.exit(1)
+    }
+    if (security.recommendations.length > 0) {
+      console.warn('⚠️  Security recommendations:')
+      security.recommendations.forEach(r => console.warn(`   - ${r}`))
+    }
+    console.log('✅ Security validation passed\n')
+
     // Clear existing demo data
     console.log('🧹 Clearing existing demo data...');
     await prisma.userRewardProgress.deleteMany({
@@ -99,6 +111,14 @@ async function setupDemo() {
         console.log(`👤 ${user.name}: Beer progress ${status}`);
       }
     });
+
+    // Run preflight so first API call is fast
+    const preflight = runPreflight()
+    if (!preflight.success) {
+      console.error('❌ Preflight failed:', preflight.message)
+      process.exit(1)
+    }
+    console.log('✅ Preflight checks passed')
 
     console.log('🎯 Demo environment ready for investor presentation!');
     console.log('📍 Navigate to /rewards to see the beer rewards system');

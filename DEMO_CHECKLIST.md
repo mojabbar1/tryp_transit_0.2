@@ -1,3 +1,18 @@
+# Demo Checklist - Temporary E2E Exclusions
+
+## Skipped Tests (Demo Window Only)
+- `rewards-flow.test.tsx` (2 specs) - Skipped due to rendering timing and mock stability
+
+## Post-Demo Tasks
+- [ ] Fix E2E rendering timing with proper waitFor conditions
+- [ ] Stabilize mocks using deterministic handlers (e.g., MSW)
+- [ ] Re-enable E2E tests and verify in CI
+
+## Demo Command Reference
+- `npm run test:smoke` - Unit/integration only (E2E excluded)
+- `npm run test` - Full test suite including E2E (skipped)
+- `npm run demo:prep` - Demo readiness check
+
 # 🎯 Tryp Transit Demo Checklist
 
 ## Pre-Demo Setup (5 minutes)

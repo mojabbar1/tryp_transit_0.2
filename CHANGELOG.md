@@ -1,3 +1,15 @@
+## 2025-08-13
+
+- Phase 1: Excluded duplicate `src/src/**` from build/test scope; tsconfig/jest aligned
+- Phase 2: Added Prisma singleton at `src/lib/prisma.ts`; updated services/scripts to use it
+- Phase 3: Implemented `src/lib/aiClient.ts`; refactored `transit-insights` and `nudgeGenerator` to use it
+- Phase 4: Added Zod schemas for transit insights and nudges; integrated validation + fallback
+- Phase 5: Centralized config in `src/lib/config.ts`; `/api/test-env` returns summary + validation
+- Phase 6: Verified ML `/health` endpoint; startup script launches both services
+- Phase 7: Pending
+- Phase 8: Centralized logging in key API routes; remaining scripts/tests left as-is
+- Phase 9: Added `demo:prep` and `test:smoke`; smoke tests pass (unit/integration only)
+
 # Changelog - FREE BEER Transit Incentives MVP
 
 All notable changes to the FREE BEER Transit Incentives system are documented in this file.

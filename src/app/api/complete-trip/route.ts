@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       responseTime
     });
     
-    console.error('Trip completion error:', error);
+    logger.error('trip_completion_error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { 
         error: 'Failed to record trip completion',

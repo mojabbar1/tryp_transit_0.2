@@ -1,6 +1,7 @@
 import { GeneratedNudge, NudgeContext, UrgencyLevel, RewardType } from '@/types/interfaces';
 import { getBeerNudgeContext, getBeerContextMessage } from './timeContext';
 import { logger } from '../logger';
+import { aiClient } from '../aiClient';
 
 interface CachedNudge {
   message: string;
@@ -81,51 +82,9 @@ export class NudgeGenerator {
   }
 
   private async generateWithAI(context: NudgeContext): Promise<GeneratedNudge | null> {
-    // Check if Gemini API key is available
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error('Gemini API key not configured');
-    }
-
-    const prompt = this.buildEnhancedPrompt(context);
-    
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.API_TIMEOUT);
-    
-    try {
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            contents: [{
-              parts: [{ text: prompt }]
-            }]
-          }),
-          signal: controller.signal,
-        }
-      );
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`Gemini API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      
-      if (!generatedText) {
-        throw new Error('No text generated from Gemini API');
-      }
-
-      return this.parseAIResponse(generatedText, context);
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
-    }
+    const prompt = this.buildEnhancedPrompt(context)
+    const raw = await aiClient.generateTextJSON(prompt, { timeoutMs: this.API_TIMEOUT })
+    return this.parseAIResponse(raw, context)
   }
 
   private buildEnhancedPrompt(context: NudgeContext): string {

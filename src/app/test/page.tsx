@@ -11,7 +11,7 @@ export default function TestPage() {
     try {
       const response = await fetch(endpoint);
       const data = await response.json();
-      setResults(prev => ({
+      setResults((prev: Record<string, any>) => ({
         ...prev,
         [testName]: {
           status: response.status,
@@ -19,7 +19,7 @@ export default function TestPage() {
         }
       }));
     } catch (error) {
-      setResults(prev => ({
+      setResults((prev: Record<string, any>) => ({
         ...prev,
         [testName]: {
           status: 'ERROR',

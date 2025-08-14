@@ -33,9 +33,10 @@ export function getBeerNudgeContext(currentTime: Date = new Date()): BeerNudgeCo
     isOptimalBeerTime = true;
   }
   
+  const hhmm = `${currentTime.getHours().toString().padStart(2,'0')}:${currentTime.getMinutes().toString().padStart(2,'0')}`;
   return {
     contextType,
-    timeOfDay: currentTime.toLocaleTimeString(),
+    timeOfDay: hhmm,
     dayOfWeek,
     isOptimalBeerTime
   };

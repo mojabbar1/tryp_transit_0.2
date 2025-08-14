@@ -1,8 +1,10 @@
+import { validateConfig, getConfigSummary } from '@/lib/config'
+import { logger } from '@/lib/logger'
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
   try {
-    console.log('=== ENVIRONMENT TEST ===');
+    logger.apiEvent('env_test_started', { route: '/api/test-env' })
     
     const envVars = {
       USE_GEMINI: process.env.USE_GEMINI,
@@ -15,16 +17,20 @@ export async function GET(req: NextRequest) {
       NODE_ENV: process.env.NODE_ENV,
     };
     
-    console.log('Environment variables:', envVars);
+    logger.apiEvent('env_vars_read', { route: '/api/test-env', env: envVars })
     
+    const validation = validateConfig()
+    const summary = getConfigSummary()
     return NextResponse.json({
       success: true,
       environment: envVars,
+      config: summary,
+      validation,
       timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error('Environment test error:', error);
+    logger.apiEvent('env_test_error', { route: '/api/test-env', error: error instanceof Error ? error.message : String(error) })
     
     return NextResponse.json({
       success: false,

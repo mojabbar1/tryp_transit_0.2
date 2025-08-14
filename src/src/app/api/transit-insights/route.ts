@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       userName,
       currentProgress,
       nearbyPartners,
-      timeOfDay: new Date().toLocaleTimeString()
+      timeOfDay: `${new Date().getHours().toString().padStart(2,'0')}:${new Date().getMinutes().toString().padStart(2,'0')}`
     };
 
     // Generate personalized nudge

@@ -55,6 +55,19 @@ npm run test:e2e          # End-to-end tests only
 ### API Testing
 ```bash
 npm run test:apis          # Test all beer rewards APIs
+npm run test:smoke      # Unit + Integration only (E2E excluded)
+```
+
+### Demo Prep and Health Checks
+```bash
+# Validate environment, security, ML health, and key APIs
+npm run demo:prep
+
+# Check config and validation quickly
+curl -s http://localhost:3000/api/test-env | jq .
+
+# ML service health
+curl -s http://localhost:5001/health | jq .
 ```
 
 ## Test Categories
@@ -89,6 +102,8 @@ npm run test:apis          # Test all beer rewards APIs
 - **Alice Beer Reward Flow**: 6/7 progress → trip completion → celebration modal
 - **User Switching**: Alice → Bob → Carol with different progress states
 - **Error Handling**: API failures, network issues, graceful degradation
+
+Note: E2E specs are temporarily skipped during the demo window (see DEMO_CHECKLIST.md). Use `npm run test:smoke` for reliable CI/demo validation.
 
 ## Test Configuration
 

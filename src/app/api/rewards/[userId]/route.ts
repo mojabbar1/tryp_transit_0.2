@@ -60,7 +60,7 @@ export async function GET(
 
     // Log beer-specific analytics
     if (beerProgress) {
-      logger.beerRewardEvent('progress_viewed', userId, {
+      logger.beerRewardEvent('progress_updated', userId, {
         completedTrips: beerProgress.completedTrips,
         requiredTrips: beerProgress.reward.requiredTrips,
         progressPercent: beerProgressPercent,
@@ -102,7 +102,7 @@ export async function GET(
       responseTime
     });
     
-    console.error('Rewards status error:', error);
+    logger.error('rewards_status_error', { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       { 
         error: 'Failed to fetch rewards status',

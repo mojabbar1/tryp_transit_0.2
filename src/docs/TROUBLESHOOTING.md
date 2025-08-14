@@ -18,6 +18,8 @@ npm run db:seed
 - Check environment variables in `.env.local`
 - Verify Gemini API key is valid
 - Use fallback demo messages (built-in)
+- Call `/api/test-env` to view config summary and validation
+- Check preflight logs on first `/api/transit-insights` call
 
 ### Component Import Errors
 **Problem**: Cannot import beer reward components
@@ -55,6 +57,7 @@ Ensure these are set in `.env.local`:
 GEMINI_API_KEY=your_key_here
 DEMO_MODE_ENABLED=true
 ENABLE_BEER_ANALYTICS=true
+NEXT_PUBLIC_TOMTOM_API_KEY=your_tomtom_key
 ```
 
 ### TypeScript Errors
@@ -103,6 +106,7 @@ npm install jest-environment-jsdom --save-dev
 - Verify network connectivity
 - Use fallback templates when AI fails
 - Clear nudge cache: restart application
+- Use `AI_PROVIDER=mock` for deterministic responses during demos
 
 ### Database Performance
 **Problem**: Slow database queries

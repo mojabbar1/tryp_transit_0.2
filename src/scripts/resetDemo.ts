@@ -11,8 +11,7 @@
 
 import { PrismaClient } from '@prisma/client';
 import { logger } from '../lib/logger';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 async function resetDemo() {
   console.log('🔄 Resetting FREE BEER demo to perfect state...');

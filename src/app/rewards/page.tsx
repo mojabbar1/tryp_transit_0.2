@@ -142,7 +142,7 @@ export default function RewardsPage() {
   // Get beer progress for the selected user
   const getBeerProgress = () => {
     const beerReward = userProgress.find(p => p.reward.rewardType === RewardType.FREE_BEER);
-    if (!beerReward) return null;
+    if (!beerReward) return undefined;
 
     return {
       completed: beerReward.completedTrips,
@@ -168,7 +168,7 @@ export default function RewardsPage() {
             🍺 FREE BEER Transit Rewards
           </h1>
           <p className="text-gray-600 mb-4">
-            Earn premium rewards by using public transit • Flagship Feature Demo
+            Earn premium rewards by using public transit  Flagship Feature Demo
           </p>
           <div className="flex justify-center space-x-4">
             <a
@@ -210,7 +210,7 @@ export default function RewardsPage() {
                 message={nudgeData.message}
                 urgencyLevel={nudgeData.urgencyLevel}
                 relevantReward={nudgeData.relevantReward}
-                beerContext={beerContext}
+                beerContext={beerContext ?? undefined}
               />
             )}
 
@@ -304,7 +304,7 @@ export default function RewardsPage() {
                 <h4 className="font-semibold text-gray-700 mb-2">Alice (Flagship Demo)</h4>
                 <ul className="text-gray-600 space-y-1">
                   <li>• 6/7 trips toward FREE BEER</li>
-                  <li>• Perfect "almost there" moment</li>
+                  <li>• Perfect &quot;almost there&quot; moment</li>
                   <li>• High urgency messaging</li>
                   <li>• Ideal for investor presentations</li>
                 </ul>

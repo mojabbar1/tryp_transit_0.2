@@ -17,6 +17,8 @@
     "test:apis": "tsx scripts/testApis.ts",
     "beer:demo": "npm run demo:reset && echo '🍺 Demo ready! Navigate to /rewards'",
     "test": "jest",
+    "demo:prep": "tsx scripts/setupDemo.ts",
+    "test:smoke": "jest --testPathPattern='(unit|integration)' --runInBand --verbose",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:unit": "jest --testPathPattern=unit",

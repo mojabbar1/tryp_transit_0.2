@@ -48,10 +48,9 @@ const RoutesPage = () => {
     const arrivalAtBusStop = new Date(
       arrivalTime.getTime() - bufferTime * 60000,
     );
-    return arrivalAtBusStop.toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    const hours = arrivalAtBusStop.getHours().toString().padStart(2,'0');
+    const minutes = arrivalAtBusStop.getMinutes().toString().padStart(2,'0');
+    return `${hours}:${minutes}`;
   };
 
   return (

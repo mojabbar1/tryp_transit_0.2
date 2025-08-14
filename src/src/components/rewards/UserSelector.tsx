@@ -179,7 +179,7 @@ export default function UserSelector({ selectedUserId, onUserSelect }: UserSelec
           🎯 Demo Scenarios:
         </h4>
         <ul className="text-xs text-gray-600 space-y-1">
-          <li><strong>Alice:</strong> Perfect "almost there" moment (6/7 trips)</li>
+          <li><strong>Alice:</strong> Perfect &quot;almost there&quot; moment (6/7 trips)</li>
           <li><strong>Bob:</strong> Multi-reward portfolio management</li>
           <li><strong>Carol:</strong> Successful redemption experience</li>
         </ul>

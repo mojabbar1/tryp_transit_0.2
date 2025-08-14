@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { logger } from '@/lib/logger'
 
 export async function GET(req: NextRequest) {
   try {
-    console.log('=== GEMINI TEST ENDPOINT ===');
+    logger.apiEvent('gemini_test_started', { route: '/api/test-gemini' });
     
     // Check environment variables
     const geminiApiKey = process.env.GEMINI_API_KEY;
     const useGemini = process.env.USE_GEMINI;
     
-    console.log('USE_GEMINI:', useGemini);
-    console.log('GEMINI_API_KEY exists:', !!geminiApiKey);
-    console.log('GEMINI_API_KEY length:', geminiApiKey?.length || 0);
+    logger.apiEvent('gemini_env', { useGemini, hasKey: !!geminiApiKey, keyLength: geminiApiKey?.length || 0 });
     
     if (!geminiApiKey) {
       return NextResponse.json({
@@ -24,10 +23,10 @@ export async function GET(req: NextRequest) {
     }
 
     // Test Gemini API
-    console.log('Initializing Gemini...');
+    logger.apiEvent('gemini_init');
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     
-    console.log('Creating model...');
+    logger.apiEvent('gemini_model_create');
     const model = genAI.getGenerativeModel({ 
       model: 'gemini-1.5-flash',
       generationConfig: {
@@ -38,18 +37,18 @@ export async function GET(req: NextRequest) {
       }
     });
     
-    console.log('Sending test prompt...');
+    logger.apiEvent('gemini_send_prompt');
     const prompt = 'Return a simple JSON object with these exact fields: {"status": "success", "message": "Gemini is working", "timestamp": "current_time"}. Return ONLY valid JSON without markdown formatting.';
     
     const response = await model.generateContent(prompt);
     const result = response.response.text();
     
-    console.log('Raw Gemini response:', result);
+    logger.apiEvent('gemini_raw_response');
     
     // Try to parse the response
     try {
       const parsed = JSON.parse(result);
-      console.log('Successfully parsed JSON:', parsed);
+      logger.apiEvent('gemini_parse_success');
       
       return NextResponse.json({
         success: true,
@@ -61,7 +60,7 @@ export async function GET(req: NextRequest) {
         }
       });
     } catch (parseError) {
-      console.log('Failed to parse as JSON, trying to extract from markdown...');
+      logger.warn('gemini_parse_failed_try_extract');
       
       // Try to extract JSON from markdown
       if (result.includes('```json') && result.includes('```')) {
@@ -70,7 +69,7 @@ export async function GET(req: NextRequest) {
           try {
             const extractedJson = jsonMatch[1].trim();
             const parsed = JSON.parse(extractedJson);
-            console.log('Successfully extracted and parsed JSON:', parsed);
+            logger.apiEvent('gemini_extract_parse_success');
             
             return NextResponse.json({
               success: true,
@@ -83,7 +82,7 @@ export async function GET(req: NextRequest) {
               }
             });
           } catch (extractError) {
-            console.error('Failed to parse extracted JSON:', extractError);
+            logger.error('gemini_extract_parse_failed', { error: extractError instanceof Error ? extractError.message : String(extractError) });
           }
         }
       }
@@ -102,7 +101,7 @@ export async function GET(req: NextRequest) {
     }
     
   } catch (error) {
-    console.error('Gemini test error:', error);
+    logger.error('gemini_test_error', { error: error instanceof Error ? error.message : String(error) });
     
     return NextResponse.json({
       success: false,
