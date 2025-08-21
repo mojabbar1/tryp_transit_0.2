@@ -4,7 +4,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 export async function GET() {
   try {
     // Simple test with your actual API key
-    const genAI = new GoogleGenerativeAI('AIzaSyAEgPHNz1VoKj7P2LvczFl8l34wOkPdWzw');
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     
     const result = await model.generateContent('Return only this JSON: {"test": "success", "status": "working"}');
