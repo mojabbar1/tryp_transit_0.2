@@ -86,6 +86,5 @@ def predict(days_future):
         variation = np.random.randint(-2000, 2000)
         return int(base_ridership + variation)
 
-# Load model and data when module is imported
-load_daily_model()
-load_daily_data()
+# Lazy loading: Models load on first predict() call, not at import time
+# This improves startup time and allows the app to start even if model loading fails

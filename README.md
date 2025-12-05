@@ -2,6 +2,10 @@
 
 A full-stack application that provides AI-powered transit recommendations with ridership predictions and personalized incentives.
 
+> **Latest**: v0.2.1 (December 2025) — See [CHANGELOG.md](./CHANGELOG.md) for details
+>
+> **For Developers**: See [CONTEXT.md](./CONTEXT.md) for architecture and code patterns
+
 ## 🎉 Implementation Status
 
 **✅ Phase 1: Model Service Optimization** - COMPLETE
@@ -82,14 +86,26 @@ npm run dev
 ## 🔧 Environment Configuration
 
 ### Required API Keys
-- **OpenAI API Key**: Get from [OpenAI Platform](https://platform.openai.com/api-keys)
-- **Gemini API Key**: (instead of OpenAI)
+- **Gemini API Key**: Get from [Google AI Studio](https://aistudio.google.com/apikey) (recommended)
+- **OpenAI API Key**: Get from [OpenAI Platform](https://platform.openai.com/api-keys) (alternative)
 - **TomTom API Key**: Get from [TomTom Developer](https://developer.tomtom.com/)
+
+### AI Provider Toggle
+The app supports both Gemini and OpenAI. Set `USE_GEMINI=true` to use Gemini (default), or `USE_GEMINI=false` for OpenAI.
 
 ### Frontend (`src/.env.local`)
 ```env
-OPENAI_API_KEY="your_openai_api_key_here"
+# AI Provider - choose one
+USE_GEMINI=true
+GEMINI_API_KEY="your_gemini_api_key_here"
+# OR
+# USE_GEMINI=false
+# OPENAI_API_KEY="your_openai_api_key_here"
+
+# Traffic Data
 NEXT_PUBLIC_TOMTOM_API_KEY="your_tomtom_api_key_here"
+
+# ML Service
 RIDERSHIP_API_BASE_URL="http://localhost:5001"
 ```
 
@@ -195,6 +211,14 @@ API_PORT="5001"
 
 ## 🧪 Testing
 
+### Automated Tests
+```bash
+cd src
+npm test              # Run all tests (28 tests)
+npm run test:watch    # Watch mode
+npm run test:coverage # Coverage report
+```
+
 ### Manual Testing
 1. Start both services using `./start-app.sh`
 2. Navigate to http://localhost:3000
@@ -236,35 +260,35 @@ curl http://localhost:5001/predict/daily/7
 
 ```
 tryp_transit_v0.2/
-├── src/                          # Next.js frontend application
-│   ├── app/                      # App router pages and API routes
+├── src/                              # Next.js frontend application
+│   ├── app/                          # App router pages and API routes
 │   │   ├── api/
-│   │   │   ├── transit-insights/     # Main API endpoint
-│   │   │   ├── transit-insights-simple/ # Mock data endpoint
-│   │   │   └── test/                 # Health check endpoint
-│   │   ├── page.tsx                 # Main application page (investor demo)
-│   │   ├── test/                    # Test page for debugging
-│   │   └── ...                      # Other pages
-│   ├── components/                  # Reusable UI components
-│   │   └── ui/                      # Shadcn/ui components
-│   ├── types/                       # TypeScript interfaces
-│   ├── contexts/                    # React context providers
-│   ├── lib/                         # Utility functions
-│   ├── .env.example                # Environment template
-│   └── package.json                # Dependencies
-├── model_service/                   # Python Flask ML service
-│   ├── app.py                      # Flask application (port 5001)
-│   ├── bus_hourly_chronos_t5_tiny.py  # Hourly ridership predictions
-│   ├── bus_daily_chronos_t5_tiny.py   # Daily ridership predictions
-│   ├── data/                       # CSV data files
-│   │   ├── MTA_Bus_Hourly_Ridership__Beginning_February_2022_1000.csv
-│   │   └── MTA_Daily_Ridership_Data__Beginning_2020.csv
-│   ├── requirements.txt            # Python dependencies
-│   ├── .env.example               # Environment template
-│   └── venv/                      # Python virtual environment
-├── start-app.sh                   # Automated startup script
-├── stop-app.sh                    # Cleanup script
-└── README.md                      # This file
+│   │   │   ├── transit-insights/     # Main API endpoint (Gemini/OpenAI)
+│   │   │   └── transit-insights-demo/# Mock endpoint for demos
+│   │   ├── find-rides/               # Main trip planning page
+│   │   ├── dashboard/                # User dashboard
+│   │   └── ...
+│   ├── components/                   # Reusable UI components
+│   │   └── ui/                       # Shadcn/ui primitives
+│   ├── lib/                          # Utilities and shared code
+│   │   └── api/                      # API clients (gemini, openai, tomtom)
+│   ├── contexts/                     # React context providers
+│   ├── types/                        # TypeScript interfaces
+│   ├── __tests__/                    # Jest test suite
+│   ├── .env.example                  # Environment template
+│   └── package.json
+├── model_service/                    # Python Flask ML service
+│   ├── app.py                        # Flask server (port 5001)
+│   ├── bus_hourly_chronos_t5_tiny.py # Hourly predictions
+│   ├── bus_daily_chronos_t5_tiny.py  # Daily predictions
+│   ├── data/                         # CSV data files
+│   └── requirements.txt              # Pinned Python dependencies
+├── start-app.sh                      # Automated startup script
+├── stop-app.sh                       # Cleanup script
+├── CONTEXT.md                        # Developer/AI context guide
+├── CHANGELOG.md                      # Version history
+├── REFACTORING_PLAN.md               # Refactoring documentation
+└── README.md                         # This file
 ```
 
 ## 🎯 Demo-Ready Features
@@ -310,6 +334,19 @@ rm -rf node_modules
 npm install
 npm run build
 ```
+
+---
+
+## 📚 Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [README.md](./README.md) | Quick start and overview |
+| [CONTEXT.md](./CONTEXT.md) | Architecture and code patterns for developers/AI |
+| [CHANGELOG.md](./CHANGELOG.md) | Version history and changes |
+| [SETUP.md](./SETUP.md) | Detailed installation guide |
+| [DEMO_CHECKLIST.md](./DEMO_CHECKLIST.md) | Investor demo preparation |
+| [REFACTORING_PLAN.md](./REFACTORING_PLAN.md) | Technical debt and improvements |
 
 ---
 

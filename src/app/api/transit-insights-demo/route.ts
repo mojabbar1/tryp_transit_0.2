@@ -1,3 +1,16 @@
+/**
+ * Transit Insights Demo/Mock API Route
+ * 
+ * Use this endpoint for demos without requiring API keys.
+ * Returns deterministic, pre-configured responses for investor presentations.
+ * 
+ * Usage:
+ *   POST /api/transit-insights-demo
+ *   Body: { "demoScenario": "rush-hour" | "weekend" | "night-out" }
+ *   
+ * Or pass regular trip data for a generic mock response.
+ */
+
 import { NextRequest, NextResponse } from 'next/server';
 import { TransitInsightResponse } from '@/types/interfaces';
 

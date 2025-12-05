@@ -110,9 +110,8 @@ def predict(hours_future):
         variation = np.random.randint(-20, 20)
         return int(base_ridership + variation)
 
-# Load model and data when module is imported
-load_hourly_model()
-load_hourly_data()
+# Lazy loading: Models load on first predict() call, not at import time
+# This improves startup time and allows the app to start even if model loading fails
 
 def build_df():
     """Return pre-loaded hourly ridership series."""

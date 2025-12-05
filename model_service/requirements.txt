@@ -1,6 +1,7 @@
-Flask
-pandas
-torch
-numpy
-python-dotenv
-gunicorn
+Flask==3.0.0
+pandas==2.1.4
+torch==2.1.2
+numpy==1.26.2
+python-dotenv==1.0.0
+gunicorn==21.2.0
+chronos-forecasting>=1.0.0

@@ -1,5 +1,13 @@
 'use client';
 
+/**
+ * Authentication Context Provider
+ * 
+ * NOTE: This is a demo/MVP implementation using localStorage.
+ * For production, migrate to NextAuth.js or similar.
+ * See REFACTORING_PLAN.md Phase 3 for migration guide.
+ */
+
 import { createContext, useContext, useState, useEffect } from 'react';
 
 type AuthContextType = {
