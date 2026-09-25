@@ -68,8 +68,8 @@ Rules for coding agents:
 
 | Phase | Stage | Prompt | Depends on | Status | PR |
 |-------|-------|--------|------------|--------|----|
-| **G0 baseline gate** | Gate | [05 §G0](./05-decisions-and-review.md) | D-24, D-13 | ⛔ Blocking, before P0 | |
-| P0 Stabilize & secure | 1 | [phase-0-stabilize](./prompts/phase-0-stabilize.md) | G0 | ⏳ Awaiting sign-off | |
+| **G0 baseline gate** | Gate | [05 §G0](./05-decisions-and-review.md) | D-24, D-13 | ✅ Passed 2026-09-25 | — |
+| P0 Stabilize & secure | 1 | [phase-0-stabilize](./prompts/phase-0-stabilize.md) | G0 | 🔨 Signed off 2026-09-25; in progress | |
 | P0B Next 16 / React 19 | 1 | [phase-0b-framework-upgrade](./prompts/phase-0b-framework-upgrade.md) | P0 | ⏳ | |
 | P1 Web seams & deterministic math | 2 | [phase-1-web-seams](./prompts/phase-1-web-seams.md) | P0B | ⏳ | |
 | P2 `data_agent` scaffold | 2 | [phase-2-data-agent-scaffold](./prompts/phase-2-data-agent-scaffold.md) | P0 (parallel with P0B, P1) | ⏳ | |

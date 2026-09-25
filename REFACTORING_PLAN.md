@@ -103,7 +103,7 @@ model_service/*.py.backup               # Should be deleted
 
 ```typescript
 // BEFORE (line 7)
-const genAI = new GoogleGenerativeAI('AIzaSyAEgPHNz1VoKj7P2LvczFl8l34wOkPdWzw');
+const genAI = new GoogleGenerativeAI('<REDACTED: revoked key>');
 
 // AFTER
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);

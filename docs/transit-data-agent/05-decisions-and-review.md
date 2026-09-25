@@ -19,7 +19,7 @@ that's blocked without an answer.
 | D-1 | Region scope | (a) Charleston first, region-pluggable config · (b) multi-region now | **(a)** | P2 | |
 | D-2 | Where the data agent lives | (a) a new Python `data_agent/` service · (b) TypeScript inside Next.js · (c) extend `model_service` | **(a)**: best fit for GTFS, geo, PDF, scraping, scheduling, and agent tooling, with no load on the UX path | P2 | |
 | D-3 | Agent framework | (a) **Pydantic AI 2.x** · (b) OpenAI Agents SDK 0.22.x · (c) LangGraph 1.x · (d) a thin custom loop | **(a)**: typed, multi-provider, has `TestModel`/`FunctionModel` and `pydantic-evals`, MIT | P5 | |
-| D-4 | LLM providers and model IDs, **all from env** | Web narration: Gemini `gemini-3.8-flash` or OpenAI `gpt-5.6-terra`. Agent reports: the same, or a higher tier such as `gpt-6-astra`. Extraction: a cost tier such as `gpt-5.6-luna` or `gemini-3.8-flash`. | **Gemini `gemini-3.8-flash` everywhere to start** (the existing default provider), with OpenAI `gpt-5.6-terra` as the alternate. **Re-check the IDs at execution time.** | **P0** (stopgap), P1, P5 | |
+| D-4 | LLM providers and model IDs, **all from env** | Web narration: Gemini `gemini-3.8-flash` or OpenAI `gpt-5.6-terra`. Agent reports: the same, or a higher tier such as `gpt-6-astra`. Extraction: a cost tier such as `gpt-5.6-luna` or `gemini-3.8-flash`. | **Gemini `gemini-3.8-flash` everywhere to start** (the existing default provider), with OpenAI `gpt-5.6-terra` as the alternate. **Re-check the IDs at execution time.** | **P0** (stopgap), P1, P5 | Accept default — mojabbar, 2026-09-25 (IDs re-checked in P0 T8) |
 | D-5 | Storage | (a) Postgres 16 via compose, PostGIS later if needed · (b) SQLite or DuckDB file · (c) managed Postgres | **(a)**, which also matches the pattern on the unmerged branch | P2 | |
 | D-6 | How transit travel time is computed | (a) GTFS direct-route scheduled lookup · (b) OpenTripPlanner 2 (transfers, walking) · (c) a third-party routing API | **(a)** in P4, and (b) as a later upgrade if transfers matter | P4 | |
 | D-7 | Traffic history and TomTom storage | (a) TomTom **live only**, no persistence; time-of-day patterns from SCDOT hourly counts (inbox) plus AADT · (b) buy TomTom Traffic Stats · (c) store live samples after a **written legal approval** of TomTom's terms · (d) NPMRDS through a partnership | **(a)** now, with (b) or (d) considered after P4 shows value | P3 | |
@@ -28,10 +28,10 @@ that's blocked without an answer.
 | D-10 | Future of `model_service` | (a) keep it separate and retarget it to CARTA data through the data-agent API · (b) merge it into `data_agent` · (c) retire forecasting | **Decide at G1.** It leaves the live path in P1 regardless; whether to build P6 at all is an expansion decision. | G1 (was P6) | |
 | D-11 | Unmerged branches `feature/economic-incentive-improvements` and `demo-improvements-20250813` | (a) harvest the patterns without merging, and archive the branches after P2 · (b) merge · (c) delete | **(a)**. Note that the second branch holds the key string (D-13). | P2 | |
 | D-12 | Scout (source discovery with web search) | (a) off · (b) on, CLI-only, with proposals going to the queue | **(a)** | P5 | |
-| D-13 | Handling the leaked Gemini key | (a) confirm it's **revoked**, redact the docs, and add PR-diff secret scanning · (b) additionally rewrite history with `git filter-repo` and force-push every affected branch | **(a)**. Choose (b) only if the key isn't confirmed revoked, or policy requires it. | **P0 (blocking)** | Revoked? ☐ yes, confirmed by ____ on ____ |
+| D-13 | Handling the leaked Gemini key | (a) confirm it's **revoked**, redact the docs, and add PR-diff secret scanning · (b) additionally rewrite history with `git filter-repo` and force-push every affected branch | **(a)**. Choose (b) only if the key isn't confirmed revoked, or policy requires it. | **P0 (blocking)** | **(a)** accept default. Revoked? ☑ yes, confirmed by mojabbar on 2026-09-25. String redacted from `REFACTORING_PLAN.md` at G0. |
 | D-14 | Budgets | LLM monthly cap; per-run caps; TomTom plan (free ~2,500 non-tile/day vs paid); any Traffic Stats spend | **Suggested:** LLM ≤ $25/month during development (a provider-side cap plus a code cap), the TomTom free tier, and no paid historical data before P4 | P5 (P1 for web LLM calls) | |
 | D-15 | Where trip narration runs | (a) in the web app, sharing the validator vectors · (b) data agent `/v1/narrate` | **(a)**, the low-latency path | P1 | |
-| D-16 | Framework upgrade | (a) 14.2.35 as a stopgap in P0, then **Next 16.x** in P0B · (b) Next 15 | **(a)**. Next 15 support ends 2026-10-21. | P0 | |
+| D-16 | Framework upgrade | (a) 14.2.35 as a stopgap in P0, then **Next 16.x** in P0B · (b) Next 15 | **(a)**. Next 15 support ends 2026-10-21. | P0 | **(a)** accept default — mojabbar, 2026-09-25 |
 | D-17 | Demo mode | (a) one app-wide `NEXT_PUBLIC_DEMO_MODE` flag (default off) gates the demo scenarios, the dashboard constants, **and** the `/incentives` + `/routes` reward copy, each with a visible badge · (b) remove the demo artifacts | **(a)** | P4 | |
 | D-18 | Retention, attribution, and crawler identity | Raw public-domain snapshots: 180 days (normalized data kept indefinitely). TomTom: `none`. UA: `TrypTransitDataAgent/<ver> (+<contact>)`. | **Accept these**, and supply the contact email: ________ | P2 | |
 | D-19 | Tooling | (a) uv, Python 3.12, Node 22 LTS, npm | **(a)** | P2 | |
@@ -39,7 +39,7 @@ that's blocked without an answer.
 | D-21 | Transit time before GTFS lands (P1 to P4) | (a) show it as **`unavailable`** in live mode — drive time, cost, and current traffic still render — (b) a flagged heuristic estimate · (c) show nothing at all | **(a)**. A heuristic "bus time" is an unsupported promise (half the current stops aren't even near CARTA service). Bus time becomes real in P4. | P1 | |
 | D-22 | Forecast model backend (`model_service`) | (a) statistical: seasonal-naive vs ETS, chosen by backtest · (b) Chronos-Bolt on CPU · (c) Chronos-2 | **(a)**, with (b) behind `MODEL_BACKEND` only if it beats (a) in the backtest | P6 | |
 | D-23 | Privacy review owner and the impact-event schema | Owner name; approve the event list (`nudge_shown`, `cta_carta_fares_click`, `trip_planned`, `demo_vs_live`), the fields (hour-truncated time, corridor or route ID, variant, demo flag), k = 10 suppression, and "no IP, no user ID" | **Accept the schema as listed.** Owner: ________ | Expansion (P7) | |
-| D-24 | **Baseline commit (G0)** | The assessed code (`9b129d6`) lives only on `origin/claude-opus4.5-refactor`, not `main`. (a) merge that branch **and** these docs into `main`, then start every phase from that commit · (b) keep phases on the branch and name it as the explicit base | **(a)**. Prompts branch from the named baseline, never an assumed `main`. | **G0 (blocking, before P0)** | |
+| D-24 | **Baseline commit (G0)** | The assessed code (`9b129d6`) lives only on `origin/claude-opus4.5-refactor`, not `main`. (a) merge that branch **and** these docs into `main`, then start every phase from that commit · (b) keep phases on the branch and name it as the explicit base | **(a)**. Prompts branch from the named baseline, never an assumed `main`. | **G0 (blocking, before P0)** | **(a)** accept default — mojabbar, 2026-09-25. `9b129d6` + these docs fast-forwarded into `main`; the named base is the G0 sign-off commit on `main`. |
 | D-25 | **Rewards** | Live-mode incentives: (a) **hidden until an approved, funded, redeemable offer inventory exists**; demo-only copy meanwhile, behind the demo badge · (b) keep showing example rewards | **(a)**. The app currently advertises $1–$4 gift cards nothing can pay (F-26). | P1 | |
 | D-26 | **Measurement design (G1)** | Before any impact claim, agree: the eligible-trip denominator, exposure/assignment (default: a randomized holdout), duplicate handling, the outcome tier (≥ 2 self-report; ≥ 3 verified), and a pre-declared decision rule. Owner: product + privacy. | **Default:** opt-in self-report with a randomized holdout; partner-verified trips as an upgrade. No traffic-reduction claim before Tier ≥ 3 data. | G1 (built in P7) | |
 | D-27 | **P1 rollback mechanism** | (a) **no legacy engine**; roll back the P1 route change by reverting the PR · (b) keep an `INSIGHTS_ENGINE=legacy` runtime switch | **(a)**. A runtime switch that re-enables LLM-invented numbers defeats the refactor. | P1 | |
@@ -162,11 +162,14 @@ that drive the plan:
 
 ## G0 — baseline gate (before P0)
 
-- [ ] D-24 answered: the assessed code (`9b129d6`) is an ancestor of `origin/main` (branch merged), **or** an
-      explicit base commit is named for every phase.
-- [ ] These planning docs are committed.
-- [ ] D-13 recorded: the leaked Gemini key is confirmed revoked.
-- [ ] A clean checkout of the named base contains every P0 input and passes the recorded baseline tests.
+- [x] D-24 answered: the assessed code (`9b129d6`) is an ancestor of `origin/main` (branch merged), **or** an
+      explicit base commit is named for every phase. → (a): fast-forwarded into `main` on 2026-09-25.
+- [x] These planning docs are committed.
+- [x] D-13 recorded: the leaked Gemini key is confirmed revoked. → mojabbar, 2026-09-25.
+- [x] A clean checkout of the named base contains every P0 input and passes the recorded baseline tests. → every
+      file P0 reads or edits is present; `npm ci` OK; `npm test -- --ci` 4 suites / 28 tests passed (matches 01 §2).
+
+Signed: mojabbar, 2026-09-25 (recorded by the P0 builder session on the maintainer's instruction).
 
 ## G1 — pilot gate (after P4b; before any expansion)
 
@@ -198,8 +201,8 @@ All must hold and be recorded below:
 
 | Phase | Stage | Approved to execute (name / date) | Decisions confirmed | PR | Merged (date) | Notes |
 |-------|-------|-----------------------------------|---------------------|----|---------------|-------|
-| **G0 baseline gate** | Gate | | D-24, D-13 | — | | Blocking; before P0 |
-| P0 Stabilize | Stabilize | | D-4, D-13, D-16, D-24 | | | Commit the pending doc edits first |
+| **G0 baseline gate** | Gate | mojabbar / 2026-09-25 | D-24 ✅, D-13 ✅ | — | 2026-09-25 | Passed; baseline + docs on `main` |
+| P0 Stabilize | Stabilize | mojabbar / 2026-09-25 | D-4 ✅, D-13 ✅, D-16 ✅, D-24 ✅ | | | Commit the pending doc edits first (done: tree clean at G0) |
 | P0B Next 16 | Stabilize | | D-16 | | | |
 | P1 Web seams | Pilot | | D-4, D-15, D-21, D-25, D-27, §2 | | | |
 | P2 Scaffold | Pilot | | D-1, D-2, D-5, D-8, D-9, D-11, D-18, D-19 | | | |
