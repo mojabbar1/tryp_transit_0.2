@@ -29,8 +29,8 @@ configuration, dependencies, or git history during planning.
 
 - **North star:** more trips shifted from driving to transit in the target region.
 - **Leading indicators the platform must be able to compute:** where and when transit is time/cost-competitive
-  with driving, congestion hot spots by corridor and hour, cost/CO2 savings per trip, service reliability, and
-  ridership trends (NTD monthly).
+  with driving, traffic **volume** by corridor and hour (not congestion, which needs licensed speeds), cost/CO2
+  savings per trip, service reliability, and ridership trends (NTD monthly).
 - **Credibility bar:** every number shown to a user or stakeholder traces to a stored fact with source, timestamp,
   method, and license. The LLM **never** invents numeric facts. It only narrates facts it was given.
 
@@ -39,8 +39,9 @@ configuration, dependencies, or git history during planning.
 - `src/`: Next.js 14.2.4 App Router, TypeScript strict, Shadcn/UI, Jest (28 unit tests). The main API is
   `src/app/api/transit-insights/route.ts`, which calls TomTom (flow + incidents), the Python ridership service,
   and Gemini/OpenAI (toggled by `USE_GEMINI`).
-- `model_service/`: Flask 3 service on port 5001 serving Chronos/mock forecasts. It is trained on **NYC MTA**
-  CSVs even though the product targets **Charleston/CARTA**.
+- `model_service/`: Flask 3 service on port 5001 serving Chronos/mock forecasts. A pretrained model is **fed
+  NYC MTA** CSVs at inference time even though the product targets **Charleston/CARTA**; the fallback returns
+  random numbers.
 - Prior docs: `README.md`, `CONTEXT.md`, `REFACTORING_PLAN.md` (v0.2.1 refactor, "all phases complete"),
   `CHANGELOG.md`, `SETUP.md`, `DEMO_CHECKLIST.md`, `changes.md`.
 - Unmerged remote work exists: `origin/feature/economic-incentive-improvements` (Prisma/Postgres rewards engine)
@@ -76,18 +77,32 @@ All of `src/app/**`, `src/lib/**`, `src/types/**`, `src/contexts/**`, `src/__tes
    Keep the build green at the end of every phase. Preserve existing behavior unless the plan says otherwise.
 9. **Terminology.** Use release and phase names (for example, v0.3, Phase 2). The maintainer is removing "MVP"
    labels from the docs, so don't reintroduce them.
+10. **Numbers by reference.** The LLM must never emit a numeric fact in prose. Numbers are rendered by code from
+    typed facts; the model fills templated slots. A validator checks semantic consistency (comparison direction,
+    period, units, entity), not just that the digits appear somewhere.
+11. **No unsupported promises in live mode.** A user-facing value appears only when it is measured, scheduled, or
+    an approved fact. Otherwise the field is `unavailable`. Heuristic estimates and unfunded rewards are demo-only,
+    behind a visible badge.
+12. **Volume ≠ congestion; engagement ≠ outcome.** Vehicle counts are labeled as volume, never congestion, unless
+    speeds/travel times exist. Clicks and views are engagement, never proof of a transit trip or reduced driving.
+13. **One owner per contract.** Each schema, tool contract, or invariant lives in exactly one doc. Other docs link
+    to it; they don't restate it. If two docs disagree, the phase prompt wins for execution.
+14. **Verify the baseline.** Name and verify the exact prerequisite commit each prompt starts from; don't assume
+    `main` contains the assessed code. Every verification command must assert its result (status codes, `jq -e`,
+    known fixtures), not just print output.
 
 ## Deliverables (all under `docs/transit-data-agent/`)
 
 | File | Must contain |
 |------|--------------|
-| `README.md` | Index, reading order, review → approve → execute workflow, phase status table |
+| `README.md` | Index, reading order, review → approve → execute workflow, stage/gate status table |
 | `01-current-state-assessment.md` | Baseline health (commands + results), findings table (ID, severity, evidence, impact on agent goal, fix, phase), refactor verdict (keep / change / add / remove) |
-| `02-target-architecture.md` | Component diagram, service boundaries, data model (raw → normalized → facts/metrics), agent roles, tool contracts, guardrails, HITL workflow, integration with the existing API/UI, and the NFRs (non-functional requirements: cost, quotas, security, observability) |
-| `03-data-source-catalog.md` | Source table (access, auth, terms for fetching and storing, cadence, priority, status), the ingestion policy, and the per-source verification checklist |
-| `04-implementation-plan.md` | Refactor-plan format: Current State, Target State, Affected Files table, phased Execution Plan with checkbox steps and **Verify** steps, Rollback Plan, Risks |
-| `05-decisions-and-review.md` | Decision log (ID, question, options, recommendation, default if no answer) and the reviewer checklist and sign-off table per phase |
-| `prompts/phase-N-*.md` | One executable prompt per phase: goal, preconditions, scope (in/out), files, step-by-step tasks, constraints, verification commands, definition of done, rollback, handoff notes |
+| `02-target-architecture.md` | **The normative contracts:** service boundaries, data model (append-only observations, versioned facts, roles), narration contract, tool contracts, guardrails, HITL + rollback workflow, integration, NFRs, impact-measurement tiers |
+| `03-data-source-catalog.md` | Source table (access, auth, terms for fetching and storing, cadence, priority, stage/status), the ingestion policy, the retention model, and the per-source verification checklist |
+| `04-implementation-plan.md` | **A gate-driven roadmap:** stages, gates (G0 baseline, G1 pilot), a dependency graph with artifacts, per-phase cards (goal, entry, exit evidence, rollback, prompt link), rollback plan, risks. Links to the prompts; doesn't restate their steps |
+| `05-decisions-and-review.md` | Decision log (ID, question, options, recommendation, default), assumptions table, gate checklists, and the sign-off table |
+| `06-review-log.md` | Every review finding, its verdict, and where it was addressed |
+| `prompts/phase-N-*.md` | **The executable spec** for each phase: goal, preconditions (incl. baseline commit), scope, tasks, constraints, verification commands (asserting), definition of done, rollback, handoff |
 
 ## Quality bar (self-check before finishing)
 
@@ -96,13 +111,16 @@ All of `src/app/**`, `src/lib/**`, `src/types/**`, `src/contexts/**`, `src/__tes
 - [ ] The build is broken at baseline, so Phase 0 fixes it before anything else lands.
 - [ ] No step depends on an unmade decision without naming its default.
 - [ ] Every external fact is marked with a status and a source.
-- [ ] Every prompt can run on its own: a fresh agent with only the repo and the prompt can execute it.
+- [ ] Every prompt is verified against the exact commit it starts from — not an assumed `main`.
+- [ ] Every verification command asserts its result, not just prints it.
+- [ ] No live-mode field promises an unmeasured value.
 - [ ] Nothing in the docs reproduces a secret.
 
 ## Execution protocol (applies to the implementation phases)
 
 1. A human reviews `05-decisions-and-review.md`, answers or accepts the defaults, and signs off the phase.
-2. The coding agent creates the branch `feat/tda-phase-N-<slug>` from the latest `main`.
+2. The coding agent creates the branch `feat/tda-phase-N-<slug>` from the **named prerequisite commit** (the G0
+   baseline, or the prior merged phase), not from an assumed `main`.
 3. The agent runs `prompts/phase-N-*.md` exactly. It stops and asks if a precondition fails or a decision is missing.
 4. The agent runs the phase's verification commands, pastes the results into the PR description, and opens a PR.
 5. A human reviews the PR and merges it. Then update the phase status in `README.md`.

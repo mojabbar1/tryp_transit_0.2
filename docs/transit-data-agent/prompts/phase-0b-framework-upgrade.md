@@ -2,7 +2,7 @@
 
 > **How to use:** once P0 is merged and Phase 0B is signed off in [05](../05-decisions-and-review.md), paste this
 > whole file into your coding agent.
-> **Plan:** [04 §Phase 0B](../04-implementation-plan.md#phase-0b--framework-upgrade-next-16x-react-19-node-22-parallel-safe-with-p2) ·
+> **Plan:** [04 → Stabilize](../04-implementation-plan.md#stabilize) ·
 > **Fixes:** F-22 · **Why now:** Next 14 has been EOL since 2025-10-26, and three 2026 high-severity Server
 > Components DoS CVEs have **no 14.x fix**. Next 15 support ends 2026-10-21. (Source: 05 §Research.)
 
@@ -34,7 +34,7 @@ refactors. The only changes allowed are the ones the upgrade requires. If a chan
 | Async APIs | `params`, `searchParams`, `cookies()`, and `headers()` are async-only in v16. The repo uses none of them today; confirm with grep. |
 | `next/image` | New defaults: `qualities: [75]`, no `16` in `imageSizes`, `minimumCacheTTL` 4 h. The repo uses static imports only, with no `quality=` props. |
 | Middleware | Renamed to `proxy.ts`. The repo has none, so no action. |
-| Libraries | Radix select/label/slot and react-hook-form 7.x support React 19 within their current ranges. **Manual bumps:** `@hookform/resolvers` ^3.6 → **^5.9** (used in `app/find-rides/page.tsx` and `app/register/page.tsx`), and `lucide-react` ^0.396 → **^1.x** (used only in `components/ui/select.tsx`: `Check`, `ChevronDown`, `ChevronUp`). Keep zod at `^3.25` (it satisfies resolvers ≥ 5.4.1). |
+| Libraries | Radix select/label/slot and react-hook-form 7.x support React 19 within their current ranges. **`lucide-react` ^0.396 → ^1.x is required** for React 19 (used only in `components/ui/select.tsx`: `Check`, `ChevronDown`, `ChevronUp`). **`@hookform/resolvers` is optional**: 3.10 peers only on `react-hook-form: ^7.0.0` (verified on the npm registry), so it does not block React 19. Bump it only if `npm install` surfaces an actual peer conflict; otherwise leave it and note it as a follow-up. Keep zod at `^3.25`. |
 | Tests | ts-jest 29 supports Jest 29 and 30, so no Jest bump is required. The repo has no `react-dom/test-utils` imports. |
 
 ## Tasks

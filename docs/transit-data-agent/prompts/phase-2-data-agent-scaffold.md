@@ -2,7 +2,7 @@
 
 > **How to use:** once P0 is merged and Phase 2 is signed off in [05](../05-decisions-and-review.md), paste this
 > whole file into your coding agent. It's parallel-safe with P0B and P1: it touches no files under `src/`.
-> **Plan:** [04 §Phase 2](../04-implementation-plan.md#phase-2--data_agent-scaffold-storage-polite-fetcher-parallel-safe-with-p1) ·
+> **Plan:** [04 → Pilot](../04-implementation-plan.md#pilot) ·
 > **Design:** [02 §3–6](../02-target-architecture.md#3-service-boundaries) · **Sources:** [03](../03-data-source-catalog.md)
 
 ---
@@ -57,7 +57,9 @@ agent (P5). Don't modify `src/` or `model_service/`.
 
 ### T2. Config
 - `tda/config/settings.py` (pydantic-settings, prefix `TDA_`):
-  - `DATABASE_URL`
+  - `DATABASE_URL` (writer role, used by connectors, the worker, and tests), plus `ADMIN_DATABASE_URL` (owner,
+    used by `db bootstrap` and migrations) and `READER_DATABASE_URL` (the read API). All are plain
+    `postgresql://…` URLs; the driver is added in code.
   - `PROJECT_ROOT`: the absolute path of `data_agent/`. Default it to the package's parent directory, and
     **never** derive it from the current working directory. `RAW_STORE_DIR` (default `<PROJECT_ROOT>/raw`) and
     `INBOX_DIR` (default `<PROJECT_ROOT>/inbox`) are resolved from it. Both are gitignored by P0.
@@ -81,17 +83,29 @@ agent (P5). Don't modify `src/` or `model_service/`.
 ### T3. Database
 - SQLAlchemy 2 models (schema `tda`) for `source`, `fetch_run`, `fact`, `metric_value`, `review_item`, and
   `agent_run`, with the columns in 02 §6. That includes `fetch_run.acquisition` (`http` | `manual`),
-  `supplied_by`, and `original_url`, and the `manual` source kind. Use JSONB and arrays where specified, and UTC
-  `timestamptz` everywhere.
-- Alembic setup with a baseline revision. Each revision must implement a working `downgrade()`.
-- `docker/postgres/init/01-roles.sql` creates the `tda_writer` and `tda_reader` roles.
+  `supplied_by`, `original_url`, the `manual` source kind, and `fetch_run.status` including `rolled_back`. Use
+  JSONB and arrays where specified, and UTC `timestamptz` everywhere.
+- **Append-only observations (02 §6.0/§6.1 invariants):** normalized observation tables that connectors add (P3)
+  are never updated or deleted in place. Every row carries its natural key, a `content_hash`, and its
+  `fetch_run_id`. For each observation table, ship a `current_<table>` view that selects the row from the latest
+  successful, **non-`rolled_back`** run per natural key. The base tables in this phase follow the same rule.
+- **Versioned facts:** `fact` is immutable per version. Add `version`, `supersedes_id`, and `derived_from`
+  (the run/observation ids a fact was computed from), and include `needs_review` in the status enum. A correction
+  writes a new version that supersedes the old one; rows are never mutated.
+- **Roles:** `docker/postgres/init/01-roles.sql` creates `tda_owner` (owns the schema and runs migrations),
+  `tda_writer` (connectors and the review runtime), and `tda_reader` (the read API). Migrations run as `tda_owner`.
+- **Bootstrap:** `tda db bootstrap` connects with the admin/owner URL and creates the schema, roles, and base
+  grants; `alembic upgrade head` then runs the migrations. Alembic setup has a baseline revision, and each
+  revision implements a working `downgrade()`.
 - **Grant policy:**
-  - `tda_reader` gets **explicit** `SELECT` grants, and only on API-exposed tables. In this phase that's `fact`,
-    `metric_value`, and `source`.
+  - `tda_reader` gets **explicit** `SELECT` grants, and only on API-exposed tables and views. In this phase that's
+    `fact`, `metric_value`, `source`, the `current_*` views, and the **`source_freshness`** view.
   - **Never use default privileges.**
-  - Every later migration that adds an API-exposed table must add its grant in the same revision, and document
-    that rule in `data_agent/README.md`.
+  - Every later migration that adds an API-exposed table or view must add its grant in the same revision, and
+    document that rule in `data_agent/README.md`.
   - The reader has no access to `review_item`, `agent_run`, or `fetch_run`.
+- **Freshness view:** `source_freshness` exposes per-source `{last_success, cadence, stale}`, granted to the reader
+  and used by `/v1/health`.
 
 ### T4. Raw store
 `tda/store/raw_store.py`:
@@ -115,14 +129,14 @@ agent (P5). Don't modify `src/` or `model_service/`.
   `not_modified`, `failed`, `skipped_robots`, `skipped_budget`, or `skipped_disabled`.
 - Runs are idempotent: if the `sha256` equals the last successful run's, skip the load.
 - `status != approved` → `skipped_disabled`, **always**.
-- **Rollback hook:** each connector declares the tables it loads (`owned_tables`). `rollback(run_id, dry_run)`
-  does the following:
-  1. Lists the rows tagged with that `fetch_run_id`, plus the dependent `metric_value` and `fact` rows.
-  2. **Refuses** if any dependent fact is `approved`, unless an `approval_review_id` is passed.
-  3. Deletes in one transaction.
-  4. Keeps the raw snapshot and marks the run `rolled_back`.
+- **Rollback hook (by status, never destructive):** each connector declares the tables it loads (`owned_tables`).
+  `rollback(run_id, dry_run)`:
+  1. Marks the `fetch_run` `rolled_back` (its observation rows stay; the `current_*` views stop selecting them).
+  2. Recomputes any `metric_value` rows derived from that run from the new current observations.
+  3. Sets dependent **approved** facts to `needs_review` (it never deletes a fact or an observation).
+  4. Keeps the raw snapshot.
 
-  Expose it as `tda ingest rollback <run-id> [--dry-run | --confirm] [--approval-review-id ID]`.
+  Expose it as `tda runs rollback <run-id> [--dry-run | --confirm]`. `--dry-run` lists what would change.
 - Add an example `EchoConnector` used only in tests.
 - Add a manual-acquisition path for inbox files: `run_manual(path, meta)` records `acquisition=manual`,
   `supplied_by`, and `original_url` from a required sidecar `<file>.meta.yaml`. P3 builds `tda inbox process` on
@@ -137,27 +151,38 @@ agent (P5). Don't modify `src/` or `model_service/`.
 
 ### T8. Read API (`tda/api/`)
 FastAPI endpoints:
-- `GET /v1/health`: DB ping, plus per-source `{last_success, cadence, stale: bool}`.
+- `GET /v1/health`: DB ping, plus per-source `{last_success, cadence, stale: bool}` read from the
+  `source_freshness` view.
 - `GET /v1/sources`: approved sources' public fields and `attribution_text`.
-- `GET /v1/facts`: approved facts only, filterable by `key_prefix`, `geography`, `limit`, and `cursor`.
+- `GET /v1/facts`: approved facts only (current version), filterable by `key_prefix`, `geography`, `limit`, and
+  `cursor`.
 
 Also:
 - Wire the API to the `tda_reader` role in the connection string.
 - `tda api openapi` writes `contracts/data-agent.openapi.json`, and the file is committed.
 
-### T9. CLI (`tda/cli.py`, Typer)
-Commands: `db upgrade|downgrade`, `sources list|validate|sync`, `ingest <id> [--live]`,
-`ingest rollback <run-id> [--dry-run|--confirm]`, `review list|show|approve|reject`, `api serve|openapi`,
-`retention run`, and `scheduler run`. The scheduler loads jobs from approved sources' cadences; there are none
-until P3.
+### T9. CLI (`tda/cli.py`, Typer) — one sub-app per module
+Compose the root `app` from Typer sub-apps so each module owns its commands:
+- `db`: `bootstrap`, `upgrade`, `downgrade`
+- `sources`: `list`, `validate`, `sync`
+- `ingest`: `<id> [--live]`
+- `runs`: `rollback <run-id> [--dry-run|--confirm]`, `list`, `show`
+- `review`: `list`, `show`, `approve`, `reject`
+- `api`: `serve`, `openapi`
+- `retention`: `run`
+- `scheduler`: `run` (loads jobs from approved sources' cadences; there are none until P3)
 
 ### T10. Compose (repo root)
 - `docker-compose.yml` services:
   - `postgres` (16-alpine, healthcheck, volume, init scripts)
-  - `data-agent-api` (port 8081)
+  - `data-agent-migrate` (one-shot): runs `tda db bootstrap` with the owner URL, then `alembic upgrade head`, then
+    exits. The API and worker `depends_on` it completing successfully.
+  - `data-agent-api` (port 8081, reader/writer URL)
   - `data-agent-worker`
-  - `model-service` (5001)
-- Leave `web` out for now.
+- **No `model-service`.** After P1 the live app never calls it (A3), and whether to keep it at all is decided at
+  the G1 gate (D-10). Leave `web` out too.
+- **Connection URLs are plain `postgresql://…` (psql-style)**, not SQLAlchemy driver URLs; the app adds the driver
+  in code. Provide separate owner, writer, and reader URLs.
 - A root `.env.example` with placeholders only. No real passwords.
 - Harvest ideas from the unmerged branch's compose file, but **don't** merge that branch or copy its credentials.
 
@@ -169,20 +194,28 @@ Tests:
 - source and region config validation, including a failing fixture
 - review state transitions, including illegal ones
 - connector base idempotency, using `EchoConnector`
-- rollback: dry-run lists rows; `--confirm` deletes in one transaction; refused when an approved fact depends on it
-- API: health, sources, and facts, which must never return non-approved facts
+- **append-only + current view:** a second load of changed content adds a row; `current_<table>` returns only the
+  latest run's row; a `rolled_back` run drops out of the view
+- **rollback by status:** `--dry-run` lists changes; `--confirm` marks the run `rolled_back`, recomputes metrics,
+  and sets a dependent approved fact to `needs_review`; **nothing is deleted**
+- **fact versioning:** a correction writes a new version with `supersedes_id` set; the API returns only the current
+  version
+- API: health (from `source_freshness`), sources, and facts, which must never return non-approved facts
 - **Reader-role integration:** the API runs its queries as `tda_reader`, and a write attempt fails with a
   permission error
 - **Paths:** `git check-ignore data_agent/raw/x data_agent/inbox/x` succeeds, and the settings resolve the same
   paths whether you run from the repo root or from `data_agent/`
 
-Mark DB tests `@pytest.mark.db`, and skip them when `TDA_TEST_DATABASE_URL` is unset.
+DB-backed tests are marked `@pytest.mark.db`. They are **skipped** when `TDA_TEST_DATABASE_URL` is unset, but if
+**`TDA_REQUIRE_DB_TESTS=1`** they must run (a skip is a failure) — CI sets it so the grant/role/append-only tests
+can't be silently skipped.
 
-CI: add a `data-agent` job to `.github/workflows/ci.yml` with a Postgres 16 service and `astral-sh/setup-uv`. Run:
+CI: add a `data-agent` job to `.github/workflows/ci.yml` with a Postgres 16 service and `astral-sh/setup-uv`, with
+`TDA_REQUIRE_DB_TESTS=1`. Run:
 - `uv sync --frozen`
 - `uv run ruff check .`
 - `uv run ruff format --check .`
-- `uv run alembic upgrade head`
+- `uv run tda db bootstrap && uv run alembic upgrade head`
 - `uv run pytest -q`
 
 ## Constraints
@@ -197,9 +230,9 @@ CI: add a `data-agent` job to `.github/workflows/ci.yml` with a Postgres 16 serv
 ```bash
 cd data_agent && uv sync && uv run ruff check . && uv run ruff format --check . && uv run pytest -q
 cd .. && docker compose up -d postgres && sleep 5
-set -a && . ./.env && set +a    # local .env copied from .env.example; exports TDA_DATABASE_URL (writer role)
-(cd data_agent && uv run tda db upgrade && uv run tda sources validate && uv run tda sources list)
-(cd data_agent && uv run tda api serve --port 8081 &) ; sleep 3 ; curl -s localhost:8081/v1/health | jq .
+set -a && . ./.env && set +a    # local .env copied from .env.example; exports the owner/writer/reader URLs
+(cd data_agent && uv run tda db bootstrap && uv run alembic upgrade head && uv run tda sources validate && uv run tda sources list)
+(cd data_agent && uv run tda api serve --port 8081 &) ; sleep 3 ; curl -s localhost:8081/v1/health | jq -e '.status=="ok"'
 (cd data_agent && uv run tda api openapi) && git diff --stat contracts/
 docker compose down
 ```
@@ -209,10 +242,13 @@ and the OpenAPI snapshot is committed.
 
 ## Definition of done
 
-- [ ] The CI `data-agent` job is green, alongside the existing web jobs.
+- [ ] The CI `data-agent` job is green (with `TDA_REQUIRE_DB_TESTS=1`), alongside the existing web jobs.
 - [ ] `tda ingest <any-proposed-source>` logs `skipped_disabled` and makes no network call; a test covers this.
-- [ ] `/v1/facts` never returns `candidate` or `rejected` facts; a test covers this.
-- [ ] `data_agent/README.md` documents setup, the CLI, and how to approve a source (via PR).
+- [ ] `tda runs rollback` marks the run `rolled_back` and sets dependent approved facts to `needs_review` **without
+      deleting anything**; a test covers this.
+- [ ] `/v1/facts` never returns `candidate`, `rejected`, or superseded facts; a test covers this.
+- [ ] `data_agent/README.md` documents setup, `db bootstrap`, the CLI sub-apps, the grant-per-migration rule, and
+      how to approve a source (via PR).
 
 ## Rollback
 

@@ -15,10 +15,10 @@
 
 | ID | Source | Access | Auth | Terms: fetch / store / attribution | Cadence | Priority · Phase | Status |
 |----|--------|--------|------|------------------------------------|---------|------------------|--------|
-| **S-1** | **CARTA GTFS static**, published through Trillium. Transitland feed `f-djz4-carta~sc~us` | `https://data.trilliumtransit.com/gtfs/carta-sc-us/carta-sc-us.zip` | none | Transitland license flags: use allowed **without** attribution; derived products allowed. No CARTA license page was found, so attribute CARTA anyway as good practice. | ~monthly new versions; poll daily with a conditional GET | **P0** · P3.1 | ✅ |
+| **S-1** | **CARTA GTFS static**, published through Trillium. Transitland feed `f-djz4-carta~sc~us`. Verified 2026-09-24: **1,108 stops, 24 routes**, active feed valid **2026-08-20 → 2027-05-27**. | `https://data.trilliumtransit.com/gtfs/carta-sc-us/carta-sc-us.zip` | none | Transitland **registry metadata** shows use-without-attribution and derived products allowed; the feed's own `feed_info.txt` has an **empty `feed_license`**, so treat terms as "registry-flagged, not publisher-confirmed" and attribute CARTA/Trillium anyway. | ~monthly new versions; poll daily with a conditional GET | **Pilot** · P3.1 | ✅ |
 | **S-2** | **CARTA GTFS-RT: Service Alerts only** | `http://gtfs-realtime.trilliumtransit.com/gtfs-realtime/feed/carta-sc-us/service_alerts.proto` (**http**, not https) | none | Same publisher as S-1 | Live; poll every 2–5 min | P1 · P3.7 | ✅ (alerts) |
 | S-2b | CARTA **vehicle positions and trip updates** | Not public. The AVL vendor is **Swiftly**, and the rider app is Transit. The Swiftly API needs an agency-authorized key and bans redistribution. | agency key | Needs a **partnership** with CARTA/Transdev | — | Outreach (D-20) | ❌ public |
-| **S-3** | **NTD Complete Monthly Ridership** (FTA), Socrata `8bui-9xvu`. CARTA's **NTD ID is 40110** (legacy 4110), UZA Charleston, SC | `https://data.transportation.gov/resource/8bui-9xvu.json?agency=Charleston%20Area%20Regional%20Transportation%20Authority&$order=date%20DESC` | none (an app token is recommended) | `USGOV_WORKS` (public domain). Store indefinitely. | Weekly refresh, with a monthly data lag. The live query returned **Jul 2026** (for example, bus UPT 224,397). | **P0** · P3.2 | ✅ |
+| **S-3** | **NTD Complete Monthly Ridership** (FTA), Socrata `8bui-9xvu`. CARTA's **NTD ID is 40110** (legacy 4110), UZA Charleston, SC | `https://data.transportation.gov/resource/8bui-9xvu.json?$where=ntd_id='40110'&$order=date DESC` (query by `ntd_id`, not the display name) | none (an app token is recommended) | `USGOV_WORKS` (public domain). Store indefinitely. | Weekly refresh, with a monthly data lag. The live query returned **Jul 2026** (bus UPT 6,372 for mode CB; MB rows also present). | **Pilot** · P3.2 | ✅ |
 | **S-4** | **Tri-County Link GTFS** (BCDCOG rural). Transitland `f-tricounty~link~sc~us` | `http://data.trilliumtransit.com/gtfs/tricountylink-sc-us/tricountylink-sc-us.zip` | none | **No license flags are stated.** A human terms review is needed before use. | ~monthly | P2 · P3 (later) | ✅ feed · ❔ terms |
 | S-5 | **Lowcountry Rapid Transit (LCRT)** BRT project info: 21.3 mi, Ladson ↔ downtown, BCDCOG sponsor | `https://lowcountryrapidtransit.com/about/` (the FTA CIG pages return 403 to bots, so a human retrieves them) | none | Public web. Check `robots.txt`. Cite facts only. | Ad hoc | P2 · P5 Extractor | 🟡 (opening ~2029 comes from a secondary source) |
 
@@ -31,7 +31,7 @@
 | **S-6c** | **SCDOT continuous count stations** (hourly volumes, 170+ stations), via the Drakewell public map | `https://scdottrafficdata.drakewell.com/publicmultinodemap.asp`: **export only** (Excel/PDF), no API | none | Don't scrape the UI. A **human exports** the files into the **inbox** (§3). | Monthly manual export | **P0 for traffic patterns** · P3.6 | 🟡 |
 | **S-7** | **TomTom** Traffic Flow v4, Incident Details v5, and Routing | `api.tomtom.com/...` (existing client) | API key | Free tier is ~**2,500 non-tile req/day** (secondary source). The terms **likely prohibit long-term storage** of live responses or building a derived database. **Legal review is required** (D-7). **Live use only by default.** Attribution: "© TomTom". | Per request | **P0** (live) · P1 | 🟡 |
 | S-7b | **TomTom Traffic Stats / MOVE**: the licensed historical speeds and travel times | `move.tomtom.com`, `docs.tomtom.com/traffic-stats` | paid (30-day trial) | Licensed for historical analytics | On demand | Option (D-7, D-14) | 🟡 |
-| S-8 | **SC511** (Iteris for SCDOT): incidents, cameras | Public web map only | — | **No public API.** Consumer ToS only. **Excluded**: don't scrape. A data-sharing request to SCDOT is possible. | — | Excluded | ❌ |
+| S-8 | **SC511** (Iteris for SCDOT): incidents, cameras | Public web map only | — | **No public developer API was found** (no docs or key signup located). Consumer ToS only. **Excluded**: don't scrape. A data-sharing request to SCDOT is possible. | — | Excluded | ❌ found |
 | S-9 | Headline congestion stats: the **TomTom Traffic Index** Charleston page and **INRIX Scorecard** | `https://www.tomtom.com/traffic-index/city/charleston-sc/`; INRIX requires registration | none / registration | Cite headline figures with attribution. No bulk reuse. | Annual (Q4/Jan) | P2 · P3.5 reference facts | 🟡 (figures are secondary; a human verifies them) |
 | S-9b | **NPMRDS** (FHWA probe travel times) | Restricted to public agencies | agency | Possible via a BCDCOG/SCDOT partnership | Monthly | Outreach (D-20) | ❔ |
 
@@ -96,9 +96,23 @@ Some high-value data can't be fetched politely, or doesn't have an API: the S-6c
 and registration-gated reports. For those:
 
 - A human drops the file into `data_agent/inbox/<source_id>/`. The directory is gitignored and holds raw files only.
-- `tda inbox process <source_id>` checksums the file, records a `fetch_run` with `kind=manual`, and normalizes it.
-  For document sources, it also sends the file to the Extractor.
+- `tda inbox process <source_id>` checksums the file, records a `fetch_run` with `acquisition=manual` (plus
+  `supplied_by` and `original_url`), and normalizes it. For document sources, it also sends the file to the
+  Extractor.
 - Every inbox run records **who** supplied the file, plus the original URL and retrieval date, for provenance.
+
+### 3.1 Retention model (raw vs normalized vs evidence)
+
+Retention is per-layer, not one number:
+
+| Layer | Default | Notes |
+|-------|---------|-------|
+| Raw snapshots | `store_policy` per source: `none`, `ttl:<N>d` (default 180 d for public-domain), or `indefinite` | TomTom live = `none` (D-7) |
+| Normalized observations | Kept **indefinitely** (append-only) | This is what makes rollback restore prior values; it's small |
+| Published-fact evidence | Kept **regardless of TTL** | Any raw snapshot cited by an approved/published fact is pinned so the citation stays reconstructable |
+
+This resolves the earlier drift between "180-day raw retention" (D-18) and "store NTD indefinitely" — they describe
+different layers.
 
 ## 4. Traffic patterns without violating terms (the D-7 default)
 

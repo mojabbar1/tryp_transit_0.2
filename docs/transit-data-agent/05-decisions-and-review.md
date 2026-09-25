@@ -25,20 +25,24 @@ that's blocked without an answer.
 | D-7 | Traffic history and TomTom storage | (a) TomTom **live only**, no persistence; time-of-day patterns from SCDOT hourly counts (inbox) plus AADT · (b) buy TomTom Traffic Stats · (c) store live samples after a **written legal approval** of TomTom's terms · (d) NPMRDS through a partnership | **(a)** now, with (b) or (d) considered after P4 shows value | P3 | |
 | D-8 | Human review surface | (a) CLI plus PR-published Markdown · (b) (a) plus an admin web UI in P7 (needs Auth.js) | **(a)**, revisited in P7 | P2, P5, P7 | |
 | D-9 | Hosting and scheduling | (a) docker-compose on one VM, with an APScheduler worker · (b) managed containers or jobs (Azure Container Apps, AWS ECS, Render, Fly) · (c) GitHub Actions cron plus a managed DB | **(a)** for dev and staging; decide prod in P7 | P2 (local), P7 | |
-| D-10 | Future of `model_service` | (a) keep it separate and retarget it to CARTA data through the data-agent API · (b) merge it into `data_agent` · (c) retire forecasting | **(a)** | P6 | |
+| D-10 | Future of `model_service` | (a) keep it separate and retarget it to CARTA data through the data-agent API · (b) merge it into `data_agent` · (c) retire forecasting | **Decide at G1.** It leaves the live path in P1 regardless; whether to build P6 at all is an expansion decision. | G1 (was P6) | |
 | D-11 | Unmerged branches `feature/economic-incentive-improvements` and `demo-improvements-20250813` | (a) harvest the patterns without merging, and archive the branches after P2 · (b) merge · (c) delete | **(a)**. Note that the second branch holds the key string (D-13). | P2 | |
 | D-12 | Scout (source discovery with web search) | (a) off · (b) on, CLI-only, with proposals going to the queue | **(a)** | P5 | |
 | D-13 | Handling the leaked Gemini key | (a) confirm it's **revoked**, redact the docs, and add PR-diff secret scanning · (b) additionally rewrite history with `git filter-repo` and force-push every affected branch | **(a)**. Choose (b) only if the key isn't confirmed revoked, or policy requires it. | **P0 (blocking)** | Revoked? ☐ yes, confirmed by ____ on ____ |
 | D-14 | Budgets | LLM monthly cap; per-run caps; TomTom plan (free ~2,500 non-tile/day vs paid); any Traffic Stats spend | **Suggested:** LLM ≤ $25/month during development (a provider-side cap plus a code cap), the TomTom free tier, and no paid historical data before P4 | P5 (P1 for web LLM calls) | |
 | D-15 | Where trip narration runs | (a) in the web app, sharing the validator vectors · (b) data agent `/v1/narrate` | **(a)**, the low-latency path | P1 | |
 | D-16 | Framework upgrade | (a) 14.2.35 as a stopgap in P0, then **Next 16.x** in P0B · (b) Next 15 | **(a)**. Next 15 support ends 2026-10-21. | P0 | |
-| D-17 | Demo mode | (a) keep the deterministic demo endpoint and demo dashboard behind `NEXT_PUBLIC_DEMO_MODE`, with a **visible badge** · (b) remove the demo artifacts | **(a)** | P4 | |
+| D-17 | Demo mode | (a) one app-wide `NEXT_PUBLIC_DEMO_MODE` flag (default off) gates the demo scenarios, the dashboard constants, **and** the `/incentives` + `/routes` reward copy, each with a visible badge · (b) remove the demo artifacts | **(a)** | P4 | |
 | D-18 | Retention, attribution, and crawler identity | Raw public-domain snapshots: 180 days (normalized data kept indefinitely). TomTom: `none`. UA: `TrypTransitDataAgent/<ver> (+<contact>)`. | **Accept these**, and supply the contact email: ________ | P2 | |
 | D-19 | Tooling | (a) uv, Python 3.12, Node 22 LTS, npm | **(a)** | P2 | |
 | D-20 | Partnerships and outreach (not blocking) | Ask CARTA or Transdev for GTFS-RT vehicle positions and trip updates, plus route-level ridership. Ask BCDCOG or SCDOT for NPMRDS. Ask SCDOT for a 511 data share. | **Send the asks during P2.** Owner: ________ | — | |
-| D-21 | Transit time before GTFS lands (P1 to P4) | (a) a deterministic heuristic, flagged "Estimated", with alternatives hidden until P4 · (b) keep the LLM-estimated values, flagged · (c) show no transit time until P4 | **(a)**. It's honest, deterministic, and replaced in P4. | P1 | |
+| D-21 | Transit time before GTFS lands (P1 to P4) | (a) show it as **`unavailable`** in live mode — drive time, cost, and current traffic still render — (b) a flagged heuristic estimate · (c) show nothing at all | **(a)**. A heuristic "bus time" is an unsupported promise (half the current stops aren't even near CARTA service). Bus time becomes real in P4. | P1 | |
 | D-22 | Forecast model backend (`model_service`) | (a) statistical: seasonal-naive vs ETS, chosen by backtest · (b) Chronos-Bolt on CPU · (c) Chronos-2 | **(a)**, with (b) behind `MODEL_BACKEND` only if it beats (a) in the backtest | P6 | |
-| D-23 | Privacy review owner and the impact-event schema | Owner name; approve the event list (`nudge_shown`, `cta_carta_fares_click`, `trip_planned`, `demo_vs_live`), the fields (hour-truncated time, corridor or route ID, variant, demo flag), k = 10 suppression, and "no IP, no user ID" | **Accept the schema as listed.** Owner: ________ | P7 | |
+| D-23 | Privacy review owner and the impact-event schema | Owner name; approve the event list (`nudge_shown`, `cta_carta_fares_click`, `trip_planned`, `demo_vs_live`), the fields (hour-truncated time, corridor or route ID, variant, demo flag), k = 10 suppression, and "no IP, no user ID" | **Accept the schema as listed.** Owner: ________ | Expansion (P7) | |
+| D-24 | **Baseline commit (G0)** | The assessed code (`9b129d6`) lives only on `origin/claude-opus4.5-refactor`, not `main`. (a) merge that branch **and** these docs into `main`, then start every phase from that commit · (b) keep phases on the branch and name it as the explicit base | **(a)**. Prompts branch from the named baseline, never an assumed `main`. | **G0 (blocking, before P0)** | |
+| D-25 | **Rewards** | Live-mode incentives: (a) **hidden until an approved, funded, redeemable offer inventory exists**; demo-only copy meanwhile, behind the demo badge · (b) keep showing example rewards | **(a)**. The app currently advertises $1–$4 gift cards nothing can pay (F-26). | P1 | |
+| D-26 | **Measurement design (G1)** | Before any impact claim, agree: the eligible-trip denominator, exposure/assignment (default: a randomized holdout), duplicate handling, the outcome tier (≥ 2 self-report; ≥ 3 verified), and a pre-declared decision rule. Owner: product + privacy. | **Default:** opt-in self-report with a randomized holdout; partner-verified trips as an upgrade. No traffic-reduction claim before Tier ≥ 3 data. | G1 (built in P7) | |
+| D-27 | **P1 rollback mechanism** | (a) **no legacy engine**; roll back the P1 route change by reverting the PR · (b) keep an `INSIGHTS_ENGINE=legacy` runtime switch | **(a)**. A runtime switch that re-enables LLM-invented numbers defeats the refactor. | P1 | |
 
 ## 2. Assumptions table (the P1 source of truth; P3.5 moves it into the fact store)
 
@@ -59,22 +63,26 @@ that's blocked without an answer.
 | `co2.car_g_per_mile` | ~400 | g CO2/vehicle-mile | S-13 | 🟡 secondary | | |
 | `co2.car_occupancy` | 1.0 (a drive-alone commute) | persons | Policy | Decision | | |
 | `co2.bus_g_per_passenger_mile` | ~204 (0.45 lb). **Stale (2010)**; replace with S-14b once available. | g CO2/pax-mile | S-14 | 🟡 secondary | | |
-| `traffic.density_thresholds` | Light ≥ 0.85, Medium ≥ 0.60, Heavy < 0.60 (current/free-flow speed ratio) | ratio | Engineering default | Decision | | |
-| `transit.estimate` (D-21) | Free-flow drive minutes × **1.5** + **10 min** wait, always flagged "Estimated" | — | Engineering placeholder until P4 | Decision | | |
-| `incentive.policy` | eCredit: Light $0.50 · Medium $1.00 · Heavy $2.00. This stays within the existing $0.50–$2.00 bounds in `route.ts`. | USD | Product policy | Decision | | |
-| `nudge.tone_rules` | 1–2 sentences; no false urgency or fear; only the given numbers; "about" for estimates; no demographic targeting | — | Policy (R-13) | Decision | | |
+| `traffic.density_thresholds` | Light ≥ 0.85, Medium ≥ 0.60, Heavy < 0.60 (current/free-flow speed ratio), labeled "Traffic now" | ratio | Engineering default | Decision | | |
+| `transit.access_buffer_min` (D-21, D-6) | **5 min** walk-to-stop buffer; earliest boardable departure = now + buffer | min | Engineering default | Decision | | |
+| `incentive.policy` | **Demo-only until D-25 funded offers exist.** When live: eCredit within $0.50–$2.00 bounds, chosen deterministically. | USD | Product policy | Decision | | |
+| `nudge.tone_rules` | 1–2 sentences; no false urgency or fear; **numbers by reference only**; "about" for estimates; no demographic targeting | — | Policy (R-13) | Decision | | |
 | `headline.congestion` (display only) | TomTom Traffic Index, Charleston (~35.5% congestion level, ~48 h lost per driver, 2025) | % / hours | S-9 | 🟡 secondary; a human verifies it on the page | | |
 
 ## 2b. Demo-stop mapping (P4b)
 
 Fill this in once the GTFS feed is loaded (P3.1). Look up the stops with `tda` or `GET /v1/stops?query=`. Before
-P4b, the demo scenarios use the P0 keys.
+P4b, the demo scenarios use the P0 keys — all chosen to be within ~350 m of a real CARTA stop (verified against
+the GTFS feed 2026-09-24). The weekend scenario is **not** Folly Beach; that stop is ~3.7 km from any CARTA stop.
 
 | Scenario | P0 departure key | P0 destination key | GTFS departure `stop_id` / name | GTFS destination `stop_id` / name | Direct route? (`/v1/compare`) | Approved by / date |
 |----------|------------------|--------------------|----------------------------------|------------------------------------|-------------------------------|--------------------|
 | rush-hour | King Street / Morris Street | Spring Street / Ashley Avenue | | | | |
-| weekend | Market Street / Meeting Street | Folly Beach / Center Street | | | | |
+| weekend | Market Street / Meeting Street | Isle of Palms / 14th Avenue | | | | |
 | night-out | King Street / Wentworth Street | Calhoun Street / King Street | | | | |
+
+> Even these near-CARTA keys are approximate intersections, not confirmed served pairs. A human must verify each
+> pair resolves to a real boardable trip in `/v1/compare` before P4b signs off; drop any scenario that doesn't.
 
 ## 3. Research findings (verified 2026-09-24)
 
@@ -102,13 +110,14 @@ that drive the plan:
 - [ ] The Python services run on 3.12, in non-root containers, with debug off.
 - [ ] No secret uses a `NEXT_PUBLIC_*` name, and `server-only` guards the env and LLM modules.
 - [ ] Error responses are generic, and the details stay in server logs.
-- [ ] LLM- and TomTom-backed routes are rate-limited (P7).
-- [ ] Admin and review endpoints are authenticated, and the DB roles are least-privilege (the reader can't write).
+- [ ] LLM- and TomTom-backed routes are rate-limited before any public deploy.
+- [ ] Admin and review endpoints are authenticated, and the DB roles are least-privilege (the reader can't write; grants are explicit).
+- [ ] **The LLM has no write tools.** The runtime submits to the review queue only after validation; a failed run leaves no draft.
 - [ ] Untrusted text (alerts, documents) is rendered as plain text. The extractor has no tools, and nothing
       auto-approves.
 - [ ] Every enabled source is terms-reviewed, attribution is rendered, and `robots.txt` is honored.
 - [ ] No PII is collected. Events are aggregate-only, with k ≥ 10 suppression.
-- [ ] Budgets are enforced in code and at the provider (D-14).
+- [ ] Budgets are enforced in code (reserved atomically) and at the provider (D-14).
 
 ## 5. Reviewer checklist (every phase PR)
 
@@ -121,41 +130,83 @@ that drive the plan:
 - [ ] The rollback path (a flag or a revert) is understood and practical.
 
 **Phase-specific checks**
-- **P0:** the demo buttons work, the `/find-rides` error path works, the key is redacted, and CI exists.
+- **P0:** the demo buttons work, the `/find-rides` error path works, the loading state clears on success, the
+  bbox order is fixed, the key is redacted, and CI exists.
 - **P0B:** the diff is behavior-neutral, and the screenshots match the pre-upgrade UI.
-- **P1:** a validator bypass is impossible (look at the tests); the legacy flag works; the response is additive only.
-- **P2:** proposed sources can't run, and `/v1/facts` never leaks candidates.
-- **P3:** the terms review is recorded, and a human ran the live smoke test.
-- **P4:** every page number has a citation, and demo mode is clearly badged.
-- **P5:** only the queue is writable, the budget gate works, and the injection tests pass.
-- **P6:** no NYC data or randomness remains, and the backtest report is attached.
-- **P7:** the privacy doc is signed, and the rate limits and alerts have been tested.
+- **P1:** the narration validator rejects the swapped-fact counterexample; live mode shows no bus time and no
+  reward; there is no legacy engine; the response is additive only.
+- **P2:** proposed sources can't run; `/v1/facts` never leaks candidates; the reader role can't write; an
+  append-then-rollback drill restores the prior value.
+- **P3:** the terms review is recorded, loads are append-only, and a human ran the live smoke test.
+- **P4:** every page number has a citation (or the page says "data unavailable"); demo mode is clearly badged;
+  `/v1/compare` never returns a departed bus.
+- **P5:** the model has no write tools; nothing reaches the queue before validation; the budget reservation
+  holds under concurrency; the injection tests pass.
+- **P6 (expansion):** no NYC data or randomness remains, and the backtest report is attached.
+- **P7 (expansion):** the privacy doc is signed, the measurement design (D-26) is agreed, and the rate limits and
+  alerts have been tested.
 
 ## 6. Connector sign-off (P3)
 
-| Connector | Source | Terms reviewed by / date | `store_policy` | Key provisioned | Approved to enable |
-|-----------|--------|--------------------------|----------------|-----------------|--------------------|
-| `gtfs_static` | S-1 | | | n/a | ☐ |
-| `ntd_monthly` | S-3 | | | n/a (app token optional) | ☐ |
-| `census_acs` | S-10 | | | ☐ | ☐ |
-| `eia_gas` | S-11 | | | ☐ | ☐ |
-| `reference_facts` | S-9, S-12…S-15 | | | n/a | ☐ |
-| `scdot_counts` / `scdot_ccs_inbox` | S-6a/b/c | | | n/a | ☐ |
-| `gtfs_rt_alerts` | S-2 | | | n/a | ☐ |
-| `tomtom_sampler` | S-7/S-7b | **requires D-7 (b) or (c)** | | ☐ | ☐ |
-| `nws` / `noaa_tides` / `nhtsa_fars` / `documents` | S-16/17/18/5/19/20 | | | n/a | ☐ |
+| Connector | Source | Stage | Terms reviewed by / date | `store_policy` | Key provisioned | Approved to enable |
+|-----------|--------|-------|--------------------------|----------------|-----------------|--------------------|
+| `gtfs_static` | S-1 | Pilot | | | n/a | ☐ |
+| `ntd_monthly` | S-3 | Pilot | | | n/a (app token optional) | ☐ |
+| `reference_facts` | S-9, S-12…S-15 | Pilot | | | n/a | ☐ |
+| `census_acs` | S-10 | Pilot (optional) | | | ☐ | ☐ |
+| `eia_gas` | S-11 | Pilot (optional) | | | ☐ | ☐ |
+| `gtfs_rt_alerts` | S-2 | Pilot (optional) | | | n/a | ☐ |
+| `scdot_counts` / `scdot_ccs_inbox` | S-6a/b/c | Expansion | | | n/a | ☐ |
+| `tomtom_sampler` | S-7/S-7b | Expansion | **requires D-7 (b) or (c)** | | ☐ | ☐ |
+| `nws` / `noaa_tides` / `nhtsa_fars` / `documents` | S-16/17/18/5/19/20 | Expansion | | | n/a | ☐ |
+
+## G0 — baseline gate (before P0)
+
+- [ ] D-24 answered: the assessed code (`9b129d6`) is an ancestor of `origin/main` (branch merged), **or** an
+      explicit base commit is named for every phase.
+- [ ] These planning docs are committed.
+- [ ] D-13 recorded: the leaked Gemini key is confirmed revoked.
+- [ ] A clean checkout of the named base contains every P0 input and passes the recorded baseline tests.
+
+## G1 — pilot gate (after P4b; before any expansion)
+
+All must hold and be recorded below:
+
+1. [ ] ≥ 20 real stop-pair queries match CARTA's published schedules on a human spot-check — including a
+       departed-bus case, an overnight case, and a no-service case.
+2. [ ] Every number on trip results and the stats pages resolves to an approved fact or a deterministic
+       computation, with a citation (automated scan + spot-check).
+3. [ ] A correction drill restores the prior value, sends dependent facts to `needs_review`, and keeps published
+       history explainable.
+4. [ ] An outage drill (data agent down) yields honest degraded results with no fabricated values.
+5. [ ] Live mode shows no `unavailable`-basis bus time as a number and no unfunded reward.
+6. [ ] D-26 (measurement design) is agreed and signed.
+7. [ ] The go/no-go decision and the chosen expansion items (P5 agent tasks, P6 forecasting, extra connectors,
+       scout, MCP, admin UI) are recorded.
+
+| G1 item | Evidence / link | Signed by / date |
+|---------|-----------------|------------------|
+| Schedule spot-check | | |
+| Provenance scan | | |
+| Correction drill | | |
+| Outage drill | | |
+| No unsupported promises | | |
+| Measurement design (D-26) | | |
+| Go/no-go + expansion list | | |
 
 ## 7. Phase sign-off
 
-| Phase | Approved to execute (name / date) | Decisions confirmed | PR | Merged (date) | Notes |
-|-------|-----------------------------------|---------------------|----|---------------|-------|
-| P0 Stabilize | | D-4, D-13, D-16 | | | Commit the pending doc edits first |
-| P0B Next 16 | | D-16 | | | |
-| P1 Web seams | | D-4, D-15, D-21, §2 | | | |
-| P2 Scaffold | | D-1, D-2, D-5, D-8, D-9, D-11, D-18, D-19 | | | |
-| P3 Connectors | | D-7, §6 | | | One PR per connector |
-| P4a Metrics + read API | | D-6 | | | |
-| P4b Web integration | | D-6, D-17, §2b | | | |
-| P5 Agent + HITL | | D-3, D-4, D-8, D-12, D-14 | | | Can run in parallel with P4b and P6 |
-| P6 Forecasting | | D-10, D-22 | | | After P4b |
-| P7 Productionize | | D-8, D-9, D-14, D-20, D-23 | | | PRs 7a–7d |
+| Phase | Stage | Approved to execute (name / date) | Decisions confirmed | PR | Merged (date) | Notes |
+|-------|-------|-----------------------------------|---------------------|----|---------------|-------|
+| **G0 baseline gate** | Gate | | D-24, D-13 | — | | Blocking; before P0 |
+| P0 Stabilize | Stabilize | | D-4, D-13, D-16, D-24 | | | Commit the pending doc edits first |
+| P0B Next 16 | Stabilize | | D-16 | | | |
+| P1 Web seams | Pilot | | D-4, D-15, D-21, D-25, D-27, §2 | | | |
+| P2 Scaffold | Pilot | | D-1, D-2, D-5, D-8, D-9, D-11, D-18, D-19 | | | |
+| P3 Connectors (core) | Pilot | | D-7, §6 | | | One PR per connector |
+| P4a Metrics + read API | Pilot | | D-6 | | | |
+| P4b Web integration | Pilot | | D-6, D-17, D-25, §2b | | | |
+| **G1 pilot gate** | Gate | | D-26 | — | | Blocking; before expansion |
+| P5 Agent + HITL | Expansion | | D-3, D-4, D-8, D-12, D-14 | | | Needs P1 + P4a |
+| P6 Forecasting | Expansion | | D-10, D-22 | | | Only if D-10 keeps it |
+| P7 Productionize | Expansion | | D-8, D-9, D-14, D-20, D-23, D-26 | | | PRs 7a–7d |

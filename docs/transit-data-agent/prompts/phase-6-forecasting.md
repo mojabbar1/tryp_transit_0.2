@@ -1,10 +1,12 @@
-# Phase 6 — Forecasting on real Charleston data (execution prompt)
+# Phase 6 — Forecasting on real Charleston data (execution prompt) · **Stage 3 (Expansion)**
 
-> **How to use:** once **P4b** is merged (P4a provides the `/v1/series/*` endpoints this phase consumes) and
-> Phase 6 is signed off in [05](../05-decisions-and-review.md), paste this whole file into your coding agent.
-> It's parallel-safe with P5, which touches only `data_agent/tda/agent`.
-> **Plan:** [04 §Phase 6](../04-implementation-plan.md#phase-6--forecasting-on-real-data-after-p4b-parallel-safe-with-p5) ·
-> **Fixes:** F-07, F-15
+> **Stage:** Expansion. **Entry gate: G1 must be signed off** (the pilot, P4b, is live and honest). Don't start P6
+> before then.
+> **How to use:** once the **G1 pilot gate** is signed off in [05](../05-decisions-and-review.md) and P4b is
+> merged, paste this whole file into your coding agent. This phase **adds** the `/v1/series/*` endpoints it
+> consumes (they don't exist before forecasting does). It's parallel-safe with P5, which touches only
+> `data_agent/tda/agent`.
+> **Plan:** [04 → Expansion](../04-implementation-plan.md#expansion-each-gated-at-g1) · **Fixes:** F-07, F-15
 
 ---
 
@@ -16,11 +18,12 @@ there's too little data to backtest.
 
 ## Preconditions
 
-- [ ] P4b is merged, so `/v1/series/ridership/monthly` and `/v1/series/traffic/hourly` exist, and the v2 engine is
-      stable. `ridership_monthly` holds CARTA data, which needs ≥ 36 months for a seasonal model. You're on
+- [ ] The **G1 pilot gate is signed off** and P4b is merged (the v2 engine is stable and honest). You're on
       `feat/tda-phase-6-forecasting`.
-- [ ] 05 sign-off records **D-10** (keep `model_service` separate and retarget it; the default) and **D-22** (the
-      model backend; the default is statistical, with Chronos-Bolt optional).
+- [ ] `ridership_monthly` holds CARTA data, which needs ≥ 36 months for a seasonal model.
+- [ ] 05 sign-off records **D-10** (decided at G1: keep `model_service` a separate service and retarget it — this
+      also re-adds it to compose) and **D-22** (the model backend; the default is statistical, with Chronos-Bolt
+      optional).
 
 ## Facts (verified 2026-09-24; re-check at execution time)
 
@@ -36,12 +39,14 @@ there's too little data to backtest.
      or uvicorn; pandas; numpy; statsmodels; httpx).
    - The optional extra `[chronos]` pulls in CPU torch and `chronos-forecasting>=2`.
    - Listen on port 5001.
-2. **Data access:** consume the P4a endpoints `GET /v1/series/ridership/monthly?mode=` and
-   `GET /v1/series/traffic/hourly?station_id=|corridor_id=` over HTTP, with timeouts. `model_service` gets **no DB
-   credentials**. **Don't change the data-agent API or the OpenAPI snapshot in this phase.** If an endpoint is
-   missing or wrong, stop and raise it as a P4a follow-up.
-   The only data-agent change allowed here is a dev-only CLI command, `tda dev seed <fixture>`, which loads a named
-   test fixture (for example `ntd_monthly`) into the local DB for verification.
+2. **Series endpoints (add them in this phase):** first, in the data agent, add
+   `GET /v1/series/ridership/monthly?mode=` and `GET /v1/series/traffic/hourly?station_id=|corridor_id=` over the
+   metrics from P4a. The **same migration** grants any newly read table to `tda_reader`, and you regenerate and
+   commit `contracts/data-agent.openapi.json`. Then `model_service` consumes them over HTTP with timeouts;
+   `model_service` gets **no DB credentials**. If the underlying metrics are missing, stop and raise it as a P4a
+   follow-up.
+   A dev-only CLI command, `tda dev seed <fixture>`, loads a named test fixture (for example `ntd_monthly`) into
+   the local DB for verification.
 3. **Models (`model_service/forecast/`):**
    - `ridership.py`: forecast monthly UPT for 1–12 months ahead. Candidates: seasonal-naive, ETS
      (`statsmodels` ExponentialSmoothing with seasonal=12), and Chronos-Bolt if `MODEL_BACKEND=chronos-bolt`.
@@ -57,12 +62,13 @@ there's too little data to backtest.
    - `/predict/*` stays for one release under `MODEL_MODE=demo` only, with a `Deprecation` header. It's seeded and
      deterministic.
 5. **Web, in the same PR:**
-   - Update `src/lib/api/ridership.ts` to use `/v2/forecast/volume` for time-of-day congestion context.
+   - Update `src/lib/api/ridership.ts` to use `/v2/forecast/volume` for time-of-day **traffic-volume** context.
    - **Remove** the "predicted bus passenger count" claim from narration facts; that NYC number was never meaningful.
    - Add a `volume_index` fact, with its citation back to S-6c.
 6. **Clean up:** delete `model_service/data/MTA_*.csv`, `bus_hourly_chronos_t5_tiny.py`,
    `bus_daily_chronos_t5_tiny.py`, and the dead `predict_chronos`. Rewrite `model_service/README.md`.
-7. **Compose:** `model-service` depends on `data-agent-api`.
+7. **Compose:** re-add the `model-service` service (removed at P2, restored now per D-10), depending on
+   `data-agent-api`.
 
 ## Tests
 
@@ -77,10 +83,12 @@ there's too little data to backtest.
 
 ```bash
 (cd model_service && uv run pytest -q)   # or: python -m pytest -q
+(cd data_agent && uv run ruff check . && uv run pytest -q && uv run tda api openapi) && git diff --exit-code contracts/
 docker compose up -d --build postgres data-agent-api model-service && sleep 5
-(cd data_agent && uv run tda db upgrade && uv run tda dev seed ntd_monthly)   # known fixture series
+(cd data_agent && uv run tda db bootstrap && uv run alembic upgrade head && uv run tda dev seed ntd_monthly)   # known fixture series
+curl -s localhost:8081/v1/series/ridership/monthly?mode=MB | jq -e 'length>=0'
 curl -s localhost:5001/health | jq .
-curl -s "localhost:5001/v2/forecast/ridership/monthly?mode=MB&months=6" | jq '.model, (.points|length)'   # expect 6 points
+curl -s "localhost:5001/v2/forecast/ridership/monthly?mode=MB&months=6" | jq -e '(.points|length)==6'   # expect 6 points
 docker compose down
 (cd src && npm test -- --ci && npm run build)
 ```
