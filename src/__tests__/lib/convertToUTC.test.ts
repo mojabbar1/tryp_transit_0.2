@@ -5,11 +5,8 @@
 import { convertToUTC } from '@/lib/convertToUTC';
 
 describe('convertToUTC', () => {
-  // Store original Date to restore after tests
-  const RealDate = Date;
-
   afterEach(() => {
-    global.Date = RealDate;
+    jest.useRealTimers();
   });
 
   it('should convert HH:MM to ISO string format', () => {
@@ -47,17 +44,12 @@ describe('convertToUTC', () => {
 
   it('should roll forward to next day if time is in the past', () => {
     // Mock current time to 15:00
-    const mockDate = new Date(2025, 11, 5, 15, 0, 0); // Dec 5, 2025 15:00
-    jest.spyOn(global, 'Date').mockImplementation(((...args) => {
-      if (args.length === 0) {
-        return mockDate;
-      }
-      return new RealDate(...(args as [number, number, number?, number?, number?, number?, number?]));
-    }) as unknown as typeof Date);
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2025, 11, 5, 15, 0, 0)); // Dec 5, 2025 15:00
     
     // Request time in the past (10:00)
     const result = convertToUTC('10:00');
-    const resultDate = new RealDate(result);
+    const resultDate = new Date(result);
     
     // Should be tomorrow
     expect(resultDate.getDate()).toBe(6);
@@ -65,17 +57,12 @@ describe('convertToUTC', () => {
 
   it('should return today if time is in the future', () => {
     // Mock current time to 10:00
-    const mockDate = new Date(2025, 11, 5, 10, 0, 0); // Dec 5, 2025 10:00
-    jest.spyOn(global, 'Date').mockImplementation(((...args) => {
-      if (args.length === 0) {
-        return mockDate;
-      }
-      return new RealDate(...(args as [number, number, number?, number?, number?, number?, number?]));
-    }) as unknown as typeof Date);
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2025, 11, 5, 10, 0, 0)); // Dec 5, 2025 10:00
     
     // Request time in the future (15:00)
     const result = convertToUTC('15:00');
-    const resultDate = new RealDate(result);
+    const resultDate = new Date(result);
     
     // Should be today
     expect(resultDate.getDate()).toBe(5);
