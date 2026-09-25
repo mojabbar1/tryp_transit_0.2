@@ -5,7 +5,6 @@ import { useForm, useFormState } from 'react-hook-form';
 import { useState } from 'react';
 import axios from 'axios';
 import { z } from 'zod';
-import { useGeolocation } from '@/contexts/geolocation-context-provider';
 import useRequireAuth from '../hooks/useRequireAuth';
 import { busStops } from '@/app/data/busStops';
 import BusPhotoFour from '@/public/bus-four.jpg';
@@ -36,18 +35,20 @@ import BackgroundPhoto from '@/components/background-photo';
 import { useTravelContext } from '@/contexts/travel-context';
 import { busStopCoordinates } from '../data/busStopCoordinates';
 import Loading from '@/components/loading';
+import { toNumberOrNull } from '@/lib/utils';
+import type { TransitInsightResponse } from '@/types/interfaces';
 
 const getCoordinates = (stopName: string) => {
   return busStopCoordinates[stopName] || null;
 };
 
 const Dashboard = () => {
-  const { coordinates } = useGeolocation();
   const isLoggedIn = useRequireAuth();
   const { setTravelData } = useTravelContext();
   const [selectedDepartureValue, setSelectedDepartureValue] = useState('');
   const [selectedDestinationValue, setSelectedDestinationValue] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const router = useRouter();
 
@@ -71,36 +72,37 @@ const Dashboard = () => {
       return;
     }
 
+    setErrorMessage(null);
+    let succeeded = false;
+
     try {
       setIsLoading(true);
-      const response = await axios.post('/api/getTravelTime', {
-        currentLocation: {
-          latitude: coordinates.latitude,
-          longitude: coordinates.longitude,
-        },
+      const response = await axios.post<TransitInsightResponse>('/api/transit-insights', {
         departure: departureCoordinates,
         destination: destinationCoordinates,
         timeToDestination: data.timeToDestination,
       });
 
-      const travelTime = response?.data?.travelTime ?? null;
-      const trafficDensity = response?.data?.trafficDensity ?? null;
-      const costSavings = response?.data?.costSavingsPerTrip ?? null;
-      const additionalRides = response?.data?.additionalRides ?? [];
+      const insights = response.data;
 
       setTravelData({
-        travelTime,
-        trafficDensity,
-        costSavings,
-        additionalRides,
+        travelTime: insights?.travelTime ?? null,
+        trafficDensity: insights?.trafficDensity ?? null,
+        costSavings: toNumberOrNull(insights?.costSavingsPerTrip),
+        additionalRides: insights?.additionalRides ?? [],
       });
+      succeeded = true;
     } catch (error) {
-      console.error(error);
+      // axios rejects on any non-2xx status as well as on network errors
+      console.error('Transit insights request failed:', error);
+      setErrorMessage("We couldn't get your trip insights right now. Please try again.");
     } finally {
       setIsLoading(false);
     }
 
-    router.push('/routes');
+    if (succeeded) {
+      router.push('/routes');
+    }
   }
 
   if (!isLoggedIn) {
@@ -251,6 +253,11 @@ const Dashboard = () => {
                   <Button variant="secondary" type="submit">
                     FIND
                   </Button>
+                  {errorMessage && (
+                    <p role="alert" className="text-sm text-center text-red-700">
+                      {errorMessage}
+                    </p>
+                  )}
                 </form>
               </Form>
             </CardContent>
