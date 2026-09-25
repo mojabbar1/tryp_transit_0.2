@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useTravelContext } from '@/contexts/travel-context';
+import { isNil } from '@/lib/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
@@ -18,7 +19,8 @@ const RoutesPage = () => {
   const router = useRouter();
 
   useEffect(() => {
-    if (!costSavings || !trafficDensity || !travelTime) {
+    // Explicit null/undefined checks: a legitimate costSavings of 0 must render, not redirect
+    if (isNil(costSavings) || isNil(trafficDensity) || isNil(travelTime)) {
       router.push('/dashboard');
     }
   }, [costSavings, trafficDensity, travelTime, router]);

@@ -6,6 +6,13 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * True only for null or undefined, so legitimate falsy values such as 0 are kept.
+ */
+export function isNil(value: unknown): value is null | undefined {
+  return value === null || value === undefined
+}
+
+/**
  * Parse a numeric API value (e.g. "2.50"). Missing, empty, or non-numeric values
  * become null rather than 0 or NaN, so a missing value is never shown as a real number.
  */

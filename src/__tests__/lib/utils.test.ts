@@ -2,7 +2,20 @@
  * Unit tests for shared utilities
  */
 
-import { toNumberOrNull } from '@/lib/utils';
+import { isNil, toNumberOrNull } from '@/lib/utils';
+
+describe('isNil', () => {
+  it('is true only for null and undefined', () => {
+    expect(isNil(null)).toBe(true);
+    expect(isNil(undefined)).toBe(true);
+  });
+
+  it('treats a legitimate zero and other falsy values as present', () => {
+    expect(isNil(0)).toBe(false);
+    expect(isNil('')).toBe(false);
+    expect(isNil(false)).toBe(false);
+  });
+});
 
 describe('toNumberOrNull', () => {
   it('parses numeric strings from the API contract', () => {
