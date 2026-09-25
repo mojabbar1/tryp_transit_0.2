@@ -1,6 +1,6 @@
 # Tryp Transit 0.2 — Refactoring Plan
 
-> **Goal**: MVP Demo with clean, maintainable code  
+> **Goal**:  Demo with clean, maintainable code  
 > **Scope**: Moderate refactoring (Option B) — fix issues, consolidate duplicates, improve patterns  
 > **Generated**: December 5, 2025
 
@@ -208,9 +208,9 @@ const currentUser = localStorage.getItem('currentUser');
 setIsLoggedIn(!!currentUser);
 ```
 
-**This is fine for MVP demo** — simple, works, no external dependencies.
+**This is fine for  demo** — simple, works, no external dependencies.
 
-### Cleanup Actions for MVP
+### Cleanup Actions for 
 1. **Add comments** explaining this is demo-only
 2. **Remove unused `isLoading`** state or use it consistently
 3. **Add session expiry** (optional) — auto-logout after X hours
@@ -252,7 +252,7 @@ export { handler as GET, handler as POST };
 - Easy to add OAuth providers later (Google, GitHub)
 - Production-ready security
 
-**Estimated Time**: MVP cleanup: 30 min | Future NextAuth: 2-4 hours
+**Estimated Time**:  cleanup: 30 min | Future NextAuth: 2-4 hours
 
 ---
 
@@ -267,12 +267,12 @@ export { handler as GET, handler as POST };
 
 | Approach | Size | Accuracy | Effort | Recommendation |
 |----------|------|----------|--------|----------------|
-| **Keep PyTorch + Chronos** | ~2GB | High | None | ✅ For MVP |
+| **Keep PyTorch + Chronos** | ~2GB | High | None | ✅ For  |
 | **statsmodels ARIMA** | ~50MB | Medium | 2-3 hrs | Good alternative |
 | **Prophet (Facebook)** | ~100MB | High | 1-2 hrs | Great alternative |
 | **Simple heuristics** | ~0MB | Low | 30 min | Fallback only |
 
-### Recommendation: Keep PyTorch for MVP, Plan Prophet Migration
+### Recommendation: Keep PyTorch for , Plan Prophet Migration
 
 **Rationale:**
 1. Current implementation works
@@ -373,7 +373,7 @@ def predict_ridership(hours_future: int) -> int:
 **Why Option B > Option C for this project:**
 - You have working code to test against
 - TDD (Option C) is slower for refactoring existing code
-- Diminishing returns for MVP demo
+- Diminishing returns for  demo
 
 **Recommended Test Coverage:**
 

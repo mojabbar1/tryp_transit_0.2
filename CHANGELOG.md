@@ -97,7 +97,7 @@ All notable changes to the Tryp Transit project are documented here.
 ## [0.2.0] - 2025-11-XX (Previous Release)
 
 ### Features
-- Initial MVP implementation
+- Initial  implementation
 - AI-powered transit recommendations
 - Gemini and OpenAI integration
 - TomTom traffic data
@@ -112,4 +112,4 @@ All notable changes to the Tryp Transit project are documented here.
 | Version | Date | Summary |
 |---------|------|---------|
 | 0.2.1 | 2025-12-05 | Refactoring, security fixes, testing |
-| 0.2.0 | 2025-11-XX | Initial MVP release |
+| 0.2.0 | 2025-11-XX | Initial  release |

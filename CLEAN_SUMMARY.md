@@ -49,7 +49,7 @@ The clean version is now:
    cd tryp_transit_v0.2
    git init
    git add .
-   git commit -m "Initial commit: Tryp Transit v0.2 MVP"
+   git commit -m "Initial commit: Tryp Transit v0.2 "
    git remote add origin your-github-repo-url
    git push -u origin main
    ```
