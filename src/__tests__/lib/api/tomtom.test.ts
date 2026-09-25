@@ -12,8 +12,8 @@ describe('TomTom API Utilities', () => {
       
       const result = calculateBbox(departure, destination);
       
-      // Format: minLat,minLng,maxLat,maxLng
-      expect(result).toBe('32.7764,-79.9353,32.7913,-79.9301');
+      // Format (TomTom Incident Details): minLon,minLat,maxLon,maxLat
+      expect(result).toBe('-79.9353,32.7764,-79.9301,32.7913');
     });
 
     it('should handle reversed coordinates (destination north of departure)', () => {
@@ -23,7 +23,7 @@ describe('TomTom API Utilities', () => {
       const result = calculateBbox(departure, destination);
       
       // Should still produce same bbox regardless of order
-      expect(result).toBe('32.7764,-79.9353,32.7913,-79.9301');
+      expect(result).toBe('-79.9353,32.7764,-79.9301,32.7913');
     });
 
     it('should handle same point (zero-area bbox)', () => {
@@ -31,7 +31,7 @@ describe('TomTom API Utilities', () => {
       
       const result = calculateBbox(point, point);
       
-      expect(result).toBe('32.78,-79.93,32.78,-79.93');
+      expect(result).toBe('-79.93,32.78,-79.93,32.78');
     });
 
     it('should handle negative latitudes (southern hemisphere)', () => {
@@ -40,7 +40,7 @@ describe('TomTom API Utilities', () => {
       
       const result = calculateBbox(departure, destination);
       
-      expect(result).toBe('-33.9173,151.2093,-33.8688,151.2313');
+      expect(result).toBe('151.2093,-33.9173,151.2313,-33.8688');
     });
 
     it('should handle cross-hemisphere routes', () => {
@@ -49,7 +49,7 @@ describe('TomTom API Utilities', () => {
       
       const result = calculateBbox(departure, destination);
       
-      expect(result).toBe('-6.2088,103.8198,1.3521,106.8456');
+      expect(result).toBe('103.8198,-6.2088,106.8456,1.3521');
     });
   });
 });

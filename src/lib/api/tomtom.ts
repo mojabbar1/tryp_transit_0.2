@@ -44,16 +44,15 @@ export async function getTrafficFlow(point: Coordinates): Promise<TrafficFlowDat
 }
 
 /**
- * Calculate bounding box from two points
+ * Calculate the bounding box for TomTom Incident Details from two points.
+ * TomTom expects longitude first: minLon,minLat,maxLon,maxLat (lower-left, then upper-right).
  */
 export function calculateBbox(departure: Coordinates, destination: Coordinates): string {
-  return `${Math.min(departure.lat, destination.lat)},${Math.min(
-    departure.lng,
-    destination.lng
-  )},${Math.max(departure.lat, destination.lat)},${Math.max(
-    departure.lng,
-    destination.lng
-  )}`;
+  const minLon = Math.min(departure.lng, destination.lng);
+  const minLat = Math.min(departure.lat, destination.lat);
+  const maxLon = Math.max(departure.lng, destination.lng);
+  const maxLat = Math.max(departure.lat, destination.lat);
+  return `${minLon},${minLat},${maxLon},${maxLat}`;
 }
 
 /**
