@@ -203,7 +203,7 @@ All must hold and be recorded below:
 |-------|-------|-----------------------------------|---------------------|----|---------------|-------|
 | **G0 baseline gate** | Gate | mojabbar / 2026-09-25 | D-24 ✅, D-13 ✅ | — | 2026-09-25 | Passed; baseline + docs on `main` |
 | P0 Stabilize | Stabilize | mojabbar / 2026-09-25 | D-4 ✅, D-13 ✅, D-16 ✅, D-24 ✅ | [#3](https://github.com/mojabbar1/tryp_transit_0.2/pull/3) | | Commit the pending doc edits first (done: tree clean at G0) |
-| P0B Next 16 | Stabilize | | D-16 | | | |
+| P0B Next 16 | Stabilize | *Pending maintainer confirmation.* Built by the builder session per the maintainer's 2026-09-25 instruction "proceed to next steps of implementation" | D-16 ✅ | (stacked on #3) | | Must not merge before #3; rebase onto `main` after #3 merges |
 | P1 Web seams | Pilot | | D-4, D-15, D-21, D-25, D-27, §2 | | | |
 | P2 Scaffold | Pilot | | D-1, D-2, D-5, D-8, D-9, D-11, D-18, D-19 | | | |
 | P3 Connectors (core) | Pilot | | D-7, §6 | | | One PR per connector |

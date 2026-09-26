@@ -55,6 +55,8 @@
 
 ### Frontend (`src/`)
 
+Next.js 16 (App Router, Turbopack) on React 19; requires Node.js ≥ 20.9 (`engines` in `src/package.json`; CI uses Node 22). Lint runs through the ESLint 9 CLI (`src/eslint.config.mjs`), not `next lint`.
+
 | Directory | Purpose |
 |-----------|---------|
 | `app/` | Next.js App Router pages and API routes |
@@ -219,6 +221,7 @@ npm test              # Run all tests
 npm run test:watch    # Watch mode
 npm run test:coverage # Coverage report
 npm run typecheck     # Type-check (tsc --noEmit)
+npm run lint          # ESLint 9 CLI with src/eslint.config.mjs (next lint was removed in Next 16)
 ```
 
 ### Test Files

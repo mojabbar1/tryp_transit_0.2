@@ -2,6 +2,21 @@
 
 All notable changes to the Tryp Transit project are documented here.
 
+## [0.2.3] - 2026-09-25 — Framework upgrade (Phase 0B)
+
+- **Next.js 14.2.35 → 16.3.5 and React 18 → 19.3.0** (`@types/react` 19), via `@next/codemod@16.3.5 upgrade`.
+  16.3.5 is the latest stable 16.x (npm's `latest` tag for `next` currently points at a canary). Turbopack is now
+  the default bundler for dev and build. No request-API, middleware, or `next.config.mjs` changes were needed.
+- **Lint:** `next lint` was removed in Next 16, so lint now runs through the ESLint 9 CLI (`eslint .`) with a
+  flat config (`src/eslint.config.mjs`) based on `eslint-config-next` 16 core-web-vitals. The new
+  `react-hooks/set-state-in-effect` rule is a warning for three existing effects (a follow-up).
+- **Dependencies:** `lucide-react` 0.396 → 1.47 (same `Check`/`ChevronDown`/`ChevronUp` icons),
+  `@hookform/resolvers` 3.10 → 5.9, and ESLint 8 → 9 (ESLint 10 isn't supported by the bundled React/import/a11y
+  plugins yet). Peer floors: zod ^3.25, react-hook-form ^7.55. `engines.node` is `>=20.9`.
+- **tsconfig:** Next 16 set `jsx: react-jsx` (mandatory), `target: ES2017`, and added `.next/dev/types` to
+  `include`.
+- **Docs:** Node ≥ 20.9 and the ESLint CLI are documented in README, SETUP, and CONTEXT.
+
 ## [0.2.2] - 2026-09-25 — Stabilization (Phase 0)
 
 - **T1 Health endpoint** — new `GET /api/health` reports ridership-service reachability and whether the LLM and

@@ -5,7 +5,7 @@
 This is the clean, production-ready version of Tryp Transit. All legacy files and duplicate directories have been removed.
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 20.9+ (Node 22 LTS recommended; CI uses Node 22)
 - Python 3.11+
 - npm or yarn
 
