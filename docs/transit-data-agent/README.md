@@ -70,7 +70,7 @@ Rules for coding agents:
 |-------|-------|--------|------------|--------|----|
 | **G0 baseline gate** | Gate | [05 §G0](./05-decisions-and-review.md) | D-24, D-13 | ✅ Passed 2026-09-25 | — |
 | P0 Stabilize & secure | 1 | [phase-0-stabilize](./prompts/phase-0-stabilize.md) | G0 | ✅ Done 2026-09-25 (`fd52ce8`); R1 waived → P1 precondition | [#3](https://github.com/mojabbar1/tryp_transit_0.2/pull/3) |
-| P0B Next 16 / React 19 | 1 | [phase-0b-framework-upgrade](./prompts/phase-0b-framework-upgrade.md) | P0 | 🔍 In review | [#4](https://github.com/mojabbar1/tryp_transit_0.2/pull/4) |
+| P0B Next 16 / React 19 | 1 | [phase-0b-framework-upgrade](./prompts/phase-0b-framework-upgrade.md) | P0 | ✅ Done 2026-09-25 (`5a7833a`); exceptions in 05 §7 | [#4](https://github.com/mojabbar1/tryp_transit_0.2/pull/4) |
 | P1 Web seams & deterministic math | 2 | [phase-1-web-seams](./prompts/phase-1-web-seams.md) | P0B | ⏳ | |
 | P2 `data_agent` scaffold | 2 | [phase-2-data-agent-scaffold](./prompts/phase-2-data-agent-scaffold.md) | P0 (parallel with P0B, P1) | ⏳ | |
 | P3 Connectors (1 PR each) | 2 | [phase-3-connectors](./prompts/phase-3-connectors.md) | P2 | ⏳ `gtfs_static` ☐ `ntd_monthly` ☐ `census_acs` ☐ `eia_gas` ☐ `reference_facts` ☐ `scdot_*` ☐ `gtfs_rt_alerts` ☐ | |
