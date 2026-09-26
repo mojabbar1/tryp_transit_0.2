@@ -2,7 +2,12 @@
  * Unit tests for Gemini API utilities
  */
 
-import { extractJsonFromMarkdown, parseJsonResponse } from '@/lib/api/gemini';
+import {
+  DEFAULT_GEMINI_MODEL,
+  extractJsonFromMarkdown,
+  getGeminiModelId,
+  parseJsonResponse,
+} from '@/lib/api/gemini';
 
 describe('Gemini API Utilities', () => {
   describe('extractJsonFromMarkdown', () => {
@@ -82,6 +87,36 @@ describe('Gemini API Utilities', () => {
       
       expect(result.additionalRides).toHaveLength(2);
       expect(result.additionalRides[0].travelTime).toBe(20);
+    });
+  });
+
+  describe('getGeminiModelId', () => {
+    const saved = process.env.GEMINI_MODEL;
+
+    afterEach(() => {
+      if (saved === undefined) delete process.env.GEMINI_MODEL;
+      else process.env.GEMINI_MODEL = saved;
+    });
+
+    it('defaults to gemini-3.8-flash (D-4)', () => {
+      delete process.env.GEMINI_MODEL;
+
+      expect(DEFAULT_GEMINI_MODEL).toBe('gemini-3.8-flash');
+      expect(getGeminiModelId()).toBe('gemini-3.8-flash');
+    });
+
+    it('uses GEMINI_MODEL when set', () => {
+      process.env.GEMINI_MODEL = 'gemini-override';
+
+      expect(getGeminiModelId()).toBe('gemini-override');
+    });
+
+    it('falls back to the default when GEMINI_MODEL is blank', () => {
+      process.env.GEMINI_MODEL = '';
+      expect(getGeminiModelId()).toBe(DEFAULT_GEMINI_MODEL);
+
+      process.env.GEMINI_MODEL = '   ';
+      expect(getGeminiModelId()).toBe(DEFAULT_GEMINI_MODEL);
     });
   });
 });

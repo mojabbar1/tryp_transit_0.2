@@ -7,6 +7,17 @@ import OpenAI from 'openai';
 
 let openaiInstance: OpenAI | null = null;
 
+/** Default OpenAI model (D-4; per developers.openai.com, re-checked 2026-09-25). Override with OPENAI_MODEL. */
+export const DEFAULT_OPENAI_MODEL = 'gpt-5.6-terra';
+
+/**
+ * The OpenAI model ID: OPENAI_MODEL from env, or the default when it is unset or blank
+ * (the blank `OPENAI_MODEL=` line in .env.example must not select an empty model ID).
+ */
+export function getOpenAIModelId(): string {
+  return process.env.OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
+}
+
 /**
  * Get or create the OpenAI client instance
  */
@@ -24,7 +35,7 @@ export function getOpenAIClient(): OpenAI {
 /**
  * Call OpenAI API with streaming and collect the full response
  */
-export async function callOpenAI(prompt: string, model: string = 'gpt-3.5-turbo'): Promise<string> {
+export async function callOpenAI(prompt: string, model: string = getOpenAIModelId()): Promise<string> {
   const client = getOpenAIClient();
   
   const stream = await client.chat.completions.create({
@@ -44,7 +55,7 @@ export async function callOpenAI(prompt: string, model: string = 'gpt-3.5-turbo'
 /**
  * Call OpenAI API without streaming (simpler for JSON responses)
  */
-export async function callOpenAISync(prompt: string, model: string = 'gpt-3.5-turbo'): Promise<string> {
+export async function callOpenAISync(prompt: string, model: string = getOpenAIModelId()): Promise<string> {
   const client = getOpenAIClient();
   
   const response = await client.chat.completions.create({
