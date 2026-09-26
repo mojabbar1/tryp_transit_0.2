@@ -121,9 +121,13 @@ for provider in $providers; do
     curl -s -o "$body" -w '%{http_code}' --max-time 180 -X POST "http://127.0.0.1:$port/api/transit-insights" \
       -H 'Content-Type: application/json' -d "$trip" >"$body.code" &
     curl_pid=$!
-    wait "$curl_pid"; curl_pid=""
+    wait "$curl_pid"; curl_status=$?; curl_pid=""
     code="$(cat "$body.code" 2>/dev/null || echo "-")"
-    [ "$code" = 200 ] || { echo "   FAIL: HTTP $code: $(diagnose)"; ok=0; }
+    if [ "$curl_status" != 0 ]; then
+      echo "   FAIL: the request did not complete (curl exit $curl_status, e.g. timeout or dropped connection)"; ok=0
+    elif [ "$code" != 200 ]; then
+      echo "   FAIL: HTTP $code: $(diagnose)"; ok=0
+    fi
   fi
   if [ "$ok" = 1 ]; then
     verdict="$(node scripts/validate-trip-response.cjs "$body" 2>/dev/null)"
