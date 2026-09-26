@@ -69,6 +69,7 @@ python app.py
 ```
 
 #### 2. Frontend Setup
+Requires **Node.js ≥ 20.9** (Node 22 LTS recommended; CI uses Node 22).
 ```bash
 cd src
 
@@ -81,6 +82,9 @@ cp .env.example .env.local
 
 # Start development server
 npm run dev
+
+# Lint (ESLint 9 CLI; `next lint` was removed in Next 16)
+npm run lint
 ```
 
 ## 🔧 Environment Configuration

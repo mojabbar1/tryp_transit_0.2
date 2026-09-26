@@ -93,6 +93,13 @@ Run the test script to verify everything is set up correctly:
 ./test-setup.sh
 ```
 
+Frontend checks (from `src/`, the same ones CI runs):
+```bash
+npm run lint       # ESLint 9 CLI with src/eslint.config.mjs (`next lint` was removed in Next 16)
+npm run typecheck  # tsc --noEmit
+npm test           # Jest
+```
+
 ### 📁 Clean Directory Structure
 
 ```
