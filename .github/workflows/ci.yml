@@ -9,6 +9,41 @@ permissions:
   contents: read
 
 jobs:
+  web:
+    name: web (lint, typecheck, test, build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src
+    env:
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test -- --ci
+      - run: npm run build
+
+  python:
+    name: python (compile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - run: python -m py_compile model_service/*.py
+
   secrets:
     name: secrets (gitleaks, changed commits only)
     runs-on: ubuntu-latest
