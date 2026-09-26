@@ -18,7 +18,7 @@ cd src && npm run dev
 
 # Test endpoints:
 curl http://localhost:5001/health
-curl http://localhost:3000/api/test
+curl http://localhost:3000/api/health
 ```
 
 ### ✅ Demo Scenarios Test

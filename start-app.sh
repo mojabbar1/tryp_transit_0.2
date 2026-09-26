@@ -66,7 +66,7 @@ if [ ! -f "src/.env.local" ]; then
         echo -e "${YELLOW}✅ Created src/.env.local from template${NC}"
         echo -e "${YELLOW}📝 Please edit src/.env.local and add your API keys:${NC}"
         echo -e "${YELLOW}   - OPENAI_API_KEY: Get from https://platform.openai.com/api-keys${NC}"
-        echo -e "${YELLOW}   - NEXT_PUBLIC_TOMTOM_API_KEY: Get from https://developer.tomtom.com/${NC}"
+        echo -e "${YELLOW}   - TOMTOM_API_KEY: Get from https://developer.tomtom.com/${NC}"
     else
         echo -e "${RED}❌ src/.env.example not found. Please create environment configuration.${NC}"
         exit 1
@@ -153,7 +153,7 @@ fi
 echo -e "\n${GREEN}🎉 Application is starting up!${NC}"
 echo -e "${BLUE}📱 Frontend: http://localhost:3000${NC}"
 echo -e "${BLUE}🔧 Backend: http://localhost:5001${NC}"
-echo -e "${BLUE}🧪 Test page: http://localhost:3000/test${NC}"
+echo -e "${BLUE}🩺 Health check page: http://localhost:3000/test (GET /api/health)${NC}"
 echo -e "\n${YELLOW}📝 Note: Models are using mock predictions (chronos-forecasting not available)${NC}"
 echo -e "${YELLOW}📝 For API keys, edit src/.env.local with your OpenAI and TomTom keys${NC}"
 echo -e "\n${YELLOW}Press Ctrl+C to stop all services${NC}"
