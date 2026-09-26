@@ -92,6 +92,34 @@ describe('canonicalizeLock', () => {
     expect(lock.packages['node_modules/@good/core'].resolved).toBe(url);
   });
 
+  it.each([
+    ['an unscoped entry', 'node_modules/core', {}],
+    ['a nested unscoped entry', 'node_modules/parent/node_modules/core', {}],
+    ['an aliased entry', 'node_modules/alias', { name: 'core' }],
+  ])('refuses a scoped source for %s with the same basename', (_label, key, extra) => {
+    const url = 'https://proxy.example.test/@different/core/-/core-1.0.0.tgz';
+    const lock = lockWith({ [key]: { version: '1.0.0', resolved: url, integrity: 'sha512-synthetic', ...extra } });
+
+    const result = canonicalizeLock(lock, { fix: true });
+
+    expect(result.rewritten).toBe(0);
+    expect(result.offending).toHaveLength(1);
+    expect(lock.packages[key].resolved).toBe(url);
+  });
+
+  it('still rewrites unscoped and scoped entries behind a multi-segment proxy prefix', () => {
+    const lock = lockWith({
+      'node_modules/core': { version: '1.0.0', resolved: `${FEED}/core/-/core-1.0.0.tgz` },
+      'node_modules/@scope/core': { version: '1.0.0', resolved: `${FEED}/@scope/core/-/core-1.0.0.tgz` },
+      'node_modules/@enc/pkg': { version: '2.0.0', resolved: `${FEED}/@enc%2fpkg/-/pkg-2.0.0.tgz` },
+    });
+
+    expect(canonicalizeLock(lock, { fix: true })).toEqual({ rewritten: 3, offending: [] });
+    expect(lock.packages['node_modules/core'].resolved).toBe(`${CANON}/core/-/core-1.0.0.tgz`);
+    expect(lock.packages['node_modules/@scope/core'].resolved).toBe(`${CANON}/@scope/core/-/core-1.0.0.tgz`);
+    expect(lock.packages['node_modules/@enc/pkg'].resolved).toBe(`${CANON}/@enc/pkg/-/pkg-2.0.0.tgz`);
+  });
+
   it('flags a registry.npmjs.org URL that is not exactly canonical', () => {
     const lock = lockWith({ 'node_modules/axios': { version: '1.20.0', resolved: `${CANON}/axios/-/axios-1.20.0.tgz?x=1` } });
 

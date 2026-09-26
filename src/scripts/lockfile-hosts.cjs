@@ -35,6 +35,29 @@ function canonicalUrl(name, version) {
   return `${CANONICAL}${name}/-/${name.split('/').pop()}-${version}.tgz`;
 }
 
+/**
+ * The package a registry-style tarball path identifies: `<prefix>/[@scope/]<pkg>/-/<file>`.
+ * A segment starting with "@" right before the package is always treated as its scope, so a
+ * scoped source can never be read as an unscoped package (ambiguous cases fail closed upstream).
+ * Returns { name, file } or null.
+ */
+function sourcePackage(pathname) {
+  let parts;
+  try {
+    parts = pathname.split('/').map(decodeURIComponent);
+  } catch {
+    return null;
+  }
+  const dash = parts.length - 2;
+  if (dash < 1 || parts[dash] !== '-' || !parts[dash + 1]) return null;
+  const pkg = parts[dash - 1];
+  if (!pkg) return null;
+  if (pkg.startsWith('@') && pkg.includes('/')) return { name: pkg, file: parts[dash + 1] };
+  const scope = parts[dash - 2];
+  const name = scope && scope.startsWith('@') ? `${scope}/${pkg}` : pkg;
+  return { name, file: parts[dash + 1] };
+}
+
 function hostOf(url) {
   try {
     return new URL(url).host;
@@ -75,10 +98,11 @@ function canonicalizeLock(lock, { fix = false } = {}) {
       continue;
     }
 
-    const suffix = `/${name}/-/${name.split('/').pop()}-${entry.version}.tgz`;
-    const mappable = !parsed.search && !parsed.hash && parsed.pathname.endsWith(suffix);
+    const file = `${name.split('/').pop()}-${entry.version}.tgz`;
+    const source = sourcePackage(parsed.pathname);
+    const mappable = !parsed.search && !parsed.hash && source !== null && source.name === name && source.file === file;
     if (!mappable) {
-      report(`off-registry URL that cannot be mapped safely (expected a path ending ${suffix})`);
+      report(`off-registry URL that cannot be mapped safely (expected .../${name}/-/${file})`);
       continue;
     }
     if (fix) {
