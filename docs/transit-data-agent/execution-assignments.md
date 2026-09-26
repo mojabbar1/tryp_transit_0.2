@@ -27,7 +27,9 @@
 |-------|--------|-------|---------|----------|---------------------------|
 | P0 Stabilize | `feat/tda-phase-0-stabilize` | G0 | **Opus** | **Astra** | secrets, bbox/reducer/redirect correctness |
 | P0B Framework upgrade | `feat/tda-phase-0b-framework` | P0 merged | **Opus** | **Astra** | behavior-neutrality, peer-dep conformance |
-| P1 Web seams | `feat/tda-phase-1-web-seams` | P0B merged | **Opus** (contracts/route) + **Astra** (domain math + `validate-claims`) | **Astra** | validator rejects swap/negation/unit vectors; fail-closed |
+| P1a Web seams: contracts + env (T1–T2) | `feat/tda-phase-1a-contracts` | P0B merged + real-key check | **Opus** | **Astra** | contract invariants (`basis` enum, signed `difference`); server-only env |
+| P1b Web seams: domain math + `validate-claims` (T3, T5 validator + vectors) | `feat/tda-phase-1b-domain` | P1a merged | **Astra** | **Opus** | validator rejects swap/negation/unit vectors; fail-closed; DST; no invented values |
+| P1c Web seams: TomTom, LLM seam, route, UI (T4, T5 rest, T6–T10) | `feat/tda-phase-1c-route` | P1b merged | **Opus** | **Astra** | numbers by reference only; fail-closed fallback; additive response |
 | P2 Scaffold | `feat/tda-phase-2-scaffold` | P0 merged | **Opus** | **Astra** | reader-role grants, append-only + non-destructive rollback |
 | P3 Connectors (1 PR each) | `feat/tda-phase-3-<connector>` | P2 merged | **Either** (one model/PR) | **the other** | DQ checks, append-only load, idempotency |
 | P4a Metrics + API | `feat/tda-phase-4a-metrics-api` | P3 3.1/3.2/3.5 | **Astra** | **Opus** | boardability edge cases; conditional endpoints; contract |
@@ -36,6 +38,10 @@
 | P5 Agent + HITL | `feat/tda-phase-5-agent` | P1 + P4a (after G1) | **Astra** | **Opus** | no write tools, injection, budget reservation |
 | P6 Forecasting | `feat/tda-phase-6-forecasting` | P4b (after G1) | **Astra** | **Opus** | beats seasonal-naive; determinism; adds its own `/v1/series/*` |
 | P7 Productionize | `feat/tda-phase-7-*` (4 PRs) | P4b+P5+P6 | **Opus** | **Astra** | rate limiting, CSP, PII-free event schema, D-26 tiers |
+
+> **P1 is split into three PRs** (revised 2026-09-25). The original single P1 row had Astra building part of the PR
+> *and* reviewing it, which broke rules 2 and 3. Each part now has one builder and a reviewer from the other model.
+> Order follows the dependencies: the P1b domain and validator import P1a's contract types, and P1c wires both.
 
 ## What's automated vs. what needs you
 
