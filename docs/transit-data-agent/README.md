@@ -69,7 +69,7 @@ Rules for coding agents:
 | Phase | Stage | Prompt | Depends on | Status | PR |
 |-------|-------|--------|------------|--------|----|
 | **G0 baseline gate** | Gate | [05 §G0](./05-decisions-and-review.md) | D-24, D-13 | ✅ Passed 2026-09-25 | — |
-| P0 Stabilize & secure | 1 | [phase-0-stabilize](./prompts/phase-0-stabilize.md) | G0 | 🔨 Signed off 2026-09-25; in progress | |
+| P0 Stabilize & secure | 1 | [phase-0-stabilize](./prompts/phase-0-stabilize.md) | G0 | 🔍 In review (Done on merge) | [#3](https://github.com/mojabbar1/tryp_transit_0.2/pull/3) |
 | P0B Next 16 / React 19 | 1 | [phase-0b-framework-upgrade](./prompts/phase-0b-framework-upgrade.md) | P0 | ⏳ | |
 | P1 Web seams & deterministic math | 2 | [phase-1-web-seams](./prompts/phase-1-web-seams.md) | P0B | ⏳ | |
 | P2 `data_agent` scaffold | 2 | [phase-2-data-agent-scaffold](./prompts/phase-2-data-agent-scaffold.md) | P0 (parallel with P0B, P1) | ⏳ | |
@@ -80,6 +80,12 @@ Rules for coding agents:
 | P5 Agent + HITL + weekly report | 3 | [phase-5-agent-hitl](./prompts/phase-5-agent-hitl.md) | P1, P4a (parallel with P6) | ⏳ Expansion | |
 | P6 Forecasting on real data | 3 | [phase-6-forecasting](./prompts/phase-6-forecasting.md) | G1, P4b (parallel with P5) | ⏳ Expansion | |
 | P7 Productionize & measure impact | 3 | [phase-7-productionize](./prompts/phase-7-productionize.md) | P4b, P5, P6 | ⏳ Expansion | |
+
+> **P0 follow-ups** (from [#3](https://github.com/mojabbar1/tryp_transit_0.2/pull/3)). **P0B:** lint is clean on 14.2.35;
+> re-run it after the Next 16 / ESLint 9 flat-config move. `next build` warns that `sharp` is missing and `caniuse-lite`
+> is outdated. **P1:** with a live key, confirm `gemini-3.8-flash` output isn't truncated by the legacy SDK's
+> `maxOutputTokens: 2048`, and format the `/routes` saving as currency. **Existing:** a full page load of `/find-rides`
+> redirects before auth hydrates. **Later:** drop the `NEXT_PUBLIC_TOMTOM_API_KEY` fallback.
 
 ## Before Phase 0 can start (the G0 baseline gate)
 

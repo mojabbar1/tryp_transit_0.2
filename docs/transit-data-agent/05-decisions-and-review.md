@@ -202,7 +202,7 @@ All must hold and be recorded below:
 | Phase | Stage | Approved to execute (name / date) | Decisions confirmed | PR | Merged (date) | Notes |
 |-------|-------|-----------------------------------|---------------------|----|---------------|-------|
 | **G0 baseline gate** | Gate | mojabbar / 2026-09-25 | D-24 ✅, D-13 ✅ | — | 2026-09-25 | Passed; baseline + docs on `main` |
-| P0 Stabilize | Stabilize | mojabbar / 2026-09-25 | D-4 ✅, D-13 ✅, D-16 ✅, D-24 ✅ | | | Commit the pending doc edits first (done: tree clean at G0) |
+| P0 Stabilize | Stabilize | mojabbar / 2026-09-25 | D-4 ✅, D-13 ✅, D-16 ✅, D-24 ✅ | [#3](https://github.com/mojabbar1/tryp_transit_0.2/pull/3) | | Commit the pending doc edits first (done: tree clean at G0) |
 | P0B Next 16 | Stabilize | | D-16 | | | |
 | P1 Web seams | Pilot | | D-4, D-15, D-21, D-25, D-27, §2 | | | |
 | P2 Scaffold | Pilot | | D-1, D-2, D-5, D-8, D-9, D-11, D-18, D-19 | | | |
