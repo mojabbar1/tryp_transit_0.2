@@ -205,12 +205,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json<TransitInsightResponse>(createFallbackResponse());
     }
   } catch (error) {
+    // Details stay in the server log; the client gets a generic message
     console.error('Transit insights API error:', error);
     return NextResponse.json<ApiErrorResponse>(
-      { 
-        error: 'Internal Server Error.', 
-        details: error instanceof Error ? error.message : String(error) 
-      },
+      { error: 'Internal Server Error.' },
       { status: 500 }
     );
   }

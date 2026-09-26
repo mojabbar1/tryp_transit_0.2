@@ -1,5 +1,6 @@
 from flask import Flask, jsonify, request
 import logging
+import os
 import traceback
 from bus_daily_chronos_t5_tiny import predict as predict_daily
 from bus_hourly_chronos_t5_tiny import predict as predict_hourly
@@ -51,7 +52,6 @@ def predict_hourly_ridership(hours_future):
         logger.error(traceback.format_exc())
         return jsonify({
             "error": "Hourly prediction failed",
-            "details": str(e),
             "hours_requested": hours_future,
             "timestamp": datetime.now().isoformat()
         }), 500
@@ -74,10 +74,12 @@ def predict_daily_ridership(days_future):
         logger.error(traceback.format_exc())
         return jsonify({
             "error": "Daily prediction failed", 
-            "details": str(e),
             "days_requested": days_future,
             "timestamp": datetime.now().isoformat()
         }), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    debug = os.environ.get('FLASK_DEBUG', 'false').strip().lower() in ('1', 'true', 'yes', 'on')
+    host = os.environ.get('API_HOST', '127.0.0.1')
+    port = int(os.environ.get('API_PORT', '5001'))
+    app.run(debug=debug, host=host, port=port)

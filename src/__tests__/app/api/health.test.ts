@@ -85,6 +85,13 @@ describe('GET /api/health', () => {
     expect((await (await GET()).json()).configured.llm).toBe(true);
   });
 
+  it('treats the server-only TOMTOM_API_KEY as traffic configured', async () => {
+    mockedRidershipHealth.mockResolvedValue(true);
+    process.env.TOMTOM_API_KEY = PLACEHOLDER;
+
+    expect((await (await GET()).json()).configured.traffic).toBe(true);
+  });
+
   it('exposes only booleans, never configuration values', async () => {
     mockedRidershipHealth.mockResolvedValue(true);
     process.env.USE_GEMINI = 'true';

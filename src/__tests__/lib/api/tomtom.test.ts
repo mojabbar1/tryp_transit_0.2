@@ -53,3 +53,72 @@ describe('TomTom API Utilities', () => {
     });
   });
 });
+
+describe('TomTom API key resolution', () => {
+  const PRIMARY = 'primary-value';
+  const LEGACY = 'legacy-value';
+  const savedPrimary = process.env.TOMTOM_API_KEY;
+  const savedLegacy = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
+  let warnSpy: jest.SpyInstance;
+
+  // Load a fresh module per test so the one-time legacy warning resets
+  const loadTomTom = () => require('@/lib/api/tomtom') as typeof import('@/lib/api/tomtom');
+
+  beforeEach(() => {
+    delete process.env.TOMTOM_API_KEY;
+    delete process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
+    jest.resetModules();
+    warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    warnSpy.mockRestore();
+  });
+
+  afterAll(() => {
+    if (savedPrimary === undefined) delete process.env.TOMTOM_API_KEY;
+    else process.env.TOMTOM_API_KEY = savedPrimary;
+    if (savedLegacy === undefined) delete process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
+    else process.env.NEXT_PUBLIC_TOMTOM_API_KEY = savedLegacy;
+  });
+
+  it('prefers the server-only TOMTOM_API_KEY without warning', () => {
+    process.env.TOMTOM_API_KEY = PRIMARY;
+    process.env.NEXT_PUBLIC_TOMTOM_API_KEY = LEGACY;
+    const { getTomTomApiKey, isTomTomConfigured } = loadTomTom();
+
+    expect(getTomTomApiKey()).toBe(PRIMARY);
+    expect(isTomTomConfigured()).toBe(true);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the legacy NEXT_PUBLIC_TOMTOM_API_KEY and warns only once', () => {
+    process.env.NEXT_PUBLIC_TOMTOM_API_KEY = LEGACY;
+    const { getTomTomApiKey, isTomTomConfigured } = loadTomTom();
+
+    expect(getTomTomApiKey()).toBe(LEGACY);
+    expect(getTomTomApiKey()).toBe(LEGACY);
+    expect(isTomTomConfigured()).toBe(true);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0][0])).toContain('TOMTOM_API_KEY');
+    expect(String(warnSpy.mock.calls[0][0])).not.toContain(LEGACY);
+  });
+
+  it('reports not configured when neither name is set', () => {
+    const { getTomTomApiKey, isTomTomConfigured } = loadTomTom();
+
+    expect(getTomTomApiKey()).toBeUndefined();
+    expect(isTomTomConfigured()).toBe(false);
+  });
+
+  it('names TOMTOM_API_KEY in the error when no key is set', async () => {
+    const { getTrafficFlow, getIncidents } = loadTomTom();
+
+    await expect(getTrafficFlow({ lat: 32.78, lng: -79.93 })).rejects.toThrow(
+      'TOMTOM_API_KEY environment variable is not set'
+    );
+    await expect(getIncidents('-79.94,32.77,-79.93,32.79')).rejects.toThrow(
+      'TOMTOM_API_KEY environment variable is not set'
+    );
+  });
+});

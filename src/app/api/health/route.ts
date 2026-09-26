@@ -8,6 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import { checkRidershipServiceHealth } from '@/lib/api/ridership';
+import { isTomTomConfigured } from '@/lib/api/tomtom';
 import type { HealthResponse } from '@/types/interfaces';
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +29,7 @@ export async function GET() {
     },
     configured: {
       llm: isLlmConfigured(),
-      traffic: Boolean(process.env.NEXT_PUBLIC_TOMTOM_API_KEY),
+      traffic: isTomTomConfigured(),
     },
   });
 }
