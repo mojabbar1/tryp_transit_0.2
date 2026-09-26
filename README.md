@@ -69,6 +69,7 @@ python app.py
 ```
 
 #### 2. Frontend Setup
+Requires **Node.js ≥ 20.9** (Node 22 LTS recommended; CI uses Node 22).
 ```bash
 cd src
 
@@ -81,6 +82,9 @@ cp .env.example .env.local
 
 # Start development server
 npm run dev
+
+# Lint (ESLint 9 CLI; `next lint` was removed in Next 16)
+npm run lint
 ```
 
 ## 🔧 Environment Configuration
@@ -181,7 +185,7 @@ API_PORT="5001"       # default
 ## 🛠️ Technical Stack
 
 ### Frontend
-- **Next.js 14**: React framework with App Router
+- **Next.js 16** (React 19): React framework with App Router; Turbopack is the default bundler
 - **TypeScript**: Full type safety
 - **Tailwind CSS**: Utility-first styling
 - **Axios**: HTTP client with timeout handling
@@ -193,7 +197,7 @@ API_PORT="5001"       # default
 - **Mock Predictions**: Fallback when ML models unavailable
 
 ### Development Tools
-- **ESLint**: Code linting
+- **ESLint 9**: Code linting via the ESLint CLI (`npm run lint` = `eslint .`, flat config in `src/eslint.config.mjs`; `next lint` was removed in Next 16)
 - **TypeScript**: Static type checking
 - **Hot Reload**: Development server
 - **Error Boundaries**: Robust error handling
@@ -220,7 +224,8 @@ cd src
 npm test              # Run all tests
 npm run test:watch    # Watch mode
 npm run test:coverage # Coverage report
-npm run typecheck     # Type-check (tsc --noEmit); CI also runs lint and build
+npm run typecheck     # Type-check (tsc --noEmit)
+npm run lint          # ESLint CLI (flat config); `next build` no longer lints, so CI runs this separately
 ```
 
 ### Manual Testing

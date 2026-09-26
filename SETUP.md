@@ -5,7 +5,7 @@
 This is the clean, production-ready version of Tryp Transit. All legacy files and duplicate directories have been removed.
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 20.9+ (Node 22 LTS recommended; CI uses Node 22)
 - Python 3.11+
 - npm or yarn
 
@@ -91,6 +91,13 @@ The startup script will automatically:
 Run the test script to verify everything is set up correctly:
 ```bash
 ./test-setup.sh
+```
+
+Frontend checks (from `src/`, the same ones CI runs):
+```bash
+npm run lint       # ESLint 9 CLI with src/eslint.config.mjs (`next lint` was removed in Next 16)
+npm run typecheck  # tsc --noEmit
+npm test           # Jest
 ```
 
 ### 📁 Clean Directory Structure
