@@ -222,6 +222,8 @@ npm run test:watch    # Watch mode
 npm run test:coverage # Coverage report
 npm run typecheck     # Type-check (tsc --noEmit)
 npm run lint          # ESLint 9 CLI with src/eslint.config.mjs (next lint was removed in Next 16)
+npm run lockfile:check # Lockfile must use registry.npmjs.org URLs with sha512 integrity (CI enforces this)
+npm run lockfile:fix   # After installing through a registry proxy: npm-10 regen, canonical URLs, verified sha512
 ```
 
 ### Test Files

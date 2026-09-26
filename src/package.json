@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
+    "lockfile:check": "node scripts/lockfile-hosts.cjs",
+    "lockfile:fix": "npx -y npm@10 install --package-lock-only --no-audit --no-fund && node scripts/lockfile-hosts.cjs --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"

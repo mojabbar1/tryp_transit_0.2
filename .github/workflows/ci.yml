@@ -26,6 +26,7 @@ jobs:
           cache: npm
           cache-dependency-path: src/package-lock.json
 
+      - run: npm run lockfile:check
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
