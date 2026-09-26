@@ -98,12 +98,14 @@ The app supports both Gemini and OpenAI. Set `USE_GEMINI=true` to use Gemini (de
 # AI Provider - choose one
 USE_GEMINI=true
 GEMINI_API_KEY="your_gemini_api_key_here"
+# GEMINI_MODEL=""   # optional override; blank or unset = gemini-3.8-flash
 # OR
 # USE_GEMINI=false
 # OPENAI_API_KEY="your_openai_api_key_here"
+# OPENAI_MODEL=""   # optional override; blank or unset = gpt-5.6-terra
 
-# Traffic Data
-NEXT_PUBLIC_TOMTOM_API_KEY="your_tomtom_api_key_here"
+# Traffic Data (server-only; the legacy NEXT_PUBLIC_TOMTOM_API_KEY name is still read as a fallback)
+TOMTOM_API_KEY="your_tomtom_api_key_here"
 
 # ML Service
 RIDERSHIP_API_BASE_URL="http://localhost:5001"
@@ -112,16 +114,17 @@ RIDERSHIP_API_BASE_URL="http://localhost:5001"
 ### Backend (`model_service/.env` - Optional)
 ```env
 FLASK_ENV="development"
-FLASK_DEBUG="true"
-API_HOST="0.0.0.0"
-API_PORT="5001"
+FLASK_DEBUG="false"   # default false; enable only for local debugging
+API_HOST="127.0.0.1"  # default; use 0.0.0.0 only inside a container
+API_PORT="5001"       # default
 ```
 
 ## 🌐 Service Endpoints
 
 ### Frontend
 - **Main App**: http://localhost:3000
-- **Test Page**: http://localhost:3000/test
+- **Health Check Page**: http://localhost:3000/test (shows `GET /api/health`)
+- **Health API**: http://localhost:3000/api/health (booleans only; never key values)
 
 ### Backend API
 - **Health Check**: http://localhost:5001/health
@@ -214,9 +217,10 @@ API_PORT="5001"
 ### Automated Tests
 ```bash
 cd src
-npm test              # Run all tests (28 tests)
+npm test              # Run all tests
 npm run test:watch    # Watch mode
 npm run test:coverage # Coverage report
+npm run typecheck     # Type-check (tsc --noEmit); CI also runs lint and build
 ```
 
 ### Manual Testing

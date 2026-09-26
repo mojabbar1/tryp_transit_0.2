@@ -5,7 +5,29 @@
 
 import axios from 'axios';
 
-const TOMTOM_API_KEY = process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
+let warnedLegacyKeyName = false;
+
+/**
+ * Resolve the TomTom API key. Prefers the server-only TOMTOM_API_KEY; the legacy
+ * NEXT_PUBLIC_TOMTOM_API_KEY is still read as a fallback, with a one-time warning.
+ */
+export function getTomTomApiKey(): string | undefined {
+  const apiKey = process.env.TOMTOM_API_KEY ?? process.env.NEXT_PUBLIC_TOMTOM_API_KEY;
+  if (process.env.TOMTOM_API_KEY === undefined && apiKey !== undefined && !warnedLegacyKeyName) {
+    warnedLegacyKeyName = true;
+    console.warn(
+      'NEXT_PUBLIC_TOMTOM_API_KEY is deprecated; rename it to TOMTOM_API_KEY (server-only).'
+    );
+  }
+  return apiKey;
+}
+
+/**
+ * Whether a TomTom API key is configured (under either name). Never exposes the value.
+ */
+export function isTomTomConfigured(): boolean {
+  return Boolean(process.env.TOMTOM_API_KEY ?? process.env.NEXT_PUBLIC_TOMTOM_API_KEY);
+}
 
 export interface TrafficFlowData {
   flowSegmentData: {
@@ -26,15 +48,16 @@ export interface Coordinates {
  * Get traffic flow data for a specific location
  */
 export async function getTrafficFlow(point: Coordinates): Promise<TrafficFlowData> {
-  if (!TOMTOM_API_KEY) {
-    throw new Error('NEXT_PUBLIC_TOMTOM_API_KEY environment variable is not set');
+  const apiKey = getTomTomApiKey();
+  if (!apiKey) {
+    throw new Error('TOMTOM_API_KEY environment variable is not set');
   }
 
   const response = await axios.get<TrafficFlowData>(
     'https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json',
     {
       params: {
-        key: TOMTOM_API_KEY,
+        key: apiKey,
         point: `${point.lat},${point.lng}`,
       },
     }
@@ -44,31 +67,31 @@ export async function getTrafficFlow(point: Coordinates): Promise<TrafficFlowDat
 }
 
 /**
- * Calculate bounding box from two points
+ * Calculate the bounding box for TomTom Incident Details from two points.
+ * TomTom expects longitude first: minLon,minLat,maxLon,maxLat (lower-left, then upper-right).
  */
 export function calculateBbox(departure: Coordinates, destination: Coordinates): string {
-  return `${Math.min(departure.lat, destination.lat)},${Math.min(
-    departure.lng,
-    destination.lng
-  )},${Math.max(departure.lat, destination.lat)},${Math.max(
-    departure.lng,
-    destination.lng
-  )}`;
+  const minLon = Math.min(departure.lng, destination.lng);
+  const minLat = Math.min(departure.lat, destination.lat);
+  const maxLon = Math.max(departure.lng, destination.lng);
+  const maxLat = Math.max(departure.lat, destination.lat);
+  return `${minLon},${minLat},${maxLon},${maxLat}`;
 }
 
 /**
  * Get traffic incidents within a bounding box
  */
 export async function getIncidents(bbox: string): Promise<unknown> {
-  if (!TOMTOM_API_KEY) {
-    throw new Error('NEXT_PUBLIC_TOMTOM_API_KEY environment variable is not set');
+  const apiKey = getTomTomApiKey();
+  if (!apiKey) {
+    throw new Error('TOMTOM_API_KEY environment variable is not set');
   }
 
   const response = await axios.get(
     'https://api.tomtom.com/traffic/services/5/incidentDetails',
     {
       params: {
-        key: TOMTOM_API_KEY,
+        key: apiKey,
         bbox,
         fields: '{incidents{type,geometry{type,coordinates},properties{iconCategory}}}',
         language: 'en-GB',

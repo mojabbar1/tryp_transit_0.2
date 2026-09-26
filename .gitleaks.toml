@@ -1,0 +1,17 @@
+# Gitleaks configuration (P0 T6, F-12).
+# CI scans only the commits added by each pull request and each push to main
+# (see the `secrets` job in .github/workflows/ci.yml); a finding fails the build.
+
+[extend]
+useDefault = true
+
+# History-only allowlist (D-13, option a: the leaked Gemini key was revoked on 2026-09-25 and
+# redacted from HEAD at G0; history was intentionally not rewritten). These commits added that
+# revoked key before the redaction, so full-history scans skip them. They are never part of a
+# PR diff. Do NOT add a commit here for a live secret: revoke and rotate it instead.
+[[allowlists]]
+description = "Commits that added the revoked Gemini key (D-13)"
+commits = [
+  "df00efc4231ed4d0ee8b914d8e58040b45d56ddf", # setup gemini api tests (src/app/api/simple-gemini-test/route.ts)
+  "9b129d67893f85241626bf0ecb91168bf78f173e", # assessed baseline (REFACTORING_PLAN.md)
+]

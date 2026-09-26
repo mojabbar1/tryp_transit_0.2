@@ -1,25 +1,47 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useReducer, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { busStopCoordinates } from '@/app/data/busStopCoordinates';
 import { TransitInsightResponse, ApiErrorResponse } from '@/types/interfaces';
+import {
+  RequestAction,
+  RequestState,
+  createRequestState,
+  isRequestInFlight,
+  requestReducer,
+} from '@/lib/request-state';
+
+interface InsightsRequest {
+  endpoint: string;
+  body: unknown;
+}
+
+const maxRetries = 2;
+const retryDelayMs = 1000;
+
+const insightsReducer = (
+  state: RequestState<TransitInsightResponse>,
+  action: RequestAction<TransitInsightResponse>
+) => requestReducer(state, action);
 
 export default function TransitInsightsPage() {
   const [departureStop, setDepartureStop] = useState('');
   const [destinationStop, setDestinationStop] = useState('');
   const [arrivalTime, setArrivalTime] = useState('');
-  const [data, setData] = useState<TransitInsightResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [retryCount, setRetryCount] = useState(0);
+  const [requestState, dispatch] = useReducer(insightsReducer, maxRetries, (retries: number) =>
+    createRequestState<TransitInsightResponse>(retries)
+  );
+  const { data, error, retryCount } = requestState;
+  const isLoading = isRequestInFlight(requestState);
   const [demoMode, setDemoMode] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState(0);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const maxRetries = 2;
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const loadingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const lastRequestRef = useRef<InsightsRequest | null>(null);
+  const requestIdRef = useRef(0);
 
   const loadingSteps = [
     "Analyzing traffic patterns...",
@@ -27,69 +49,21 @@ export default function TransitInsightsPage() {
     "Generating personalized insights..."
   ];
 
-  const handleSubmit = async (e: React.FormEvent, isRetry = false) => {
-    e.preventDefault();
-
-    if (!isRetry) {
-      setRetryCount(0);
+  const stopLoadingAnimation = useCallback(() => {
+    if (loadingIntervalRef.current) {
+      clearInterval(loadingIntervalRef.current);
+      loadingIntervalRef.current = null;
     }
+  }, []);
 
-    setIsLoading(true);
-    setLoadingStep(0);
-    setLoadingProgress(0);
-    setError(null);
-    if (!isRetry) setData(null);
-
-    // Start loading animation sequence
-    let loadingInterval: NodeJS.Timeout | null = null;
-    if (!isRetry) {
-      loadingInterval = setInterval(() => {
-        setLoadingStep(prev => {
-          const next = prev + 1;
-          setLoadingProgress((next / loadingSteps.length) * 100);
-          if (next >= loadingSteps.length) {
-            if (loadingInterval) clearInterval(loadingInterval);
-            return loadingSteps.length - 1;
-          }
-          return next;
-        });
-      }, 1000);
-    }
-
-    // Validate inputs
-    if (!departureStop || !destinationStop || !arrivalTime) {
-      setError('Please fill in all fields');
-      setIsLoading(false);
-      return;
-    }
-
-    // Get coordinates from bus stop names
-    const departureCoords = busStopCoordinates[departureStop];
-    const destinationCoords = busStopCoordinates[destinationStop];
-
-    if (!departureCoords || !destinationCoords) {
-      setError('Invalid bus stop names. Please select from the available stops.');
-      setIsLoading(false);
-      return;
-    }
-
+  const sendRequest = useCallback(async (request: InsightsRequest, requestId: number) => {
     try {
-      // Use demo API if in demo mode, otherwise use regular API
-      const apiEndpoint = demoMode ? '/api/transit-insights-demo' : '/api/transit-insights';
-      const requestBody = demoMode
-        ? { demoScenario: demoMode }
-        : {
-          departure: departureCoords,
-          destination: destinationCoords,
-          timeToDestination: arrivalTime,
-        };
-
-      const response = await fetch(apiEndpoint, {
+      const response = await fetch(request.endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(request.body),
       });
 
       if (!response.ok) {
@@ -98,56 +72,116 @@ export default function TransitInsightsPage() {
       }
 
       const result: TransitInsightResponse = await response.json();
-      setData(result);
+      dispatch({ type: 'success', requestId, data: result });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+      dispatch({ type: 'failure', requestId, error: errorMessage, retryable: true });
+    }
+  }, []);
 
-      if (retryCount < maxRetries && !isRetry) {
-        console.log(`Attempt failed, retrying... (${retryCount + 1}/${maxRetries})`);
-        setRetryCount(prev => prev + 1);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
 
-        // Clear any existing timeout
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current);
+    requestIdRef.current += 1;
+    const requestId = requestIdRef.current;
+    dispatch({ type: 'start', requestId });
+    setLoadingStep(0);
+    setLoadingProgress(0);
+
+    // Start loading animation sequence
+    stopLoadingAnimation();
+    loadingIntervalRef.current = setInterval(() => {
+      setLoadingStep(prev => {
+        const next = prev + 1;
+        setLoadingProgress((next / loadingSteps.length) * 100);
+        if (next >= loadingSteps.length) {
+          stopLoadingAnimation();
+          return loadingSteps.length - 1;
         }
+        return next;
+      });
+    }, 1000);
 
-        // Exponential backoff: 1s, 2s delays
-        timeoutRef.current = setTimeout(() => {
-          const syntheticEvent = { preventDefault: () => { } } as React.FormEvent;
-          handleSubmit(syntheticEvent, true);
-        }, 1000 * (retryCount + 1));
-      } else {
-        setError(errorMessage);
-        setIsLoading(false);
+    const failValidation = (message: string) => {
+      stopLoadingAnimation();
+      dispatch({ type: 'failure', requestId, error: message, retryable: false });
+    };
+
+    let request: InsightsRequest;
+
+    if (demoMode) {
+      // Demo scenarios use the mock endpoint, which needs no stop coordinates
+      request = { endpoint: '/api/transit-insights-demo', body: { demoScenario: demoMode } };
+    } else {
+      // Validate inputs
+      if (!departureStop || !destinationStop || !arrivalTime) {
+        failValidation('Please fill in all fields');
+        return;
       }
+
+      // Get coordinates from bus stop names
+      const departureCoords = busStopCoordinates[departureStop];
+      const destinationCoords = busStopCoordinates[destinationStop];
+
+      if (!departureCoords || !destinationCoords) {
+        failValidation('Invalid bus stop names. Please select from the available stops.');
+        return;
+      }
+
+      request = {
+        endpoint: '/api/transit-insights',
+        body: {
+          departure: departureCoords,
+          destination: destinationCoords,
+          timeToDestination: arrivalTime,
+        },
+      };
     }
 
-    // Only set loading to false if this is the final attempt or a successful retry
-    if (retryCount >= maxRetries || isRetry) {
-      setIsLoading(false);
-    }
+    lastRequestRef.current = request;
+    await sendRequest(request, requestId);
   };
+
+  // Retry with a linear backoff (1s, then 2s) while the reducer reports a retry is due
+  useEffect(() => {
+    const request = lastRequestRef.current;
+    if (requestState.status !== 'retrying' || !request) return;
+
+    const { requestId, retryCount: attempt } = requestState;
+    console.log(`Attempt failed, retrying... (${attempt}/${maxRetries})`);
+    const retryTimeout = setTimeout(() => {
+      sendRequest(request, requestId);
+    }, retryDelayMs * attempt);
+
+    return () => clearTimeout(retryTimeout);
+  }, [requestState, sendRequest]);
+
+  // Stop the loading animation whenever the request settles
+  useEffect(() => {
+    if (!isLoading) {
+      stopLoadingAnimation();
+    }
+  }, [isLoading, stopLoadingAnimation]);
 
   const handleDemoScenario = (scenario: string) => {
     setDemoMode(scenario);
-    setError(null);
-    setData(null);
+    dispatch({ type: 'reset' });
 
-    // Pre-fill form based on scenario
+    // Pre-fill form based on scenario (keys near real CARTA service; see 05 §2b)
     switch (scenario) {
       case 'rush-hour':
-        setDepartureStop('King St & Meeting St');
-        setDestinationStop('MUSC - Ashley Ave');
+        setDepartureStop('King Street / Morris Street');
+        setDestinationStop('Spring Street / Ashley Avenue');
         setArrivalTime('08:30');
         break;
       case 'weekend':
-        setDepartureStop('Charleston City Market');
-        setDestinationStop('Folly Beach Park & Ride');
+        setDepartureStop('Market Street / Meeting Street');
+        setDestinationStop('Isle of Palms / 14th Avenue');
         setArrivalTime('14:00');
         break;
       case 'night-out':
-        setDepartureStop('Upper King St Entertainment District');
-        setDestinationStop('College of Charleston');
+        setDepartureStop('King Street / Wentworth Street');
+        setDestinationStop('Calhoun Street / King Street');
         setArrivalTime('23:30');
         break;
     }
@@ -162,14 +196,8 @@ export default function TransitInsightsPage() {
     }, 1000);
   };
 
-  // Cleanup timeout on unmount
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
-      }
-    };
-  }, []);
+  // Cleanup the loading animation on unmount
+  useEffect(() => stopLoadingAnimation, [stopLoadingAnimation]);
 
   const availableStops = Object.keys(busStopCoordinates);
 
@@ -410,10 +438,7 @@ export default function TransitInsightsPage() {
                     <li>Invalid location data</li>
                   </ul>
                   <button
-                    onClick={() => {
-                      setError(null);
-                      setRetryCount(0);
-                    }}
+                    onClick={() => dispatch({ type: 'reset' })}
                     className="bg-red-100 hover:bg-red-200 text-red-800 px-4 py-2 rounded text-sm transition-colors"
                   >
                     Try Again

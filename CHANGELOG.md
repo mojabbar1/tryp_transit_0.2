@@ -2,6 +2,35 @@
 
 All notable changes to the Tryp Transit project are documented here.
 
+## [0.2.2] - 2026-09-25 — Stabilization (Phase 0)
+
+- **T1 Health endpoint** — new `GET /api/health` reports ridership-service reachability and whether the LLM and
+  traffic integrations are configured, as booleans only. `/test` now shows it instead of calling deleted endpoints.
+- **T2 Type-check** — `npm run typecheck` (`tsc --noEmit`) passes and `next build` succeeds; image module types
+  added, `/test` state typed, `convertToUTC` tests use fake timers.
+- **T3 Find Rewards flow** — posts to `/api/transit-insights`, shows errors inline, and navigates to `/routes` only
+  on success.
+- **T4 Demo scenarios & loading** — demo buttons use real stop keys near CARTA service (weekend goes to Isle of
+  Palms, not Folly Beach) and skip coordinate validation; a request-state reducer makes the loader clear on every
+  terminal state; demo savings no longer render as `$$`.
+- **T4b Zero savings** — `/routes` renders a legitimate `0` saving instead of redirecting.
+- **T4c TomTom bbox** — incident bounding box is longitude-first (`minLon,minLat,maxLon,maxLat`).
+- **T5 Hygiene** — targeted data `.gitignore` rules replace the global `*.csv`/`*.json`/`*.parquet`/`public`
+  rules; `.DS_Store`, `__pycache__`, and `model_service/.env` untracked; `model_service/.dockerignore` added;
+  the Dockerfile runs gunicorn on port 5001.
+- **T6 Secret scanning** — the revoked Gemini key is redacted from `REFACTORING_PLAN.md` (at G0); CI scans each
+  PR diff with gitleaks, with a history-only allowlist in `.gitleaks.toml` (D-13).
+- **T7 Security quick wins** — model service reads `FLASK_DEBUG` (default false), `API_HOST` (default
+  `127.0.0.1`), and `API_PORT` (default 5001); API errors return generic messages; the TomTom key is now the
+  server-only `TOMTOM_API_KEY` (legacy `NEXT_PUBLIC_TOMTOM_API_KEY` still read, with a warning); Next.js 14.2.4 →
+  14.2.35.
+- **T8 LLM models** — model IDs come from `GEMINI_MODEL` (default `gemini-3.8-flash`) and `OPENAI_MODEL` (default
+  `gpt-5.6-terra`), replacing `gemini-1.5-flash` (shut down) and `gpt-3.5-turbo` (shuts down 2026-10-23).
+- **T9 CI** — GitHub Actions runs web (lint, typecheck, test, build on Node 22), python (compile on 3.11), and
+  secrets jobs on every PR and push to `main`.
+- **T10 Docs** — setup docs point at the health-based `/test` page and document the new env vars and the
+  `typecheck` script; the 0.2.1 stop count is corrected to 62.
+
 ## [0.2.1] - 2025-12-05
 
 ### 🔴 Security Fixes
@@ -43,7 +72,7 @@ All notable changes to the Tryp Transit project are documented here.
   - `bus_hourly_chronos_t5_tiny.py.backup`
 
 #### Data Sync
-- **Synced bus stops** — `busStops.ts` now has 66 stops (was 10), matching `busStopCoordinates.ts`
+- **Synced bus stops** — `busStops.ts` now has 62 stops (was 10), matching `busStopCoordinates.ts`
 - Added region comments (Downtown, North Charleston, Mount Pleasant, etc.)
 
 ### 🧪 Testing Infrastructure

@@ -19,7 +19,7 @@ const demoScenarios: Record<string, TransitInsightResponse> = {
   'rush-hour': {
     travelTime: 22,
     trafficDensity: 'Heavy',
-    costSavingsPerTrip: '$4.25',
+    costSavingsPerTrip: '4.25',
     nudgeMessage: 'Beat the rush hour traffic! Take the express bus and arrive stress-free while others sit in gridlock for 45+ minutes.',
     incentiveDetails: {
       type: 'eCredit',
@@ -42,11 +42,11 @@ const demoScenarios: Record<string, TransitInsightResponse> = {
   'weekend': {
     travelTime: 35,
     trafficDensity: 'Light',
-    costSavingsPerTrip: '$2.75',
-    nudgeMessage: 'Perfect weekend adventure! Enjoy the scenic coastal route to Folly Beach while saving money and reducing your carbon footprint.',
+    costSavingsPerTrip: '2.75',
+    nudgeMessage: 'Perfect weekend adventure! Enjoy the scenic coastal route to Isle of Palms while saving money and reducing your carbon footprint.',
     incentiveDetails: {
       type: 'partnerDiscount',
-      description: '20% off at participating Folly Beach restaurants and shops',
+      description: '20% off at participating Isle of Palms restaurants and shops',
       value: '20% discount'
     },
     additionalRides: [
@@ -65,7 +65,7 @@ const demoScenarios: Record<string, TransitInsightResponse> = {
   'night-out': {
     travelTime: 18,
     trafficDensity: 'Light',
-    costSavingsPerTrip: '$3.50',
+    costSavingsPerTrip: '3.50',
     nudgeMessage: 'Safe night out guaranteed! Skip the parking hassles and ride safely with well-lit stops and late-night security.',
     incentiveDetails: {
       type: 'funReward',

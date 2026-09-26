@@ -24,7 +24,7 @@ This is the clean, production-ready version of Tryp Transit. All legacy files an
 
 3. **Test the application:**
    - Main app: http://localhost:3000
-   - Test interface: http://localhost:3000/test
+   - Health check page: http://localhost:3000/test (shows `GET /api/health`)
    - Backend API: http://localhost:5001
 
 The startup script will automatically:
@@ -73,7 +73,7 @@ The startup script will automatically:
 
 5. **Test the application:**
    - Main app: http://localhost:3000
-   - Test interface: http://localhost:3000/test
+   - Health check page: http://localhost:3000/test (shows `GET /api/health`)
    - Backend API: http://localhost:5001
 
 ### 🛑 Stopping the Application
@@ -114,7 +114,7 @@ tryp_transit_v0.2/
 Create `.env.local` in the `src/` directory (optional for testing):
 ```env
 OPENAI_API_KEY=your_openai_key
-NEXT_PUBLIC_TOMTOM_API_KEY=your_tomtom_key
+TOMTOM_API_KEY=your_tomtom_key
 RIDERSHIP_API_BASE_URL=http://localhost:5001
 ```
 

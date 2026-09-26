@@ -8,6 +8,17 @@ import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
 let genAIInstance: GoogleGenerativeAI | null = null;
 let modelInstance: GenerativeModel | null = null;
 
+/** Default Gemini model (D-4; GA per ai.google.dev, re-checked 2026-09-25). Override with GEMINI_MODEL. */
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+
+/**
+ * The Gemini model ID: GEMINI_MODEL from env, or the default when it is unset or blank
+ * (the blank `GEMINI_MODEL=` line in .env.example must not select an empty model ID).
+ */
+export function getGeminiModelId(): string {
+  return process.env.GEMINI_MODEL?.trim() || DEFAULT_GEMINI_MODEL;
+}
+
 /**
  * Get or create the Gemini AI instance
  */
@@ -23,19 +34,15 @@ export function getGeminiClient(): GoogleGenerativeAI {
 }
 
 /**
- * Get or create the Gemini model with optimized settings for JSON responses
+ * Get or create the Gemini model for JSON responses
  */
 export function getGeminiModel(): GenerativeModel {
   if (!modelInstance) {
     const client = getGeminiClient();
+    // No generationConfig: Gemini 3.x deprecates temperature/topP/topK, and maxOutputTokens counts
+    // thinking tokens, so a small cap can truncate the JSON (ai.google.dev latest-model, thinking docs).
     modelInstance = client.getGenerativeModel({
-      model: 'gemini-1.5-flash',
-      generationConfig: {
-        temperature: 0.2,
-        topP: 0.8,
-        topK: 40,
-        maxOutputTokens: 2048,
-      },
+      model: getGeminiModelId(),
     });
   }
   return modelInstance;

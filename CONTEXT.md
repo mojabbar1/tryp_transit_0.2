@@ -89,9 +89,11 @@
 USE_GEMINI=true                    # Use Gemini instead of OpenAI
 GEMINI_API_KEY=your_key            # Required if USE_GEMINI=true
 OPENAI_API_KEY=your_key            # Required if USE_GEMINI=false
+GEMINI_MODEL=                      # Optional; blank/unset = gemini-3.8-flash
+OPENAI_MODEL=                      # Optional; blank/unset = gpt-5.6-terra
 
-# Traffic Data
-NEXT_PUBLIC_TOMTOM_API_KEY=your_key
+# Traffic Data (server-only; legacy NEXT_PUBLIC_TOMTOM_API_KEY still read as a fallback, with a warning)
+TOMTOM_API_KEY=your_key
 
 # ML Service
 RIDERSHIP_API_BASE_URL=http://localhost:5001
@@ -100,8 +102,9 @@ RIDERSHIP_API_BASE_URL=http://localhost:5001
 ### Backend (`model_service/.env`)
 ```bash
 FLASK_ENV=development
-API_HOST=0.0.0.0
-API_PORT=5001
+FLASK_DEBUG=false                  # Default false
+API_HOST=127.0.0.1                 # Default 127.0.0.1
+API_PORT=5001                      # Default 5001
 ```
 
 ---
@@ -215,12 +218,17 @@ cd src
 npm test              # Run all tests
 npm run test:watch    # Watch mode
 npm run test:coverage # Coverage report
+npm run typecheck     # Type-check (tsc --noEmit)
 ```
 
 ### Test Files
 - `__tests__/lib/convertToUTC.test.ts` — Time utilities
-- `__tests__/lib/api/gemini.test.ts` — JSON parsing
-- `__tests__/lib/api/tomtom.test.ts` — Bbox calculation
+- `__tests__/lib/api/gemini.test.ts` — JSON parsing, model-ID resolution
+- `__tests__/lib/api/openai.test.ts` — Model-ID resolution
+- `__tests__/lib/api/tomtom.test.ts` — Bbox calculation (lon-first), key resolution
+- `__tests__/lib/request-state.test.ts` — Request lifecycle reducer (loading always clears)
+- `__tests__/lib/utils.test.ts` — Number parsing and null checks
+- `__tests__/app/api/health.test.ts` — `/api/health` (booleans only)
 - `__tests__/data/busStops.test.ts` — Data consistency
 
 ---
