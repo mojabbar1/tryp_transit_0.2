@@ -34,19 +34,15 @@ export function getGeminiClient(): GoogleGenerativeAI {
 }
 
 /**
- * Get or create the Gemini model with optimized settings for JSON responses
+ * Get or create the Gemini model for JSON responses
  */
 export function getGeminiModel(): GenerativeModel {
   if (!modelInstance) {
     const client = getGeminiClient();
+    // No generationConfig: Gemini 3.x deprecates temperature/topP/topK, and maxOutputTokens counts
+    // thinking tokens, so a small cap can truncate the JSON (ai.google.dev latest-model, thinking docs).
     modelInstance = client.getGenerativeModel({
       model: getGeminiModelId(),
-      generationConfig: {
-        temperature: 0.2,
-        topP: 0.8,
-        topK: 40,
-        maxOutputTokens: 2048,
-      },
     });
   }
   return modelInstance;
