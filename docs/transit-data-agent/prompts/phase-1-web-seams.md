@@ -24,8 +24,9 @@ ask**.
       (`feat/tda-phase-1a-contracts`), **P1b** T3 + `validate-claims.ts` + the claim vectors and their tests
       (`feat/tda-phase-1b-domain`), and **P1c** T4, the rest of T5, and T6–T10 (`feat/tda-phase-1c-route`). Do only
       your part.
-- [ ] **Real-key provider check (carried from P0 R1, waived at the P0 merge in #3).** Before P1 starts, a human runs
-      the P0 revision with real keys: for each provider, `POST /api/transit-insights` returns HTTP 200 with usable
+- [ ] **Real-key provider check (carried from P0 R1, waived at the P0 merge in #3). Required before P1c starts.**
+      P1a and P1b are exempt by a delegated decision recorded in 05 §7 (2026-09-27); originally it gated all of P1.
+      A human runs the P0 revision with real keys: for each provider, `POST /api/transit-insights` returns HTTP 200 with usable
       provider JSON, and the server log shows no `Using fallback response`. Record the provider, model, and date in
       05 §7. If the legacy SDK rejects the model, that pulls the `@google/genai` migration (T5) forward; stop and ask.
 - [ ] The **D-24 named baseline** is on `main` (P0's precondition), so the code paths referenced here exist.
