@@ -98,13 +98,15 @@ Every attempt writes one `fetch_run` row:
 
 All HTTP goes through `tda.http.polite_client` (Ruff bans `requests`, `urllib.request`, `http.client`, and direct
 `httpx` clients elsewhere). It checks robots.txt for `robots_required` sources with an RFC 9309 matcher
-(`tda.http.robots`: `*`/`$` patterns, merged groups, longest match), paces requests per host, retries 429/5xx
+(`tda.http.robots`: `*`/`$` patterns, merged groups, longest match, component-aware percent-encoding, and
+linear-time matching), paces requests per host, retries 429/5xx
 with backoff (honoring `Retry-After`), sends conditional GETs, caps body size and total time (robots.txt
 included), sends the contact User-Agent (D-18), and never leaves the source's host and `allowed_hosts`. The
 worker shares one client across all jobs, so pacing and the 24 h robots cache span runs.
 
-A `not_modified` run records the success it confirms (`validates_run_id`); it counts toward freshness only while
-that run is still a success, and a 304 with no usable prior success is `failed`.
+A `not_modified` run records the success of the **same source** that it confirms (`validates_run_id`, a
+composite foreign key plus a guard); it counts toward freshness only while that run is still a success, and a
+304 with no usable prior success is `failed`.
 
 Human-supplied files use `Connector.run_manual(path)` with a required `<file>.meta.yaml` sidecar
 (`supplied_by`, `original_url`); P3 adds `tda inbox process`.
@@ -123,8 +125,10 @@ Lineage convention: a fact lists every run it depends on, transitively, in `deri
 Rollback and publishing are safe to run concurrently (`tda.store.lineage`): rollback holds `FOR UPDATE` on its
 run, while approving or auto-publishing a fact, or recording a metric (`record_metric`), first takes `FOR SHARE`
 on every input run and refuses one that isn't a `success`. Whichever commits first wins; the other sees it.
-`current_metric_value` also hides a latest value whose input run is no longer a success (it never revives an
-older value), so no number derived from rolled-back data is served even without a recompute.
+`current_metric_value` also hides a latest value unless every input run exists and is a success (it never
+revives an older value), and a trigger plus a CHECK refuse recording a metric with a missing, NULL, or
+non-success input. Rollbacks are serialized by one global transaction lock (so recomputations that share
+inputs can't deadlock) and are retried as a whole on a deadlock or serialization failure.
 
 ### Approving a source (by PR only)
 

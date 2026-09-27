@@ -178,3 +178,47 @@ def test_publishing_refuses_inputs_that_are_not_success(
     with writer_engine.begin() as connection:
         with pytest.raises(FactStateError, match="missing"):
             write_fact(connection, _draft(1, [987654], key="echo.auto"), auto_publish=True)
+
+
+def test_concurrent_rollbacks_sharing_a_metric_do_not_deadlock(
+    echo: Callable[..., EchoConnector], writer_engine: Engine, metrics: MetricRegistry
+) -> None:
+    """Review round 2, R2-1: a metric depends on runs A and B, and both are rolled back at once. Each
+    recomputation reads the other run while it is still a success (Astra's lock cycle). Rollbacks are
+    serialized, so both finish."""
+    connector = echo(payload={"items": [{"name": "a", "value": "1"}]})
+    a = connector.run(live=True).run_id
+    connector.payload = {"items": [{"name": "a", "value": "2"}]}
+    b = connector.run(live=True).run_id
+    first_in, release = threading.Event(), threading.Event()
+
+    def still_successful(connection: Connection, dims: Any) -> MetricResult:
+        inputs = list(
+            connection.execute(
+                text("SELECT id FROM tda.fetch_run WHERE id = ANY(:ids) AND status = 'success' ORDER BY id"),
+                {"ids": [a, b]},
+            ).scalars()
+        )
+        if not first_in.is_set():
+            first_in.set()
+            assert release.wait(10)
+        return MetricResult(Decimal(len(inputs)), inputs)
+
+    metrics.register(MetricDefinition("both.runs", "v1", still_successful))
+    with writer_engine.begin() as connection:
+        record_metric(connection, "both.runs", {}, MetricResult(Decimal(2), [a, b]), "v1")
+    first, first_out = _in_thread(lambda: connector.rollback(a, dry_run=False))
+    assert first_in.wait(10)
+    second, second_out = _in_thread(lambda: connector.rollback(b, dry_run=False))
+    try:
+        second.join(WAIT)
+        assert second.is_alive(), "the second rollback waits for the first"
+    finally:
+        release.set()
+        first.join(10)
+        second.join(10)
+    assert "error" not in first_out and "error" not in second_out, (first_out, second_out)
+    statuses = rows(writer_engine, "SELECT status FROM tda.fetch_run WHERE id = ANY(:ids)", ids=[a, b])
+    assert [r[0] for r in statuses] == ["rolled_back", "rolled_back"]
+    current = rows(writer_engine, "SELECT value FROM tda.current_metric_value WHERE metric_key = 'both.runs'")
+    assert [r[0] for r in current] == [Decimal(0)], "recomputed with no surviving inputs"

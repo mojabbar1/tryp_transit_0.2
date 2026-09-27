@@ -62,11 +62,13 @@ UPGRADE = [
       error text,
       etag text,
       last_modified text,
-      -- A not_modified run confirms one success run; it stays fresh only while that run does (02 §6.2).
-      validates_run_id bigint REFERENCES tda.fetch_run(id),
+      -- A not_modified run confirms one success run of the same source; it stays fresh only while that does.
+      validates_run_id bigint,
       CHECK (acquisition = 'http' OR supplied_by IS NOT NULL),
       CHECK (status = 'running' OR finished_at IS NOT NULL),
-      CHECK ((status = 'not_modified') = (validates_run_id IS NOT NULL))
+      CHECK ((status = 'not_modified') = (validates_run_id IS NOT NULL)),
+      UNIQUE (source_id, id),
+      FOREIGN KEY (source_id, validates_run_id) REFERENCES tda.fetch_run (source_id, id)
     )
     """,
     "CREATE INDEX fetch_run_source_started ON tda.fetch_run (source_id, started_at DESC)",
@@ -96,6 +98,21 @@ UPGRADE = [
     END $$
     """,
     "CREATE TRIGGER fetch_run_guard BEFORE UPDATE OR DELETE ON tda.fetch_run FOR EACH ROW EXECUTE FUNCTION tda.fetch_run_guard()",
+    # Becoming not_modified needs a same-source success to confirm (a later rollback of it stays legal).
+    """
+    CREATE FUNCTION tda.fetch_run_confirms_success() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NEW.status = 'not_modified' AND (TG_OP = 'INSERT' OR OLD.status <> 'not_modified')
+         AND NOT EXISTS (SELECT 1 FROM tda.fetch_run v WHERE v.id = NEW.validates_run_id
+                         AND v.source_id = NEW.source_id AND v.status = 'success') THEN
+        RAISE EXCEPTION 'tda.fetch_run: not_modified must confirm a success run of the same source'
+          USING ERRCODE = 'restrict_violation';
+      END IF;
+      RETURN NEW;
+    END $$
+    """,
+    "CREATE TRIGGER fetch_run_confirms_success BEFORE INSERT OR UPDATE ON tda.fetch_run "
+    "FOR EACH ROW EXECUTE FUNCTION tda.fetch_run_confirms_success()",
     """
     CREATE TABLE tda.fact (
       id bigserial PRIMARY KEY,
@@ -185,13 +202,28 @@ UPGRADE = [
       unit text,
       computed_at timestamptz NOT NULL DEFAULT now(),
       method_version text NOT NULL,
-      input_run_ids bigint[] NOT NULL DEFAULT '{}'
+      input_run_ids bigint[] NOT NULL DEFAULT '{}' CHECK (array_position(input_run_ids, NULL) IS NULL)
     )
     """,
     "CREATE INDEX metric_value_key ON tda.metric_value (metric_key, computed_at DESC)",
     "CREATE INDEX metric_value_runs ON tda.metric_value USING gin (input_run_ids)",
     "CREATE TRIGGER metric_value_append_only BEFORE UPDATE OR DELETE ON tda.metric_value "
     "FOR EACH ROW EXECUTE FUNCTION tda.forbid_mutation()",
+    # Every input run must exist and be a success when a value is recorded (record_metric also locks them).
+    """
+    CREATE FUNCTION tda.metric_value_lineage_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM unnest(NEW.input_run_ids) AS i(run_id)
+                 LEFT JOIN tda.fetch_run r ON r.id = i.run_id
+                 WHERE r.id IS NULL OR r.status <> 'success') THEN
+        RAISE EXCEPTION 'tda.metric_value: every input run must exist and be a success'
+          USING ERRCODE = 'restrict_violation';
+      END IF;
+      RETURN NEW;
+    END $$
+    """,
+    "CREATE TRIGGER metric_value_lineage_guard BEFORE INSERT ON tda.metric_value "
+    "FOR EACH ROW EXECUTE FUNCTION tda.metric_value_lineage_guard()",
     """
     CREATE TABLE tda.review_item (
       id bigserial PRIMARY KEY,
@@ -255,7 +287,9 @@ UPGRADE = [
       -- The latest value is current only while every input run is still a success. If one was rolled back
       -- (without a recompute), the metric is unavailable; an older value is never revived.
       WHERE NOT EXISTS (
-        SELECT 1 FROM tda.fetch_run r WHERE r.id = ANY(latest.input_run_ids) AND r.status <> 'success'
+        SELECT 1 FROM unnest(latest.input_run_ids) AS i(run_id)
+        LEFT JOIN tda.fetch_run r ON r.id = i.run_id
+        WHERE i.run_id IS NULL OR r.id IS NULL OR r.status <> 'success'
       )
     """,
     # The reader's only ingestion-status surface (02 §6.2): it has no access to fetch_run itself.
@@ -272,7 +306,8 @@ UPGRADE = [
         WHERE r.source_id = s.id AND (
           r.status = 'success'
           OR (r.status = 'not_modified' AND EXISTS (
-            SELECT 1 FROM tda.fetch_run v WHERE v.id = r.validates_run_id AND v.status = 'success'))
+            SELECT 1 FROM tda.fetch_run v
+            WHERE v.id = r.validates_run_id AND v.source_id = r.source_id AND v.status = 'success'))
         )
       ) ok ON true
       LEFT JOIN LATERAL (
@@ -318,11 +353,13 @@ DOWNGRADE = [
     "DROP TABLE tda.review_item",
     "DROP FUNCTION tda.review_item_guard()",
     "DROP TABLE tda.metric_value",
+    "DROP FUNCTION tda.metric_value_lineage_guard()",
     "DROP TABLE tda.fact",
     "DROP FUNCTION tda.fact_guard()",
     "DROP FUNCTION tda.fact_stamp_publication()",
     "DROP TABLE tda.fetch_run",
     "DROP FUNCTION tda.fetch_run_guard()",
+    "DROP FUNCTION tda.fetch_run_confirms_success()",
     "DROP TABLE tda.source",
     "DROP FUNCTION tda.forbid_mutation()",
 ]

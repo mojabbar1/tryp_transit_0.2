@@ -8,8 +8,15 @@ groups, applies the first matching rule instead of the longest, and matches user
 - **Rules (§2.2.2):** ``allow``/``disallow`` paths, where ``*`` matches any sequence and a trailing ``$``
   anchors the end. The longest matching rule (in octets) wins; on a tie, allow wins. No match means allowed.
   An empty rule value is ignored. ``/robots.txt`` itself is always allowed.
-- **Encoding (§2.2.2):** paths and rules are compared after percent-encoding non-ASCII octets (UTF-8) and
-  decoding percent-encoded unreserved characters; other escapes are kept, with uppercase hex.
+- **Encoding (§2.2.2, Figure 4):** paths and rules are compared after the same component-aware
+  normalization: non-ASCII becomes UTF-8 escapes; escaped unreserved characters are decoded; other escapes
+  stay (uppercase hex), so ``%2F`` never equals a ``/`` separator. Reserved characters that can only be data
+  are encoded: in path segments everything outside ``pchar`` (such as ``[`` and ``]``), and in query keys and
+  values every reserved character (``?baz=https://foo.bar`` -> ``?baz=https%3A%2F%2Ffoo.bar``). ``/``, ``?``,
+  ``&``, and ``=`` stay structural. In rules ``*`` is the wildcard and a final ``$`` the anchor; in URIs both
+  are data (``%2A``, ``%24``), so a rule matches them literally only when written escaped (§2.2.3).
+- **Matching** is linear: ``*`` patterns are matched segment by segment (leftmost greedy, which is exact
+  for ``*``-only globs), never via backtracking regular expressions.
 - ``crawl-delay`` (not in the RFC) is honored when a matching group sets it; the largest value wins.
 """
 
@@ -21,8 +28,10 @@ from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
 _UNRESERVED = frozenset(string.ascii_letters + string.digits + "-._~")
+_SUB_DELIMS = frozenset("!$&'()*+,;=")
+_PCHAR_EXTRA = (_SUB_DELIMS | frozenset(":@")) - frozenset("*$")  # raw in a path segment (RFC 3986 pchar)
+_HEX = frozenset(string.hexdigits)
 _TOKEN = re.compile(r"[A-Za-z_-]+")
-_ESCAPE = re.compile(r"%([0-9A-Fa-f]{2})")
 
 
 def product_token(user_agent: str) -> str:
@@ -31,15 +40,68 @@ def product_token(user_agent: str) -> str:
     return match.group(0) if match else ""
 
 
-def normalize(path: str) -> str:
-    """Encode non-ASCII as UTF-8 escapes and decode escaped unreserved characters (RFC 9309 §2.2.2)."""
+def _component(text: str, keep: frozenset[str], *, rule: bool) -> str:
+    out = []
+    i = 0
+    while i < len(text):
+        char = text[i]
+        escape = text[i + 1 : i + 3]
+        if char == "%" and len(escape) == 2 and set(escape) <= _HEX:
+            decoded = chr(int(escape, 16))
+            out.append(decoded if decoded in _UNRESERVED else f"%{escape.upper()}")
+            i += 3
+            continue
+        if rule and char == "*":
+            out.append("*")
+        elif ord(char) >= 128:
+            out.append("".join(f"%{b:02X}" for b in char.encode()))
+        elif char in _UNRESERVED or char in keep:
+            out.append(char)
+        else:
+            out.append(f"%{ord(char):02X}")
+        i += 1
+    return "".join(out)
 
-    def fix(match: re.Match[str]) -> str:
-        char = chr(int(match.group(1), 16))
-        return char if char in _UNRESERVED else f"%{match.group(1).upper()}"
 
-    encoded = "".join(c if ord(c) < 128 else "".join(f"%{b:02X}" for b in c.encode()) for c in path)
-    return _ESCAPE.sub(fix, encoded)
+def normalize(text: str, *, rule: bool = False) -> str:
+    """The RFC 9309 §2.2.2 comparison form of a rule (``rule=True``) or of a URI's path and query."""
+    anchored = rule and text.endswith("$")
+    body = text[:-1] if anchored else text
+    path, question, query = body.partition("?")
+    normalized = "/".join(_component(segment, _PCHAR_EXTRA, rule=rule) for segment in path.split("/"))
+    if question:
+        pairs = []
+        for pair in query.split("&"):
+            key, equals, value = pair.partition("=")
+            pairs.append(
+                _component(key, frozenset(), rule=rule) + equals + _component(value, frozenset(), rule=rule)
+            )
+        normalized += "?" + "&".join(pairs)
+    return normalized + ("$" if anchored else "")
+
+
+def wildcard_match(pattern: str, path: str) -> bool:
+    """Whether ``pattern`` (``*`` wildcards, optional final ``$``) matches the start of ``path``.
+
+    Leftmost-greedy segment search is exact for ``*``-only globs and runs in linear time (no backtracking).
+    """
+    anchored = pattern.endswith("$")
+    first, *rest = (pattern[:-1] if anchored else pattern).split("*")
+    if not path.startswith(first):
+        return False
+    if not rest:
+        return len(path) == len(first) if anchored else True
+    position = len(first)
+    *middle, last = rest
+    for segment in middle:
+        if segment:
+            found = path.find(segment, position)
+            if found < 0:
+                return False
+            position = found + len(segment)
+    if anchored:
+        return len(path) - len(last) >= position and path.endswith(last)
+    return not last or path.find(last, position) >= 0
 
 
 @dataclass(frozen=True)
@@ -51,10 +113,7 @@ class Rule:
 
     def matches(self, path: str) -> bool:
         """Whether this rule's pattern matches the normalized ``path`` (anchored at its start)."""
-        anchored = self.pattern.endswith("$")
-        body = self.pattern[:-1] if anchored else self.pattern
-        regex = ".*".join(re.escape(part) for part in body.split("*")) + ("$" if anchored else "")
-        return re.match(regex, path, flags=re.DOTALL) is not None
+        return wildcard_match(self.pattern, path)
 
 
 @dataclass
@@ -108,7 +167,7 @@ def parse(text: str, user_agent: str) -> RobotsRules:
         elif key in ("allow", "disallow") and current is not None:
             in_rules = True
             if value:
-                current.rules.append(Rule(key == "allow", normalize(value)))
+                current.rules.append(Rule(key == "allow", normalize(value, rule=True)))
         elif key == "crawl-delay" and current is not None:
             in_rules = True
             try:

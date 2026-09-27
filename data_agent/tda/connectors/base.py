@@ -26,6 +26,7 @@ import structlog
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from sqlalchemy import Connection, Engine, text
+from sqlalchemy.exc import DBAPIError
 
 from tda.config.models import Source
 from tda.config.settings import Settings, get_settings
@@ -38,6 +39,7 @@ from tda.http.polite_client import (
     RobotsDisallowed,
 )
 from tda.metrics.registry import METRICS, MetricRegistry, MetricResult, record_metric
+from tda.store.lineage import key_lock
 from tda.store.observations import sql_ident
 from tda.store.raw_store import RawStore
 from tda.store.sources import upsert_source
@@ -47,6 +49,8 @@ log = structlog.get_logger(__name__)
 Row = Mapping[str, Any]
 Acquisition = Literal["http", "manual"]
 ERROR_MAX = 500
+ROLLBACK_ATTEMPTS = 3
+RETRYABLE_SQLSTATES = ("40P01", "40001")  # deadlock_detected, serialization_failure
 
 
 class ValidationFailed(Exception):
@@ -229,14 +233,13 @@ class Connector(ABC):
                     http_status=304,
                     error="304 Not Modified, but no usable prior success run",
                 )
-            return self._finish(
+            return self._confirm(
                 run_id,
-                "not_modified",
+                prior,
                 http_status=304,
                 etag=fetched.etag or prior.etag,
                 last_modified=fetched.last_modified or prior.last_modified,
                 sha256=prior.sha256,
-                validates_run_id=prior.id,
             )
         return self._land(run_id, fetched, prior)
 
@@ -302,13 +305,7 @@ class Connector(ABC):
             "last_modified": fetched.last_modified,
         }
         if prior is not None and prior.sha256 == digest:
-            return self._finish(
-                run_id,
-                "not_modified",
-                message=f"same sha256 as run {prior.id}",
-                validates_run_id=prior.id,
-                **facts,
-            )
+            return self._confirm(run_id, prior, message=f"same sha256 as run {prior.id}", **facts)
         try:
             facts["raw_uri"] = self.store.put(self.source, run_id, fetched.body, fetched.ext).uri
             rows = list(self.normalize(fetched.body))
@@ -322,6 +319,18 @@ class Connector(ABC):
             return self._finish(run_id, "failed", error=_describe(error), **facts)
         log.info("ingest.success", source=self.source.id, run_id=run_id, rows=stats.rows)
         return RunOutcome(self.source.id, "success", run_id, stats.total)
+
+    def _confirm(
+        self, run_id: int, prior: PriorRun, *, message: str | None = None, **fields: Any
+    ) -> RunOutcome:
+        """Finish ``not_modified`` confirming ``prior``, or ``failed`` if it was rolled back meanwhile."""
+        try:
+            return self._finish(run_id, "not_modified", message=message, validates_run_id=prior.id, **fields)
+        except DBAPIError as error:
+            if "must confirm a success run" not in str(error.orig):
+                raise
+            reason = f"run {prior.id}, which this run would confirm, is no longer a success"
+            return self._finish(run_id, "failed", error=reason, **fields)
 
     def _finish(self, run_id: int, status: str, *, message: str | None = None, **fields: Any) -> RunOutcome:
         with self.engine.begin() as connection:
@@ -428,9 +437,33 @@ def rollback_run(
     3. Approved facts that cite the run become ``needs_review``.
     4. The raw snapshot is kept.
     With ``dry_run``, nothing changes and the plan says what would.
+
+    Rollbacks are serialized by a global transaction lock taken before any run lock, so two rollbacks whose
+    recomputations share inputs can't deadlock. A deadlock or serialization failure from anything else
+    retries the whole transaction (at most 3 attempts); nothing is applied by an aborted attempt.
     """
     tables = [sql_ident(t) for t in owned_tables]
+    for attempt in range(1, ROLLBACK_ATTEMPTS + 1):
+        try:
+            return _rollback_once(engine, run_id, tables, dry_run, metrics, source_id)
+        except DBAPIError as error:
+            sqlstate = getattr(error.orig, "sqlstate", None)
+            if sqlstate not in RETRYABLE_SQLSTATES or attempt == ROLLBACK_ATTEMPTS:
+                raise
+            log.warning("runs.rollback_retry", run_id=run_id, attempt=attempt, sqlstate=sqlstate)
+    raise AssertionError("unreachable")
+
+
+def _rollback_once(
+    engine: Engine,
+    run_id: int,
+    tables: list[str],
+    dry_run: bool,
+    metrics: MetricRegistry,
+    source_id: str | None,
+) -> RollbackPlan:
     with engine.begin() as connection:
+        key_lock(connection, "rollback", "all")
         run = connection.execute(
             text("SELECT id, source_id, status, raw_uri FROM tda.fetch_run WHERE id = :id FOR UPDATE"),
             {"id": run_id},

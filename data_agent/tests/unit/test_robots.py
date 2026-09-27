@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from tda.config.settings import DEFAULT_USER_AGENT
@@ -94,3 +96,43 @@ def test_crawl_delay_comes_from_the_matching_groups() -> None:
     robots = "User-agent: *\nCrawl-delay: 30\n\nUser-agent: TrypTransitDataAgent\nCrawl-delay: 4\nAllow: /\n"
     assert parse(robots, UA).crawl_delay == 4.0
     assert parse("User-agent: *\nCrawl-delay: soon\n", UA).crawl_delay is None
+
+
+def test_figure_4_of_rfc_9309_section_2_2_2() -> None:
+    """Review round 2, R2-3: every row of Figure 4 (path -> the path to match)."""
+    assert normalize("/foo/bar?baz=quz") == "/foo/bar?baz=quz"
+    assert normalize("/foo/bar?baz=https://foo.bar") == "/foo/bar?baz=https%3A%2F%2Ffoo.bar"
+    assert normalize("/foo/bar/\u30c4") == "/foo/bar/%E3%83%84"
+    assert normalize("/foo/bar/%E3%83%84") == "/foo/bar/%E3%83%84"
+    assert normalize("/foo/bar/%62%61%7A") == "/foo/bar/baz"
+
+
+@pytest.mark.parametrize(
+    ("rule", "path", "allowed"),
+    [
+        ("/foo/bar?baz=https://foo.bar", "/foo/bar?baz=https%3A%2F%2Ffoo.bar", False),
+        ("/foo/bar?baz=https%3A%2F%2Ffoo.bar", "/foo/bar?baz=https://foo.bar", False),
+        ("/private[1]", "/private%5B1%5D", False),
+        ("/private%5B1%5D", "/private[1]", False),
+        ("/a%2Fb", "/a/b", True),
+        ("/a/b", "/a%2Fb", True),
+        ("/q?x=a&y=b", "/q?x=a&y=b", False),
+        ("/q?x=a%26y=b", "/q?x=a&y=b", True),
+        ("/path/file-with-a-%2A.html", "/path/file-with-a-*.html", False),
+        ("/path/foo-%24", "/path/foo-$", False),
+        ("/user:@/*", "/user:@/x", False),
+    ],
+)
+def test_reserved_data_is_compared_encoded_and_separators_stay_structural(
+    rule: str, path: str, allowed: bool
+) -> None:
+    """Round 2, R2-3: reserved characters that are data compare encoded; ``/ ? & =`` stay structural."""
+    assert _allows(f"User-agent: *\nDisallow: {rule}\n", path) is allowed
+
+
+def test_many_wildcards_on_a_mismatch_finish_in_linear_time() -> None:
+    """Review round 2, R2-2: the pattern that stalled a backtracking regex for more than 3 s."""
+    started = time.perf_counter()
+    assert parse("User-agent: *\nDisallow: /" + "*a" * 24 + "b\n", UA).allows("/" + "a" * 36)
+    assert parse("User-agent: *\nDisallow: /" + "*a" * 2000 + "b\n", UA).allows("/" + "a" * 4000)
+    assert time.perf_counter() - started < 0.5

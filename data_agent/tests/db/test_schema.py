@@ -427,8 +427,58 @@ def test_freshness_counts_a_not_modified_run_only_while_its_success_survives(
     writer.commit()
     row = reader.execute(fresh).one()
     assert (row.stale, row.last_success) == (True, None)
-    assert "violates check constraint" in _denied(
+    assert "must confirm a success run of the same source" in _denied(
         writer,
         "INSERT INTO tda.fetch_run (source_id, acquisition, status, finished_at) "
         "VALUES ('src', 'http', 'not_modified', now())",
     )
+
+
+def test_a_not_modified_run_cannot_borrow_another_sources_success(
+    writer: Connection, reader: Connection
+) -> None:
+    """Review round 2, R2-5: the validator must be a success of the same source."""
+    _source(writer, "a-src")
+    _source(writer, "b-src")
+    b_success = _run(writer, "b-src")
+    writer.commit()
+    insert = (
+        "INSERT INTO tda.fetch_run (source_id, acquisition, status, finished_at, validates_run_id) "
+        "VALUES ('a-src', 'http', 'not_modified', now(), :v)"
+    )
+    assert "must confirm a success run of the same source" in _denied(writer, insert, {"v": b_success})
+    stale = reader.execute(
+        text("SELECT stale FROM tda.source_freshness WHERE source_id = 'a-src'")
+    ).scalar_one()
+    assert stale is True, "a-src never succeeded"
+
+
+def test_metric_lineage_must_name_real_success_runs(db: DbUrls, writer: Connection) -> None:
+    """Review round 2, R2-4: rejected on insert, and the view filters them even if a row slipped in."""
+    _source(writer)
+    run = _run(writer)
+    writer.commit()
+    insert = (
+        "INSERT INTO tda.metric_value (metric_key, value, method_version, input_run_ids) "
+        "VALUES (:k, 99, 'v1', {})"
+    )
+    ghost = "ARRAY[CAST(987654321 AS bigint)]"
+    assert "must exist and be a success" in _denied(writer, insert.format(ghost), {"k": "m1"})
+    null = "ARRAY[CAST(NULL AS bigint)]"
+    assert "must exist and be a success" in _denied(writer, insert.format(null), {"k": "m2"})
+    admin = db.engine("admin")
+    with admin.connect() as connection:  # triggers off (superuser): the CHECK still refuses a NULL input
+        connection.execute(text("SET session_replication_role = replica"))
+        connection.commit()
+        assert "violates check constraint" in _denied(connection, insert.format(null), {"k": "m2"})
+    with admin.begin() as connection:  # bypass the trigger as a superuser to test the view on its own
+        connection.execute(text("SET LOCAL session_replication_role = replica"))
+        connection.execute(text(insert.format(ghost)), {"k": "ghost"})
+        connection.execute(text(insert.format("ARRAY[CAST(:r AS bigint)]")), {"k": "real", "r": run})
+    admin.dispose()
+    for role in ("reader", "writer", "admin"):
+        engine = db.engine(role)
+        with engine.connect() as connection:
+            keys = connection.execute(text("SELECT metric_key FROM tda.current_metric_value")).scalars().all()
+        engine.dispose()
+        assert keys == ["real"], role
