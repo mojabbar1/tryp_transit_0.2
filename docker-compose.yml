@@ -1,0 +1,91 @@
+# Local stack for the data agent (P2 T10). Copy .env.example to .env and fill in local-only passwords first;
+# compose refuses to start while any of them is empty. Ports bind to 127.0.0.1 only.
+# Not here, on purpose: the web app, and model-service (the live app no longer calls it; D-10 decides at G1).
+name: tryp-transit
+
+# One image for all three data-agent services. Only data-agent-migrate builds it (parallel builds of one tag
+# race); the API and worker reuse it and never pull a same-named image from a registry.
+x-data-agent: &data-agent
+  image: tryp-transit/data-agent:local
+  pull_policy: never
+  environment: &data-agent-env
+    TDA_LOG_JSON: "true"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tryp}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      # Read once, by docker/postgres/init/01-roles.sql, when the volume is first initialized.
+      TDA_OWNER_PASSWORD: ${TDA_OWNER_PASSWORD:?set TDA_OWNER_PASSWORD in .env}
+      TDA_WRITER_PASSWORD: ${TDA_WRITER_PASSWORD:?set TDA_WRITER_PASSWORD in .env}
+      TDA_READER_PASSWORD: ${TDA_READER_PASSWORD:?set TDA_READER_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # One-shot: schema and grants (as the owner, no superuser), then migrations. The others wait for it.
+  data-agent-migrate:
+    <<: *data-agent
+    build: ./data_agent
+    pull_policy: build
+    command: ["sh", "-c", "tda db bootstrap && alembic upgrade head"]
+    environment:
+      <<: *data-agent-env
+      TDA_ADMIN_DATABASE_URL: postgresql://tda_owner:${TDA_OWNER_PASSWORD}@postgres:5432/${POSTGRES_DB:-tryp}
+      TDA_DATABASE_URL: postgresql://tda_writer:${TDA_WRITER_PASSWORD}@postgres:5432/${POSTGRES_DB:-tryp}
+      TDA_READER_DATABASE_URL: postgresql://tda_reader:${TDA_READER_PASSWORD}@postgres:5432/${POSTGRES_DB:-tryp}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # The read API gets the reader URL only (least privilege).
+  data-agent-api:
+    <<: *data-agent
+    command: ["tda", "api", "serve", "--host", "0.0.0.0", "--port", "8081"]
+    environment:
+      <<: *data-agent-env
+      TDA_READER_DATABASE_URL: postgresql://tda_reader:${TDA_READER_PASSWORD}@postgres:5432/${POSTGRES_DB:-tryp}
+    ports:
+      - "127.0.0.1:${TDA_API_PORT:-8081}:8081"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/v1/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      data-agent-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Runs approved sources on their cadences (none until P3), plus daily retention.
+  data-agent-worker:
+    <<: *data-agent
+    command: ["tda", "scheduler", "run"]
+    environment:
+      <<: *data-agent-env
+      TDA_DATABASE_URL: postgresql://tda_writer:${TDA_WRITER_PASSWORD}@postgres:5432/${POSTGRES_DB:-tryp}
+    volumes:
+      - tda-raw:/app/raw
+    depends_on:
+      data-agent-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  tda-raw:
