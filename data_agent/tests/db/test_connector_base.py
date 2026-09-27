@@ -99,6 +99,25 @@ def test_a_304_is_not_modified(echo: Echo, writer_engine: Engine) -> None:
     )
 
 
+def test_not_modified_runs_point_at_the_success_they_confirm(echo: Echo, writer_engine: Engine) -> None:
+    """Review finding F8: a 304 (or same sha256) confirms a specific success; after its rollback it counts
+    for nothing, and a 304 with no usable prior success is a failure."""
+    connector = echo(cadence="0 * * * *", stale_after_hours=24)
+    first = connector.run(live=True).run_id
+    same = connector.run(live=True)
+    connector.not_modified = True
+    three_oh_four = connector.run(live=True)
+    confirms = "SELECT validates_run_id FROM tda.fetch_run WHERE id = :i"
+    assert rows(writer_engine, confirms, i=same.run_id)[0][0] == first
+    assert rows(writer_engine, confirms, i=three_oh_four.run_id)[0][0] == first
+    fresh = "SELECT stale, last_success FROM tda.source_freshness WHERE source_id = 'echo'"
+    assert rows(writer_engine, fresh)[0].stale is False
+    connector.rollback(first, dry_run=False)
+    assert tuple(rows(writer_engine, fresh)[0]) == (True, None)
+    orphan = connector.run(live=True)
+    assert orphan.status == "failed" and "no usable prior success" in (orphan.message or "")
+
+
 def test_changed_content_appends_and_the_current_view_moves(echo: Echo, writer_engine: Engine) -> None:
     connector = echo(payload={"items": [{"name": "a", "value": "1"}]})
     connector.run(live=True)

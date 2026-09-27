@@ -52,8 +52,11 @@ class Period(BaseModel):
 
 
 class FactSource(BaseModel):
+    """A cited source. ``retrieved`` is the UTC date of the latest successful input run from it, if any."""
+
     source_id: str
     attribution: str | None
+    retrieved: date | None
 
 
 class FactOut(BaseModel):

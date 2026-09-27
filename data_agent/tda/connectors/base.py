@@ -37,7 +37,7 @@ from tda.http.polite_client import (
     RequestBudget,
     RobotsDisallowed,
 )
-from tda.metrics.registry import METRICS, MetricRegistry
+from tda.metrics.registry import METRICS, MetricRegistry, MetricResult, record_metric
 from tda.store.observations import sql_ident
 from tda.store.raw_store import RawStore
 from tda.store.sources import upsert_source
@@ -222,13 +222,21 @@ class Connector(ABC):
         except Exception as error:
             return self._finish(run_id, "failed", error=_describe(error))
         if isinstance(fetched, NotModified):
+            if prior is None:
+                return self._finish(
+                    run_id,
+                    "failed",
+                    http_status=304,
+                    error="304 Not Modified, but no usable prior success run",
+                )
             return self._finish(
                 run_id,
                 "not_modified",
                 http_status=304,
-                etag=fetched.etag or (prior.etag if prior else None),
-                last_modified=fetched.last_modified or (prior.last_modified if prior else None),
-                sha256=prior.sha256 if prior else None,
+                etag=fetched.etag or prior.etag,
+                last_modified=fetched.last_modified or prior.last_modified,
+                sha256=prior.sha256,
+                validates_run_id=prior.id,
             )
         return self._land(run_id, fetched, prior)
 
@@ -294,7 +302,13 @@ class Connector(ABC):
             "last_modified": fetched.last_modified,
         }
         if prior is not None and prior.sha256 == digest:
-            return self._finish(run_id, "not_modified", message=f"same sha256 as run {prior.id}", **facts)
+            return self._finish(
+                run_id,
+                "not_modified",
+                message=f"same sha256 as run {prior.id}",
+                validates_run_id=prior.id,
+                **facts,
+            )
         try:
             facts["raw_uri"] = self.store.put(self.source, run_id, fetched.body, fetched.ext).uri
             rows = list(self.normalize(fetched.body))
@@ -317,7 +331,16 @@ class Connector(ABC):
 
     @staticmethod
     def _update(connection: Connection, run_id: int, status: str, **fields: Any) -> None:
-        allowed = {"http_status", "bytes", "sha256", "raw_uri", "error", "etag", "last_modified"}
+        allowed = {
+            "http_status",
+            "bytes",
+            "sha256",
+            "raw_uri",
+            "error",
+            "etag",
+            "last_modified",
+            "validates_run_id",
+        }
         unknown = set(fields) - allowed
         if unknown:
             raise ValueError(f"unknown fetch_run fields: {sorted(unknown)}")
@@ -464,10 +487,17 @@ def rollback_run(
             for change, m in zip(plan.metrics, affected, strict=True)
         ]
         if plan.facts_to_review:
-            connection.execute(
-                text("UPDATE tda.fact SET status = 'needs_review' WHERE id = ANY(:ids)"),
-                {"ids": [f.id for f in plan.facts_to_review]},
+            # Re-checked after any lock wait: a version superseded meanwhile is no longer flagged.
+            flagged = set(
+                connection.execute(
+                    text(
+                        "UPDATE tda.fact SET status = 'needs_review' "
+                        "WHERE id = ANY(:ids) AND status = 'approved' RETURNING id"
+                    ),
+                    {"ids": [f.id for f in plan.facts_to_review]},
+                ).scalars()
             )
+            plan.facts_to_review = [f for f in plan.facts_to_review if f.id in flagged]
         plan.applied = True
     log.info("runs.rolled_back", run_id=run_id, source=plan.source_id, facts=len(plan.facts_to_review))
     return plan
@@ -478,29 +508,10 @@ def _redo_metric(
 ) -> MetricChange:
     definition = metrics.get(change.metric_key)
     if definition is None:
-        value, method, inputs = None, "withdrawn", []
+        result, method = MetricResult(None, [], unit), "withdrawn"
     else:
-        result = definition.compute(connection, change.dims)
+        result, method = definition.compute(connection, change.dims), definition.method_version
         if run_id in result.input_run_ids:
             raise RuntimeError(f"metric {change.metric_key} still read rolled-back run {run_id}")
-        value, method, inputs, unit = (
-            result.value,
-            definition.method_version,
-            result.input_run_ids,
-            result.unit,
-        )
-    connection.execute(
-        text(
-            "INSERT INTO tda.metric_value (metric_key, dims, value, unit, method_version, input_run_ids) "
-            "VALUES (:k, CAST(:d AS jsonb), :v, :u, :m, :i)"
-        ),
-        {
-            "k": change.metric_key,
-            "d": json.dumps(change.dims),
-            "v": value,
-            "u": unit,
-            "m": method,
-            "i": inputs,
-        },
-    )
-    return MetricChange(change.metric_key, change.dims, change.old_value, change.action, value)
+    record_metric(connection, change.metric_key, change.dims, result, method)
+    return MetricChange(change.metric_key, change.dims, change.old_value, change.action, result.value)

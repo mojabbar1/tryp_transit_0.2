@@ -18,6 +18,7 @@ from tda.config.models import Source, SourceRegistry
 from tda.config.registry import load_sources
 from tda.config.settings import Settings, get_settings
 from tda.connectors.registry import connector_class
+from tda.http.polite_client import PoliteClient
 from tda.pipelines.ingest import ingest
 from tda.store.db import writer_engine
 from tda.store.raw_store import RawStore
@@ -52,11 +53,11 @@ def planned_jobs(registry: SourceRegistry) -> list[Job]:
     return jobs
 
 
-def run_job(settings: Settings, registry: SourceRegistry, job: Job) -> None:
+def run_job(settings: Settings, registry: SourceRegistry, job: Job, client: PoliteClient) -> None:
     """Run one job now; errors are logged, never raised (the scheduler keeps going)."""
     try:
         if job.source is not None:
-            outcome = ingest(settings, job.source, live=True)
+            outcome = ingest(settings, job.source, live=True, client=client)
             log.info("scheduler.ingest", source=job.source.id, status=outcome.status, run_id=outcome.run_id)
             return
         engine = writer_engine(settings)
@@ -84,19 +85,21 @@ def run(once: bool = typer.Option(False, "--once", help="Run every job once, now
     typer.echo(f"scheduler: {ingest_jobs} ingest job(s), plus retention at '{RETENTION_CRON}' UTC")
     for job in jobs:
         typer.echo(f"  {job.name:<40} {job.cron}")
-    if once:
+    # One polite client for the worker's lifetime: per-host pacing and the robots cache span every job.
+    with PoliteClient(settings) as client:
+        if once:
+            for job in jobs:
+                run_job(settings, registry, job, client)
+            return
+        scheduler = BlockingScheduler(timezone="UTC")
         for job in jobs:
-            run_job(settings, registry, job)
-        return
-    scheduler = BlockingScheduler(timezone="UTC")
-    for job in jobs:
-        scheduler.add_job(
-            run_job,
-            CronTrigger.from_crontab(job.cron, timezone="UTC"),
-            args=(settings, registry, job),
-            id=job.name,
-            max_instances=1,
-            coalesce=True,
-            misfire_grace_time=300,
-        )
-    scheduler.start()
+            scheduler.add_job(
+                run_job,
+                CronTrigger.from_crontab(job.cron, timezone="UTC"),
+                args=(settings, registry, job, client),
+                id=job.name,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=300,
+            )
+        scheduler.start()

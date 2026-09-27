@@ -15,8 +15,14 @@ class NoConnector(LookupError):
     """An approved source has no connector yet (connectors arrive in P3)."""
 
 
-def ingest(settings: Settings, source: Source, *, live: bool) -> RunOutcome:
-    """Skip it unless approved; otherwise run its connector (over the network only when ``live``)."""
+def ingest(
+    settings: Settings, source: Source, *, live: bool, client: PoliteClient | None = None
+) -> RunOutcome:
+    """Skip it unless approved; otherwise run its connector (over the network only when ``live``).
+
+    The worker passes its one long-lived ``client`` so per-host pacing and the robots cache span every job; a
+    one-off CLI run gets its own client, closed afterwards.
+    """
     engine = writer_engine(settings)
     try:
         if source.status != "approved":
@@ -26,13 +32,16 @@ def ingest(settings: Settings, source: Source, *, live: bool) -> RunOutcome:
             raise NoConnector(
                 f"{source.id} is approved but has no registered connector (connectors arrive in P3)"
             )
-        client = PoliteClient(settings) if live else None
+        http = client if live else None
+        owned = live and http is None
+        if owned:
+            http = PoliteClient(settings)
         try:
             store = RawStore(settings.raw_store_dir or settings.project_root / "raw")
-            connector = cls(source, engine=engine, store=store, client=client, settings=settings)
+            connector = cls(source, engine=engine, store=store, client=http, settings=settings)
             return connector.run(live=live)
         finally:
-            if client is not None:
-                client.close()
+            if owned and http is not None:
+                http.close()
     finally:
         engine.dispose()

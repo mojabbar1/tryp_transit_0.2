@@ -75,7 +75,14 @@ def _denied(connection: Connection, statement: str, params: dict | None = None) 
 def test_reader_sees_only_api_exposed_objects(writer: Connection, reader: Connection) -> None:
     _source(writer)
     writer.commit()
-    for relation in ("fact", "metric_value", "source", "current_metric_value", "source_freshness"):
+    for relation in (
+        "fact",
+        "metric_value",
+        "source",
+        "current_metric_value",
+        "source_freshness",
+        "fact_source_retrieval",
+    ):
         reader.execute(text(f"SELECT count(*) FROM tda.{relation}")).scalar_one()
     for relation in ("fetch_run", "review_item", "agent_run", "alembic_version"):
         assert "permission denied" in _denied(reader, f"SELECT 1 FROM tda.{relation}")
@@ -337,3 +344,91 @@ def test_orm_models_match_the_migrated_columns(db: DbUrls) -> None:
             )
             assert migrated == {column.name for column in table.columns}, table.name
     engine.dispose()
+
+
+def test_current_metrics_hide_a_latest_value_whose_input_was_rolled_back(
+    db: DbUrls, writer: Connection
+) -> None:
+    """Review finding F3: checked as reader, writer, and owner; an older value is never revived."""
+    _source(writer)
+    old_run = _run(writer, ago="2 hours")
+    new_run = _run(writer, ago="1 hour")
+    for value, run, ago in ((5, old_run, "2 hours"), (99, new_run, "1 hour")):
+        writer.execute(
+            text(
+                "INSERT INTO tda.metric_value "
+                "(metric_key, value, method_version, input_run_ids, computed_at) "
+                "VALUES ('m', :v, 'v1', ARRAY[CAST(:r AS bigint)], now() - CAST(:ago AS interval))"
+            ),
+            {"v": value, "r": run, "ago": ago},
+        )
+    writer.commit()
+    query = "SELECT value FROM tda.current_metric_value WHERE metric_key = 'm'"
+    assert writer.execute(text(query)).scalars().all() == [99]
+    writer.execute(text("UPDATE tda.fetch_run SET status = 'rolled_back' WHERE id = :i"), {"i": new_run})
+    writer.commit()
+    for role in ("reader", "writer", "admin"):
+        engine = db.engine(role)
+        with engine.connect() as connection:
+            assert connection.execute(text(query)).scalars().all() == [], role
+        engine.dispose()
+
+
+def test_published_at_is_stamped_once_and_never_changes(writer: Connection, owner: Connection) -> None:
+    """Review finding F4: publication is an immutable fact of history."""
+    fact_id = writer.execute(
+        text(
+            "INSERT INTO tda.fact (key, version, value_num, status, created_by, published_at) "
+            "VALUES ('k', 1, 1, 'candidate', 'human', now()) RETURNING id"
+        )
+    ).scalar_one()
+    writer.commit()
+    query = text("SELECT published_at FROM tda.fact WHERE id = :i")
+    assert writer.execute(query, {"i": fact_id}).scalar_one() is None, "a client can't pre-set it"
+    writer.execute(
+        text("UPDATE tda.fact SET status = 'approved', reviewed_by = 'r', reviewed_at = now() WHERE id = :i"),
+        {"i": fact_id},
+    )
+    writer.commit()
+    stamped = writer.execute(query, {"i": fact_id}).scalar_one()
+    assert stamped is not None
+    writer.execute(text("UPDATE tda.fact SET status = 'needs_review' WHERE id = :i"), {"i": fact_id})
+    writer.execute(
+        text(
+            "UPDATE tda.fact SET status = 'rejected', reviewed_by = 'r2', reviewed_at = now() WHERE id = :i"
+        ),
+        {"i": fact_id},
+    )
+    writer.commit()
+    assert writer.execute(query, {"i": fact_id}).scalar_one() == stamped, "rejection keeps the history"
+    for connection in (writer, owner):
+        assert "published_at never changes" in _denied(
+            connection, "UPDATE tda.fact SET published_at = NULL WHERE id = :i", {"i": fact_id}
+        )
+
+
+def test_freshness_counts_a_not_modified_run_only_while_its_success_survives(
+    writer: Connection, reader: Connection
+) -> None:
+    """Review finding F8."""
+    _source(writer, "src")
+    success = _run(writer, ago="3 days")
+    writer.execute(
+        text(
+            "INSERT INTO tda.fetch_run (source_id, acquisition, status, finished_at, validates_run_id) "
+            "VALUES ('src', 'http', 'not_modified', now() - interval '1 hour', :v)"
+        ),
+        {"v": success},
+    )
+    writer.commit()
+    fresh = text("SELECT stale, last_success FROM tda.source_freshness WHERE source_id = 'src'")
+    assert reader.execute(fresh).one().stale is False
+    writer.execute(text("UPDATE tda.fetch_run SET status = 'rolled_back' WHERE id = :i"), {"i": success})
+    writer.commit()
+    row = reader.execute(fresh).one()
+    assert (row.stale, row.last_success) == (True, None)
+    assert "violates check constraint" in _denied(
+        writer,
+        "INSERT INTO tda.fetch_run (source_id, acquisition, status, finished_at) "
+        "VALUES ('src', 'http', 'not_modified', now())",
+    )

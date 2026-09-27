@@ -140,7 +140,9 @@ def test_facts_are_only_current_approved_versions(client: TestClient, facts: dic
     )
     upt = next(item for item in body["items"] if item["id"] == facts["approved"])
     assert upt["value_num"] == 224397
-    assert upt["sources"] == [{"source_id": "live-src", "attribution": APPROVAL["attribution_text"]}]
+    assert upt["sources"] == [
+        {"source_id": "live-src", "attribution": APPROVAL["attribution_text"], "retrieved": None}
+    ], "no input runs in its lineage, so no retrieval date"
     assert upt["period"] == {"start": None, "end": None}
 
 
@@ -187,3 +189,31 @@ def test_the_api_runs_as_the_reader_and_cannot_write(db: DbUrls, client: TestCli
             )
         )
     plain.dispose()
+
+
+def test_a_fact_reports_when_its_inputs_were_retrieved(client: TestClient, writer_engine: Engine) -> None:
+    """Review finding F9: 02 §6.3 `sources[].retrieved`, from the reader-safe fact_source_retrieval view."""
+    _seed_sources(writer_engine)
+    with writer_engine.begin() as connection:
+        runs = [
+            connection.execute(
+                text(
+                    "INSERT INTO tda.fetch_run (source_id, acquisition, status, finished_at) "
+                    "VALUES ('live-src', 'http', 'success', CAST(:t AS timestamptz)) RETURNING id"
+                ),
+                {"t": when},
+            ).scalar_one()
+            for when in ("2026-09-20T23:30:00Z", "2026-09-24T12:00:00Z")
+        ]
+        draft = FactDraft(
+            key="carta.upt.dated",
+            created_by="connector",
+            derived_from={"input_run_ids": runs},
+            value_num=1,
+            source_ids=["live-src"],
+        )
+        fact = write_fact(connection, draft, auto_publish=True)
+    item = next(i for i in client.get("/v1/facts").json()["items"] if i["id"] == fact)
+    assert item["sources"][0]["retrieved"] == "2026-09-24", (
+        "the newest input run from that source, as a UTC date"
+    )

@@ -62,8 +62,11 @@ UPGRADE = [
       error text,
       etag text,
       last_modified text,
+      -- A not_modified run confirms one success run; it stays fresh only while that run does (02 §6.2).
+      validates_run_id bigint REFERENCES tda.fetch_run(id),
       CHECK (acquisition = 'http' OR supplied_by IS NOT NULL),
-      CHECK (status = 'running' OR finished_at IS NOT NULL)
+      CHECK (status = 'running' OR finished_at IS NOT NULL),
+      CHECK ((status = 'not_modified') = (validates_run_id IS NOT NULL))
     )
     """,
     "CREATE INDEX fetch_run_source_started ON tda.fetch_run (source_id, started_at DESC)",
@@ -81,9 +84,11 @@ UPGRADE = [
         RETURN NEW;
       END IF;
       IF OLD.status = 'success' AND NEW.status = 'rolled_back'
-         AND (NEW.finished_at, NEW.http_status, NEW.bytes, NEW.sha256, NEW.raw_uri, NEW.error, NEW.etag, NEW.last_modified)
+         AND (NEW.finished_at, NEW.http_status, NEW.bytes, NEW.sha256, NEW.raw_uri, NEW.error, NEW.etag, NEW.last_modified,
+              NEW.validates_run_id)
              IS NOT DISTINCT FROM
-             (OLD.finished_at, OLD.http_status, OLD.bytes, OLD.sha256, OLD.raw_uri, OLD.error, OLD.etag, OLD.last_modified) THEN
+             (OLD.finished_at, OLD.http_status, OLD.bytes, OLD.sha256, OLD.raw_uri, OLD.error, OLD.etag, OLD.last_modified,
+              OLD.validates_run_id) THEN
         RETURN NEW;
       END IF;
       RAISE EXCEPTION 'tda.fetch_run: a finished run is immutable (only success -> rolled_back is allowed), got % -> %',
@@ -114,6 +119,8 @@ UPGRADE = [
       reviewed_at timestamptz,
       valid_until date,
       created_at timestamptz NOT NULL DEFAULT now(),
+      -- Set by trigger the first time a version is published; never changes or clears (retention protection).
+      published_at timestamptz,
       UNIQUE (key, version),
       CHECK ((version = 1) = (supersedes_id IS NULL)),
       CHECK (value_num IS NOT NULL OR value_text IS NOT NULL),
@@ -121,6 +128,17 @@ UPGRADE = [
     )
     """,
     "CREATE INDEX fact_key_status ON tda.fact (key, status)",
+    # One current version per key, whatever the timing of concurrent approvals (the code also locks per key).
+    "CREATE UNIQUE INDEX fact_one_approved_per_key ON tda.fact (key) WHERE status = 'approved'",
+    """
+    CREATE FUNCTION tda.fact_stamp_publication() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      NEW.published_at := CASE WHEN NEW.status IN ('approved', 'needs_review', 'superseded') THEN now() END;
+      RETURN NEW;
+    END $$
+    """,
+    "CREATE TRIGGER fact_stamp_publication BEFORE INSERT ON tda.fact "
+    "FOR EACH ROW EXECUTE FUNCTION tda.fact_stamp_publication()",
     """
     CREATE FUNCTION tda.fact_guard() RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
@@ -146,6 +164,13 @@ UPGRADE = [
            ('approved','superseded'), ('approved','needs_review'),
            ('needs_review','approved'), ('needs_review','rejected'), ('needs_review','superseded')) THEN
         RAISE EXCEPTION 'tda.fact: illegal status change % -> %', OLD.status, NEW.status USING ERRCODE = 'restrict_violation';
+      END IF;
+      IF OLD.published_at IS NOT NULL THEN
+        IF NEW.published_at IS DISTINCT FROM OLD.published_at THEN
+          RAISE EXCEPTION 'tda.fact: published_at never changes' USING ERRCODE = 'restrict_violation';
+        END IF;
+      ELSE
+        NEW.published_at := CASE WHEN NEW.status = 'approved' THEN now() END;
       END IF;
       RETURN NEW;
     END $$
@@ -221,10 +246,17 @@ UPGRADE = [
     "CREATE TRIGGER agent_run_no_delete BEFORE DELETE ON tda.agent_run FOR EACH ROW EXECUTE FUNCTION tda.forbid_mutation()",
     """
     CREATE VIEW tda.current_metric_value AS
-      SELECT DISTINCT ON (metric_key, dims)
-             id, metric_key, dims, value, unit, computed_at, method_version, input_run_ids
-      FROM tda.metric_value
-      ORDER BY metric_key, dims, computed_at DESC, id DESC
+      SELECT latest.* FROM (
+        SELECT DISTINCT ON (metric_key, dims)
+               id, metric_key, dims, value, unit, computed_at, method_version, input_run_ids
+        FROM tda.metric_value
+        ORDER BY metric_key, dims, computed_at DESC, id DESC
+      ) latest
+      -- The latest value is current only while every input run is still a success. If one was rolled back
+      -- (without a recompute), the metric is unavailable; an older value is never revived.
+      WHERE NOT EXISTS (
+        SELECT 1 FROM tda.fetch_run r WHERE r.id = ANY(latest.input_run_ids) AND r.status <> 'success'
+      )
     """,
     # The reader's only ingestion-status surface (02 §6.2): it has no access to fetch_run itself.
     """
@@ -237,7 +269,11 @@ UPGRADE = [
       FROM tda.source s
       LEFT JOIN LATERAL (
         SELECT max(r.finished_at) AS last_success FROM tda.fetch_run r
-        WHERE r.source_id = s.id AND r.status IN ('success', 'not_modified')
+        WHERE r.source_id = s.id AND (
+          r.status = 'success'
+          OR (r.status = 'not_modified' AND EXISTS (
+            SELECT 1 FROM tda.fetch_run v WHERE v.id = r.validates_run_id AND v.status = 'success'))
+        )
       ) ok ON true
       LEFT JOIN LATERAL (
         SELECT r.status AS last_status FROM tda.fetch_run r
@@ -250,16 +286,32 @@ UPGRADE = [
         "FOR EACH STATEMENT EXECUTE FUNCTION tda.forbid_mutation()"
         for table in ("source", "fetch_run", "fact", "metric_value", "review_item", "agent_run")
     ),
+    # Retrieval provenance for approved facts (02 §6.3 `sources[].retrieved`): only fact, source, and time,
+    # so the reader never sees fetch_run itself.
+    """
+    CREATE VIEW tda.fact_source_retrieval AS
+      SELECT f.id AS fact_id, r.source_id, max(r.finished_at) AS retrieved_at
+      FROM tda.fact f
+      CROSS JOIN LATERAL jsonb_array_elements_text(
+        CASE WHEN jsonb_typeof(f.derived_from -> 'input_run_ids') = 'array'
+             THEN f.derived_from -> 'input_run_ids' ELSE '[]'::jsonb END
+      ) AS lineage(run_id)
+      JOIN tda.fetch_run r ON lineage.run_id ~ '^[0-9]{1,18}$' AND r.id = lineage.run_id::bigint
+      WHERE f.status = 'approved' AND r.status = 'success'
+      GROUP BY f.id, r.source_id
+    """,
     # Explicit grants only; never default privileges (02 §6.2). Later revisions grant their own objects.
     "GRANT SELECT, INSERT, UPDATE ON tda.source, tda.fetch_run, tda.fact, tda.review_item, tda.agent_run TO tda_writer",
     "GRANT SELECT, INSERT ON tda.metric_value TO tda_writer",
-    "GRANT SELECT ON tda.current_metric_value, tda.source_freshness TO tda_writer",
+    "GRANT SELECT ON tda.current_metric_value, tda.source_freshness, tda.fact_source_retrieval TO tda_writer",
     "GRANT USAGE, SELECT ON SEQUENCE tda.fetch_run_id_seq, tda.fact_id_seq, tda.metric_value_id_seq, "
     "tda.review_item_id_seq, tda.agent_run_id_seq TO tda_writer",
-    "GRANT SELECT ON tda.fact, tda.metric_value, tda.source, tda.current_metric_value, tda.source_freshness TO tda_reader",
+    "GRANT SELECT ON tda.fact, tda.metric_value, tda.source, tda.current_metric_value, tda.source_freshness, "
+    "tda.fact_source_retrieval TO tda_reader",
 ]
 
 DOWNGRADE = [
+    "DROP VIEW tda.fact_source_retrieval",
     "DROP VIEW tda.source_freshness",
     "DROP VIEW tda.current_metric_value",
     "DROP TABLE tda.agent_run",
@@ -268,6 +320,7 @@ DOWNGRADE = [
     "DROP TABLE tda.metric_value",
     "DROP TABLE tda.fact",
     "DROP FUNCTION tda.fact_guard()",
+    "DROP FUNCTION tda.fact_stamp_publication()",
     "DROP TABLE tda.fetch_run",
     "DROP FUNCTION tda.fetch_run_guard()",
     "DROP TABLE tda.source",

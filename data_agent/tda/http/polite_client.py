@@ -1,8 +1,9 @@
 """The only way the data agent talks to the internet (02 §5 step 2; a Ruff ban on ``requests`` enforces it).
 
-- **robots.txt** (RFC 9309), when the source sets ``robots_required``: cached per origin for 24 h and matched
-  against our User-Agent. Unavailable (4xx) allows everything. Unreachable (5xx, 429, network error, or a
-  redirect off the allowed hosts) disallows everything and isn't cached, so the next run checks again.
+- **robots.txt** (RFC 9309, evaluated by ``tda.http.robots``), when the source sets ``robots_required``:
+  cached per origin for 24 h and matched against our product token. Unavailable (4xx) allows everything.
+  Unreachable (5xx, 429, network error, the total-time cap, or a redirect off the allowed hosts) disallows
+  everything and isn't cached, so the next run checks again.
 - **Rate limit:** a request waits ``60 / rate`` seconds after the host's previous request
   (``rate_limit_per_min`` overrides the default), or the host's ``Crawl-delay`` for us if that is longer.
 - **Retries:** 429, 5xx, and network errors, up to 4 attempts, with exponential backoff and jitter; a
@@ -23,7 +24,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from urllib.parse import urljoin, urlsplit
-from urllib.robotparser import RobotFileParser
 
 import httpx
 import structlog
@@ -37,6 +37,7 @@ from tenacity import (
 
 from tda.config.models import Source
 from tda.config.settings import Settings
+from tda.http import robots
 
 log = structlog.get_logger(__name__)
 
@@ -114,7 +115,7 @@ class RequestBudget:
 
 @dataclass
 class _Robots:
-    parser: RobotFileParser | None
+    rules: robots.RobotsRules | None
     allow_all: bool
     fetched_at: datetime
 
@@ -245,9 +246,9 @@ class PoliteClient:
     def robots_allows(self, source: Source, url: str) -> bool:
         """Whether robots.txt lets our User-Agent fetch ``url`` (fetched and cached as needed)."""
         rules = self._robots_for(source, _origin(url))
-        if rules.parser is None:
+        if rules.rules is None:
             return rules.allow_all
-        return rules.parser.can_fetch(self._settings.user_agent, url)
+        return rules.rules.allows(url)
 
     def _check_host(self, source: Source, url: str, *, previous: str | None) -> None:
         parts = urlsplit(url)
@@ -343,16 +344,23 @@ class PoliteClient:
         if rules is None:
             return _Robots(None, allow_all=False, fetched_at=self._now())
         self._robots[origin] = rules
-        delay = rules.parser.crawl_delay(self._settings.user_agent) if rules.parser else None
+        delay = rules.rules.crawl_delay if rules.rules else None
         if delay:
             self._pace.setdefault(_host(origin), _HostPace()).crawl_delay = float(delay)
         return rules
 
     def _fetch_robots(self, source: Source, origin: str) -> _Robots | None:
-        """RFC 9309 §2.3.1: None means unreachable (disallow, don't cache)."""
+        """RFC 9309 §2.3.1: None means unreachable (disallow, don't cache).
+
+        The total-time cap covers the whole retrieval, redirects included; running out counts as unreachable.
+        """
         url = f"{origin}/robots.txt"
+        started = self._monotonic()
         for _ in range(MAX_REDIRECTS + 1):
             self._wait_turn(source, url)
+            if self._monotonic() - started > self._settings.http_total_timeout_s:
+                log.warning("robots.unreachable", origin=origin, error="total timeout")
+                return None
             try:
                 with self._client.stream("GET", url) as response:
                     status = response.status_code
@@ -374,6 +382,9 @@ class PoliteClient:
                         return None
                     body = bytearray()
                     for chunk in response.iter_bytes():
+                        if self._monotonic() - started > self._settings.http_total_timeout_s:
+                            log.warning("robots.unreachable", origin=origin, error="total timeout")
+                            return None
                         body += chunk
                         if len(body) >= ROBOTS_MAX_BYTES:
                             del body[ROBOTS_MAX_BYTES:]
@@ -381,9 +392,10 @@ class PoliteClient:
             except httpx.TransportError as error:
                 log.warning("robots.unreachable", origin=origin, error=type(error).__name__)
                 return None
-            parser = RobotFileParser()
-            parser.parse(bytes(body).decode("utf-8", errors="replace").splitlines())
-            return _Robots(parser, allow_all=False, fetched_at=self._now())
+            text = bytes(body).decode("utf-8", errors="replace")
+            return _Robots(
+                robots.parse(text, self._settings.user_agent), allow_all=False, fetched_at=self._now()
+            )
         # RFC 9309 §2.3.1.2: after five redirects the file MAY be treated as unavailable.
         return _Robots(None, allow_all=True, fetched_at=self._now())
 

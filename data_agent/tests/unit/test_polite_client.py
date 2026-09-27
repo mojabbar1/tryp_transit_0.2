@@ -147,6 +147,23 @@ def test_robots_is_skipped_when_the_source_does_not_require_it(
     assert not robots.called
 
 
+def test_a_slow_drip_robots_txt_counts_as_unreachable(clock: Clock, router: respx.MockRouter) -> None:
+    def drip() -> Iterator[bytes]:
+        for _ in range(3):
+            clock.t += 4
+            yield b"User-agent: *\n"
+
+    robots = router.get(ROBOTS)
+    robots.side_effect = lambda request: httpx.Response(200, content=drip())
+    page = router.get(PAGE).respond(200)
+    client = _client(clock, http_total_timeout_s=5)
+    for _ in range(2):
+        with pytest.raises(RobotsDisallowed):
+            client.fetch(_html())
+    assert robots.call_count == 2, "not cached: the next fetch checks again"
+    assert not page.called
+
+
 # Retries
 
 

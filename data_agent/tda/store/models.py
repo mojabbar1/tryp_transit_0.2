@@ -63,6 +63,7 @@ class FetchRun(Base):
     error: Mapped[str | None] = mapped_column(Text)
     etag: Mapped[str | None] = mapped_column(Text)
     last_modified: Mapped[str | None] = mapped_column(Text)
+    validates_run_id: Mapped[int | None] = mapped_column(ForeignKey("fetch_run.id"))
 
 
 class Fact(Base):
@@ -90,6 +91,7 @@ class Fact(Base):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     valid_until: Mapped[date | None] = mapped_column(Date)
     created_at: Mapped[datetime] = _now()
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class MetricValue(Base):

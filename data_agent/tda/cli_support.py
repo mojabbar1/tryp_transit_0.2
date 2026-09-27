@@ -19,6 +19,7 @@ from tda.facts.versions import FactStateError
 from tda.review.queue import ReviewError
 from tda.store.bootstrap import BootstrapError
 from tda.store.db import MissingDatabaseURL
+from tda.store.lineage import LineageError
 
 EXPECTED = (
     MissingDatabaseURL,
@@ -26,6 +27,7 @@ EXPECTED = (
     ReviewError,
     RollbackRefused,
     FactStateError,
+    LineageError,
     LookupError,
     FileNotFoundError,
     ValidationError,

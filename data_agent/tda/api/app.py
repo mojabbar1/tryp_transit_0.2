@@ -6,6 +6,7 @@ import base64
 import binascii
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
+from datetime import UTC
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -122,6 +123,16 @@ def facts(
             text("SELECT id, attribution_text FROM tda.source WHERE id = ANY(:ids)"), {"ids": cited}
         )
     }
+    retrieved = {
+        (row.fact_id, row.source_id): row.retrieved_at.astimezone(UTC).date()
+        for row in connection.execute(
+            text(
+                "SELECT fact_id, source_id, retrieved_at FROM tda.fact_source_retrieval "
+                "WHERE fact_id = ANY(:ids)"
+            ),
+            {"ids": [row.id for row in page]},
+        )
+    }
     items = [
         FactOut(
             id=row.id,
@@ -134,7 +145,10 @@ def facts(
             geography=row.geography,
             period=Period(start=row.period_start, end=row.period_end),
             method=row.method,
-            sources=[FactSource(source_id=s, attribution=attribution.get(s)) for s in row.source_ids],
+            sources=[
+                FactSource(source_id=s, attribution=attribution.get(s), retrieved=retrieved.get((row.id, s)))
+                for s in row.source_ids
+            ],
             derived_from=row.derived_from,
             evidence=row.evidence,
             status=row.status,
