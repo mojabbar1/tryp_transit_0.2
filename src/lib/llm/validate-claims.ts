@@ -43,6 +43,26 @@ export type NudgeValidation = { ok: true } | { ok: false; reason: ValidationReas
 const normalize = (text: string): string => text.trim().replace(/\s+/g, ' ').toLowerCase();
 const slotPattern = () => /\{\{([a-z][a-z_]*)\}\}/g;
 
+/** The only free-prose clauses, each gated by the flags. The narration prompt lists exactly the allowed ones. */
+function proseRules(flags: NarrationFlags): Map<string, boolean> {
+  return new Map<string, boolean>([
+    ['consider transit', true],
+    ['compare your options', true],
+    ['transit timing is unavailable', !flags.transitServiceKnown],
+    ['transit is faster', flags.transitServiceKnown && flags.transitFaster],
+    ['transit is cheaper', flags.transitCheaper],
+    ['save with transit', flags.transitCheaper],
+    ['check the next bus', flags.transitServiceKnown],
+    ['an approved reward is available', flags.offerActive],
+    ['an approved credit is available', flags.offerActive],
+    ['traffic now', flags.trafficNow],
+  ]);
+}
+
+export function allowedProse(flags: NarrationFlags): string[] {
+  return [...proseRules(flags)].filter(([, allowed]) => allowed).map(([clause]) => clause);
+}
+
 function contradictsFlags(text: string, flags: NarrationFlags): boolean {
   return (
     (!flags.transitFaster && /\b(faster|fastest|quicker|quickest)\b/i.test(text))
@@ -95,18 +115,7 @@ export function validateNudge(
   const sentences = nudge.trim().split(/[.!?]/);
   if (sentences.at(-1) === '') sentences.pop();
   if (sentences.length < 1 || sentences.length > 2) return reject('sentence_count');
-  const prose = new Map<string, boolean>([
-    ['consider transit', true],
-    ['compare your options', true],
-    ['transit timing is unavailable', !flags.transitServiceKnown],
-    ['transit is faster', flags.transitServiceKnown && flags.transitFaster],
-    ['transit is cheaper', flags.transitCheaper],
-    ['save with transit', flags.transitCheaper],
-    ['check the next bus', flags.transitServiceKnown],
-    ['an approved reward is available', flags.offerActive],
-    ['an approved credit is available', flags.offerActive],
-    ['traffic now', flags.trafficNow],
-  ]);
+  const prose = proseRules(flags);
   for (const clause of sentences.flatMap((sentence) => sentence.split(';'))) {
     const text = clause.trim();
     const factClause = text.match(/^(?:([A-Za-z][A-Za-z '-]*):\s*)?\{\{([a-z][a-z_]*)\}\}$/);
