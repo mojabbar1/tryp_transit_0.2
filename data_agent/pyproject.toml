@@ -43,12 +43,22 @@ ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S108", "S311", "S603", "S607", "S608"]
+# The polite client is the one place allowed to open HTTP connections.
+"tda/http/polite_client.py" = ["TID251"]
 # Migration DDL is long SQL text; everything else is still linted there.
 "migrations/versions/**" = ["E501"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "requests".msg = "Every external request goes through tda.http.polite_client."
-"urllib.request.urlopen".msg = "Every external request goes through tda.http.polite_client."
+"urllib.request".msg = "Every external request goes through tda.http.polite_client."
+"http.client".msg = "Every external request goes through tda.http.polite_client."
+"aiohttp".msg = "Every external request goes through tda.http.polite_client."
+"httpx.Client".msg = "Every external request goes through tda.http.polite_client."
+"httpx.AsyncClient".msg = "Every external request goes through tda.http.polite_client."
+"httpx.get".msg = "Every external request goes through tda.http.polite_client."
+"httpx.post".msg = "Every external request goes through tda.http.polite_client."
+"httpx.request".msg = "Every external request goes through tda.http.polite_client."
+"httpx.stream".msg = "Every external request goes through tda.http.polite_client."
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     user_agent: str = DEFAULT_USER_AGENT
     region: str = "charleston"
     http_timeout_s: float = Field(20, gt=0)
+    """Connect and per-read timeout for one request."""
+    http_total_timeout_s: float = Field(300, gt=0)
+    """Upper bound on one response's whole download, however slowly the server drips bytes."""
     default_rate_limit_per_min: int = Field(30, gt=0)
     max_response_mb: int = Field(200, gt=0)
     api_port: int = Field(8081, gt=0, lt=65536)
