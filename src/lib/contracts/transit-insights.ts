@@ -115,7 +115,8 @@ export const CostComparisonSchema = signedComparison(100, 'cents');
 export const Co2ComparisonSchema = signedComparison(1000, 'grams');
 
 export const ComparisonSchema = z.object({
-  drive: DriveLegSchema,
+  // null when routing is unavailable (meta.degraded says why), so the transit basis is still reported.
+  drive: DriveLegSchema.nullable(),
   transit: TransitLegSchema,
   costUsd: CostComparisonSchema.optional(),
   co2Kg: Co2ComparisonSchema.optional(),
@@ -153,6 +154,8 @@ export const MetaSchema = z.object({
   narration: NarrationSchema,
   degraded: z.array(z.string().regex(REASON_CODE, 'Expected a snake_case reason code')),
   citations: z.array(z.string().min(1)),
+  // Live flow data describes current conditions only, so the density is labeled as such.
+  trafficDensityLabel: z.literal('Traffic now').optional(),
 });
 
 export const TransitInsightResponseSchema = z
