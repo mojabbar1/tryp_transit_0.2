@@ -1,20 +1,34 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import type { AdditionalRide } from '@/lib/contracts/transit-insights';
+import type { AdditionalRide, IncentiveDetails } from '@/lib/contracts/transit-insights';
 
-interface TravelContextProps {
+/** One trip result as the routes page shows it; every measurement may be null (unavailable) on a successful trip. */
+export interface TripSummary {
   travelTime: number | null;
   trafficDensity: string | null;
   costSavings: number | null;
   additionalRides: AdditionalRide[];
-  setTravelData: (data: {
-    travelTime: number | null;
-    trafficDensity: string | null;
-    costSavings: number | null;
-    additionalRides: AdditionalRide[];
-  }) => void;
+  incentiveDetails: IncentiveDetails | null;
+  offerActive: boolean;
+  isDemo: boolean;
 }
+
+interface TravelContextProps extends TripSummary {
+  /** True once a trip result was received, so an all-unavailable result still renders. */
+  hasTrip: boolean;
+  setTravelData: (data: TripSummary) => void;
+}
+
+const EMPTY_TRIP: TripSummary = {
+  travelTime: null,
+  trafficDensity: null,
+  costSavings: null,
+  additionalRides: [],
+  incentiveDetails: null,
+  offerActive: false,
+  isDemo: false,
+};
 
 const TravelContext = createContext<TravelContextProps | undefined>(undefined);
 
@@ -31,39 +45,11 @@ interface TravelProviderProps {
 }
 
 export const TravelProvider = ({ children }: TravelProviderProps) => {
-  const [travelTime, setTravelTime] = useState<number | null>(null);
-  const [trafficDensity, setTrafficDensity] = useState<string | null>(null);
-  const [costSavings, setCostSavings] = useState<number | null>(null);
-  const [additionalRides, setAdditionalRides] = useState<AdditionalRide[]>([]);
+  const [trip, setTrip] = useState<TripSummary & { hasTrip: boolean }>({ ...EMPTY_TRIP, hasTrip: false });
 
-  const setTravelData = ({
-    travelTime,
-    trafficDensity,
-    costSavings,
-    additionalRides,
-  }: {
-    travelTime: number | null;
-    trafficDensity: string | null;
-    costSavings: number | null;
-    additionalRides: AdditionalRide[];
-  }) => {
-    setTravelTime(travelTime);
-    setTrafficDensity(trafficDensity);
-    setCostSavings(costSavings !== undefined ? costSavings : null);
-    setAdditionalRides(additionalRides);
+  const setTravelData = (data: TripSummary) => {
+    setTrip({ ...data, costSavings: data.costSavings !== undefined ? data.costSavings : null, hasTrip: true });
   };
 
-  return (
-    <TravelContext.Provider
-      value={{
-        travelTime,
-        trafficDensity,
-        costSavings,
-        additionalRides,
-        setTravelData,
-      }}
-    >
-      {children}
-    </TravelContext.Provider>
-  );
+  return <TravelContext.Provider value={{ ...trip, setTravelData }}>{children}</TravelContext.Provider>;
 };

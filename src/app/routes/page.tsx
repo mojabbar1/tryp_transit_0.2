@@ -9,41 +9,27 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useTravelContext } from '@/contexts/travel-context';
-import { isDemoMode } from '@/lib/demo-mode';
 import { formatCostDifference } from '@/lib/format';
+import { shouldLeaveRoutesPage, visibleIncentive } from '@/lib/trip-view';
 import { isNil } from '@/lib/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 const RoutesPage = () => {
-  const { costSavings, trafficDensity, travelTime } = useTravelContext();
+  const trip = useTravelContext();
+  const { hasTrip, costSavings, trafficDensity, travelTime, isDemo } = trip;
   const router = useRouter();
   const costText = formatCostDifference(costSavings);
+  const incentive = visibleIncentive(trip);
 
   useEffect(() => {
-    // Leave only when there is no trip at all. Transit time is null until GTFS (D-21), and cost or traffic can be
-    // unavailable; a legitimate costSavings of 0 must still render.
-    if (isNil(costSavings) && isNil(trafficDensity) && isNil(travelTime)) {
+    // Leave only when no trip was loaded. A successful trip can have every measurement unavailable
+    // (transit time before GTFS, D-21; cost or traffic without TomTom), and it still renders.
+    if (shouldLeaveRoutesPage({ hasTrip })) {
       router.push('/dashboard');
     }
-  }, [costSavings, trafficDensity, travelTime, router]);
-
-  const getIncentive = (density: string | null) => {
-    if (!density) {
-      return 'No incentive';
-    }
-    switch (density.toLowerCase()) {
-      case 'light':
-        return '$1 e-card';
-      case 'medium':
-        return '$2 e-card';
-      case 'heavy':
-        return '$4 e-card';
-      default:
-        return 'No incentive';
-    }
-  };
+  }, [hasTrip, router]);
 
   const getCurrentTime = () => new Date();
 
@@ -111,15 +97,15 @@ const RoutesPage = () => {
                   {isNil(travelTime) ? 'Unavailable' : `${travelTime} minutes`}
                 </p>
               </div>
-              {/* Example reward tiers are demo-only until a funded offer inventory exists (D-25) */}
-              {isDemoMode() && (
+              {/* Only a reward the response carried with an active offer (D-25) */}
+              {incentive && (
                 <div className="flex flex-col items-center bg-secondary p-4 rounded-lg shadow-md">
                   <p className="text-lg font-medium text-secondary-foreground">
-                    Incentive <span className="ml-1 px-2 py-0.5 bg-purple-200 text-purple-800 text-xs rounded-full">Demo</span>
+                    Incentive
+                    {isDemo && <span className="ml-1 px-2 py-0.5 bg-purple-200 text-purple-800 text-xs rounded-full">Demo</span>}
                   </p>
-                  <p className="text-2xl text-primary-foreground font-bold">
-                    {getIncentive(trafficDensity)}
-                  </p>
+                  <p className="text-2xl text-primary-foreground font-bold">{incentive.value}</p>
+                  <p className="text-sm text-secondary-foreground text-center">{incentive.description}</p>
                 </div>
               )}
             </div>
