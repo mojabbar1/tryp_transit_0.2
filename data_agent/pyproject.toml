@@ -36,14 +36,15 @@ packages = ["tda"]
 [tool.ruff]
 line-length = 110
 target-version = "py312"
-extend-exclude = ["migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "TID", "S"]
 ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S105", "S106", "S108", "S311", "S603", "S607"]
+"tests/**" = ["S105", "S106", "S108", "S311", "S603", "S607", "S608"]
+# Migration DDL is long SQL text; everything else is still linted there.
+"migrations/versions/**" = ["E501"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "requests".msg = "Every external request goes through tda.http.polite_client."
