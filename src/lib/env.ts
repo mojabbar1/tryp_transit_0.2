@@ -10,8 +10,7 @@ import { z } from 'zod';
  * separate, client-readable flag and is deliberately not read here.
  */
 
-// D-4 defaults. They equal the P0 clients' constants in lib/api (asserted in the env tests); P1c
-// replaces those clients with the LLM seam, which reads models from here.
+// D-4 defaults; the LLM seam (src/lib/llm) reads the models from here.
 const D4_GEMINI_MODEL = 'gemini-3.8-flash';
 const D4_OPENAI_MODEL = 'gpt-5.6-terra';
 const DEFAULT_LLM_TIMEOUT_MS = 8000;

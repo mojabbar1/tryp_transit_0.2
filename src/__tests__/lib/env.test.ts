@@ -6,8 +6,6 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { inspect } from 'util';
 import { parseEnv } from '@/lib/env';
-import { DEFAULT_GEMINI_MODEL } from '@/lib/api/gemini';
-import { DEFAULT_OPENAI_MODEL } from '@/lib/api/openai';
 
 const GEMINI_KEY = 'placeholder-gemini-value';
 const OPENAI_KEY = 'placeholder-openai-value';
@@ -35,12 +33,6 @@ describe('parseEnv', () => {
       dataAgentBaseUrl: undefined,
     });
     expect([env.geminiApiKey, env.openaiApiKey, env.tomtomApiKey]).toEqual([undefined, undefined, undefined]);
-  });
-
-  it('uses the same D-4 model defaults as the P0 clients', () => {
-    const env = parseEnv({});
-    expect(env.geminiModel).toBe(DEFAULT_GEMINI_MODEL);
-    expect(env.openaiModel).toBe(DEFAULT_OPENAI_MODEL);
   });
 
   it.each([
