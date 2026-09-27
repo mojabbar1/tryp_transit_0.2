@@ -53,7 +53,7 @@ describe('getProvider', () => {
     expect(getProvider(parseEnv({ USE_GEMINI: 'true', GEMINI_API_KEY: 'placeholder' }))).toMatchObject({ name: 'gemini', model: 'gemini-3.8-flash' });
     expect(getProvider(parseEnv({ LLM_PROVIDER: 'openai', OPENAI_API_KEY: 'placeholder', OPENAI_MODEL: 'gpt-x' }))).toMatchObject({ name: 'openai', model: 'gpt-x' });
     expect(GoogleGenAI).toHaveBeenCalledWith({ apiKey: 'placeholder' });
-    expect(OpenAI).toHaveBeenCalledWith({ apiKey: 'placeholder', maxRetries: 0 });
+    expect(OpenAI).toHaveBeenCalledWith({ apiKey: 'placeholder', maxRetries: 0, logLevel: 'off' });
   });
 });
 

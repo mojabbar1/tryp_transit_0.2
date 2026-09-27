@@ -2,9 +2,13 @@ import 'server-only';
 import OpenAI from 'openai';
 import { type GenerateJsonRequest, type LlmProvider, LlmError, parseJsonOutput, withTimeout } from './shared';
 
-/** OpenAI via the Responses API with Structured Outputs (a strict JSON schema). Retries are off: we fail closed fast. */
+/**
+ * OpenAI via the Responses API with Structured Outputs (a strict JSON schema). Retries are off, so we fail
+ * closed fast. SDK logging is off whatever OPENAI_LOG says: its debug output can print raw errors before
+ * they're reduced to reason codes.
+ */
 export function createOpenAiProvider(apiKey: string, model: string): LlmProvider {
-  const client = new OpenAI({ apiKey, maxRetries: 0 });
+  const client = new OpenAI({ apiKey, maxRetries: 0, logLevel: 'off' });
   return {
     name: 'openai',
     model,
