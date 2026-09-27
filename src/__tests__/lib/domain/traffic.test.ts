@@ -16,6 +16,13 @@ describe('densityFromFlows', () => {
     ])).toBe('Medium');
   });
 
+  it.each([3, 10, 100])('preserves exact category boundaries with %s identical samples', (count) => {
+    expect(densityFromFlows(Array.from({ length: count }, () => ({ currentSpeed: 85, freeFlowSpeed: 100 }))))
+      .toBe('Light');
+    expect(densityFromFlows(Array.from({ length: count }, () => ({ currentSpeed: 60, freeFlowSpeed: 100 }))))
+      .toBe('Medium');
+  });
+
   it.each([0, -1, NaN, Infinity, -Infinity, null, undefined])('returns null for bad speed %p, even with a good sample', (speed) => {
     const good = { currentSpeed: 90, freeFlowSpeed: 100 };
     expect(densityFromFlows([good, { currentSpeed: speed, freeFlowSpeed: 100 }])).toBeNull();

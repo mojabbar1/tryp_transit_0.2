@@ -25,6 +25,7 @@ export function densityFromFlows(
   }
   if (flows.length === 0) return null;
   let mean = 0;
+  let count = 0;
   for (const flow of flows) {
     const current = flow?.currentSpeed;
     const free = flow?.freeFlowSpeed;
@@ -34,7 +35,8 @@ export function densityFromFlows(
     }
     const ratio = current / free;
     if (!Number.isFinite(ratio)) return null;
-    mean += ratio / flows.length;
+    count += 1;
+    mean += (ratio - mean) / count;
   }
   if (!Number.isFinite(mean)) return null;
   return mean >= lightMin ? 'Light' : mean >= mediumMin ? 'Medium' : 'Heavy';
