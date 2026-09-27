@@ -60,12 +60,15 @@ const request = {
   timeToDestination: '08:30',
 };
 
+const reward = { type: 'eCredit', description: 'Transit credit', value: '$2.00' } as const;
+
+// A legacy-shaped response: no comparison, no meta, and therefore no reward (D-25).
 const legacyResponse: TransitInsightResponse = {
   travelTime: 22,
   trafficDensity: 'Heavy',
   costSavingsPerTrip: '4.25',
   nudgeMessage: 'Beat the rush hour traffic!',
-  incentiveDetails: { type: 'eCredit', description: 'Transit credit', value: '$2.00' },
+  incentiveDetails: null,
   additionalRides: [{ departureTime: '08:15', travelTime: 25, trafficDensity: 'Heavy' }],
 };
 
@@ -153,10 +156,17 @@ describe('TransitInsightResponseSchema', () => {
     ).toEqual(['additionalRides']);
   });
 
-  it('shows an incentive only while an offer is active (D-25)', () => {
-    const withReward = { ...liveResponse, incentiveDetails: legacyResponse.incentiveDetails };
+  it('shows an incentive only while meta.offerActive is true (D-25)', () => {
+    const withReward = { ...liveResponse, incentiveDetails: reward };
     expect(issuePaths(TransitInsightResponseSchema.safeParse(withReward))).toEqual(['incentiveDetails']);
     expect(TransitInsightResponseSchema.safeParse({ ...withReward, meta: { ...meta, offerActive: true } }).success).toBe(true);
+  });
+
+  it('rejects an incentive when meta is omitted, with or without comparison (D-25)', () => {
+    const legacyWithReward = { ...legacyResponse, incentiveDetails: reward };
+    expect(issuePaths(TransitInsightResponseSchema.safeParse(legacyWithReward))).toEqual(['incentiveDetails']);
+    const withoutMeta = { ...legacyResponse, travelTime: null, additionalRides: [], comparison, incentiveDetails: reward };
+    expect(issuePaths(TransitInsightResponseSchema.safeParse(withoutMeta))).toEqual(['incentiveDetails']);
   });
 });
 

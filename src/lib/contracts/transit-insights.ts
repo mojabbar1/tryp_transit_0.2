@@ -9,7 +9,7 @@
  * - `transit.basis` is an enum, and "unavailable" carries no minutes or departures (D-21);
  * - cost and CO2 differences are signed, drive − transit, and every figure cites at least one fact;
  * - an LLM narration is served only after it passes validation (fail closed);
- * - an incentive appears only while an offer is active (D-25).
+ * - an incentive appears only while `meta.offerActive` is true, so a response without `meta` can't carry one (D-25).
  */
 import { z } from 'zod';
 
@@ -175,8 +175,8 @@ export const TransitInsightResponseSchema = z
         ctx.addIssue({ code: 'custom', path: ['additionalRides'], message: 'additionalRides must be empty while transit timing is unavailable (D-21)' });
       }
     }
-    if (response.meta && response.incentiveDetails !== null && !response.meta.offerActive) {
-      ctx.addIssue({ code: 'custom', path: ['incentiveDetails'], message: 'incentiveDetails is present only while meta.offerActive is true (D-25)' });
+    if (response.incentiveDetails !== null && response.meta?.offerActive !== true) {
+      ctx.addIssue({ code: 'custom', path: ['incentiveDetails'], message: 'incentiveDetails requires meta.offerActive to be true (D-25)' });
     }
   });
 
