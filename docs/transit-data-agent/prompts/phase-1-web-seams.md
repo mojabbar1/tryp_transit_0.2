@@ -28,6 +28,9 @@ ask**.
       the P0 revision with real keys: for each provider, `POST /api/transit-insights` returns HTTP 200 with usable
       provider JSON, and the server log shows no `Using fallback response`. Record the provider, model, and date in
       05 §7. If the legacy SDK rejects the model, that pulls the `@google/genai` migration (T5) forward; stop and ask.
+      **2026-09-27, maintainer decision:** no real keys exist, so this check and the "(Human, with keys)" verification
+      step below run against the local provider simulator instead (05 §7). Real-provider behavior stays unverified
+      until a key exists.
 - [ ] The **D-24 named baseline** is on `main` (P0's precondition), so the code paths referenced here exist.
 - [ ] 05 sign-off records **D-4** (default provider and model IDs), **D-15** (narration stays in the web app),
       **D-21** (pre-GTFS transit result is **`unavailable`**, not an invented estimate), **D-25** (rewards render
