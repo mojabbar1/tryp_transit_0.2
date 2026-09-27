@@ -77,6 +77,8 @@ function defineSecret(target: object, key: string, value: string | undefined) {
   Object.defineProperty(target, key, { value, enumerable: false });
 }
 
+let warnedLegacyTomTomName = false;
+
 export function parseEnv(source: Record<string, string | undefined>): ServerEnv {
   const result = RawEnvSchema.safeParse(source);
   if (!result.success) {
@@ -101,6 +103,10 @@ export function parseEnv(source: Record<string, string | undefined>): ServerEnv 
   };
   defineSecret(env, 'geminiApiKey', raw.GEMINI_API_KEY);
   defineSecret(env, 'openaiApiKey', raw.OPENAI_API_KEY);
+  if (!raw.TOMTOM_API_KEY && raw.NEXT_PUBLIC_TOMTOM_API_KEY && !warnedLegacyTomTomName) {
+    warnedLegacyTomTomName = true;
+    console.warn('NEXT_PUBLIC_TOMTOM_API_KEY is deprecated; rename it to TOMTOM_API_KEY (server-only).');
+  }
   defineSecret(env, 'tomtomApiKey', raw.TOMTOM_API_KEY ?? raw.NEXT_PUBLIC_TOMTOM_API_KEY);
   return Object.freeze(env) as ServerEnv;
 }

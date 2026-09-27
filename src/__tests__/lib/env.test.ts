@@ -85,6 +85,21 @@ describe('parseEnv', () => {
     expect(parseEnv({ NEXT_PUBLIC_TOMTOM_API_KEY: LEGACY_TOMTOM_KEY }).tomtomApiKey).toBe(LEGACY_TOMTOM_KEY);
   });
 
+  it('warns once, without the value, when only the legacy TomTom name is set', async () => {
+    await jest.isolateModulesAsync(async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const { parseEnv: fresh } = await import('@/lib/env');
+      fresh({ TOMTOM_API_KEY: TOMTOM_KEY, NEXT_PUBLIC_TOMTOM_API_KEY: LEGACY_TOMTOM_KEY });
+      expect(warn).not.toHaveBeenCalled();
+      fresh({ NEXT_PUBLIC_TOMTOM_API_KEY: LEGACY_TOMTOM_KEY });
+      fresh({ NEXT_PUBLIC_TOMTOM_API_KEY: LEGACY_TOMTOM_KEY });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toContain('rename it to TOMTOM_API_KEY');
+      expect(String(warn.mock.calls[0][0])).not.toContain(LEGACY_TOMTOM_KEY);
+      warn.mockRestore();
+    });
+  });
+
   it('keeps secrets readable but out of JSON, console output, and key listings', () => {
     const env = parseEnv({ USE_GEMINI: 'true', GEMINI_API_KEY: GEMINI_KEY, OPENAI_API_KEY: OPENAI_KEY, TOMTOM_API_KEY: TOMTOM_KEY });
     expect([env.geminiApiKey, env.openaiApiKey, env.tomtomApiKey]).toEqual([GEMINI_KEY, OPENAI_KEY, TOMTOM_KEY]);

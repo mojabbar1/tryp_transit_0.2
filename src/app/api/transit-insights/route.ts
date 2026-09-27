@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { RequestBody, TransitInsightResponse, ApiErrorResponse } from '@/types/interfaces';
 import { convertToUTC } from '@/lib/convertToUTC';
 import { getTrafficData } from '@/lib/api/tomtom';
+import { getEnv } from '@/lib/env';
 import { getPredictedRidership } from '@/lib/api/ridership';
 import { callGemini, parseJsonResponse } from '@/lib/api/gemini';
 import { callOpenAI } from '@/lib/api/openai';
@@ -157,7 +158,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Get traffic data from TomTom
-    const trafficData = await getTrafficData(departure, destination);
+    const tomtomKey = getEnv().tomtomApiKey;
+    if (!tomtomKey) throw new Error('TOMTOM_API_KEY environment variable is not set');
+    const trafficData = await getTrafficData(tomtomKey, departure, destination);
 
     // Calculate hours until destination for ridership prediction
     const hoursUntilDestination = calculateHoursUntilDestination(timeToDestination);

@@ -8,19 +8,15 @@
 
 import { NextResponse } from 'next/server';
 import { checkRidershipServiceHealth } from '@/lib/api/ridership';
-import { isTomTomConfigured } from '@/lib/api/tomtom';
+import { parseEnv } from '@/lib/env';
 import type { HealthResponse } from '@/types/interfaces';
 
 export const dynamic = 'force-dynamic';
 
-// Mirrors the provider selection in /api/transit-insights (USE_GEMINI toggles Gemini vs OpenAI)
-function isLlmConfigured(): boolean {
-  const useGemini = process.env.USE_GEMINI === 'true';
-  return Boolean(useGemini ? process.env.GEMINI_API_KEY : process.env.OPENAI_API_KEY);
-}
-
 export async function GET() {
   const ridershipUp = await checkRidershipServiceHealth();
+  // Parsed per request (not the cached getEnv) so the probe always reflects the live configuration.
+  const env = parseEnv(process.env);
 
   return NextResponse.json<HealthResponse>({
     status: 'ok',
@@ -28,8 +24,8 @@ export async function GET() {
       ridershipService: ridershipUp ? 'up' : 'down',
     },
     configured: {
-      llm: isLlmConfigured(),
-      traffic: isTomTomConfigured(),
+      llm: env.llmProvider !== 'none',
+      traffic: Boolean(env.tomtomApiKey),
     },
   });
 }
