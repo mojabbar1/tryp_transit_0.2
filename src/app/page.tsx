@@ -6,6 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { busStopCoordinates } from '@/app/data/busStopCoordinates';
 import { TransitInsightResponse, ApiErrorResponse } from '@/types/interfaces';
+import { isDemoMode } from '@/lib/demo-mode';
+import { formatCostDifference } from '@/lib/format';
+import { toNumberOrNull } from '@/lib/utils';
 import {
   RequestAction,
   RequestState,
@@ -18,6 +21,23 @@ interface InsightsRequest {
   endpoint: string;
   body: unknown;
 }
+
+const TRAFFIC_UNAVAILABLE = new Set(['traffic_flow_unavailable', 'traffic_not_configured']);
+
+/** What the results panel may show: nothing unsupported, and demo figures badged (D-21, D-25). */
+function describeInsights(data: TransitInsightResponse) {
+  return {
+    isDemoData: data.meta?.demo === true,
+    transitUnavailable: data.comparison?.transit.basis === 'unavailable',
+    trafficUnavailable: data.meta?.degraded.some((code) => TRAFFIC_UNAVAILABLE.has(code)) ?? false,
+    costText: formatCostDifference(data.comparison?.costUsd?.difference ?? toNumberOrNull(data.costSavingsPerTrip)),
+    rewardActive: data.incentiveDetails !== null && data.meta?.offerActive === true,
+  };
+}
+
+const DemoBadge = () => (
+  <span className="ml-2 px-2 py-0.5 bg-purple-200 text-purple-800 text-xs rounded-full align-middle">Demo</span>
+);
 
 const maxRetries = 2;
 const retryDelayMs = 1000;
@@ -36,6 +56,8 @@ export default function TransitInsightsPage() {
   );
   const { data, error, retryCount } = requestState;
   const isLoading = isRequestInFlight(requestState);
+  const demoEnabled = isDemoMode();
+  const view = data ? describeInsights(data) : null;
   const [demoMode, setDemoMode] = useState<string | null>(null);
   const [loadingStep, setLoadingStep] = useState(0);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -227,7 +249,8 @@ export default function TransitInsightsPage() {
           </div>
         </div>
 
-        {/* Demo Scenarios Section */}
+        {/* Demo Scenarios Section (NEXT_PUBLIC_DEMO_MODE only) */}
+        {demoEnabled && (
         <Card className="mb-6 bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200">
           <CardHeader>
             <CardTitle className="text-center text-purple-800">🎯 Demo Scenarios</CardTitle>
@@ -281,6 +304,7 @@ export default function TransitInsightsPage() {
             )}
           </CardContent>
         </Card>
+        )}
 
         <Card className="mb-6">
           <CardHeader>
@@ -477,6 +501,7 @@ export default function TransitInsightsPage() {
                       <h3 className="font-bold text-2xl text-green-800 mb-3 flex items-center">
                         ✨ AI-Powered Transit Insight
                         <span className="ml-2 px-2 py-1 bg-green-200 text-green-800 text-xs rounded-full">SMART</span>
+                        {view?.isDemoData && <DemoBadge />}
                       </h3>
                       <p className="text-green-700 text-xl font-medium leading-relaxed mb-4">
                         {data.nudgeMessage}
@@ -499,34 +524,41 @@ export default function TransitInsightsPage() {
               {/* Main Stats Grid */}
               <div className="grid md:grid-cols-3 gap-6 mb-6">
                 <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <h3 className="font-semibold text-lg text-blue-800 mb-2">⏱️ Travel Time</h3>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {data.travelTime !== null ? `${data.travelTime} mins` : 'N/A'}
-                  </p>
+                  <h3 className="font-semibold text-lg text-blue-800 mb-2">⏱️ Travel Time{view?.isDemoData && <DemoBadge />}</h3>
+                  {view?.transitUnavailable ? (
+                    <p className="text-lg font-semibold text-blue-600">Transit timing unavailable</p>
+                  ) : (
+                    <p className="text-2xl font-bold text-blue-600">
+                      {data.travelTime !== null ? `${data.travelTime} mins` : 'N/A'}
+                    </p>
+                  )}
                 </div>
 
                 <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-                  <h3 className="font-semibold text-lg text-yellow-800 mb-2">🚦 Traffic Density</h3>
+                  <h3 className="font-semibold text-lg text-yellow-800 mb-2">
+                    🚦 {data.meta?.trafficDensityLabel ?? 'Traffic Density'}{view?.isDemoData && <DemoBadge />}
+                  </h3>
                   <p className="text-2xl font-bold text-yellow-600">
                     {data.trafficDensity || 'N/A'}
                   </p>
+                  {view?.trafficUnavailable && <p className="text-sm text-yellow-700 mt-1">Live traffic unavailable</p>}
                 </div>
 
                 <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                  <h3 className="font-semibold text-lg text-green-800 mb-2">💰 You Save</h3>
+                  <h3 className="font-semibold text-lg text-green-800 mb-2">💰 Bus vs. driving{view?.isDemoData && <DemoBadge />}</h3>
                   <p className="text-2xl font-bold text-green-600">
-                    {data.costSavingsPerTrip ? `$${data.costSavingsPerTrip}` : 'N/A'}
+                    {view?.costText ?? 'N/A'}
                   </p>
                 </div>
               </div>
 
-              {/* Incentive Section */}
-              {data.incentiveDetails && (
+              {/* Incentive Section: only with an active offer (D-25) */}
+              {view?.rewardActive && data.incentiveDetails && (
                 <div className="mb-6 p-4 bg-gradient-to-r from-purple-100 to-pink-100 border-l-4 border-purple-500 rounded-r-lg">
                   <div className="flex items-start">
                     <div className="text-2xl mr-3">🎁</div>
                     <div>
-                      <h3 className="font-semibold text-lg text-purple-800 mb-2">Your Reward</h3>
+                      <h3 className="font-semibold text-lg text-purple-800 mb-2">Your Reward{view.isDemoData && <DemoBadge />}</h3>
                       <p className="text-purple-700 text-lg mb-2">{data.incentiveDetails.description}</p>
                       <div className="flex items-center space-x-4 text-sm text-purple-600">
                         <span className="bg-purple-200 px-2 py-1 rounded">
@@ -545,7 +577,7 @@ export default function TransitInsightsPage() {
               {data.additionalRides && data.additionalRides.length > 0 && (
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                   <h3 className="font-semibold text-lg text-gray-800 mb-3 flex items-center">
-                    🚌 Alternative Options
+                    🚌 Alternative Options{view?.isDemoData && <DemoBadge />}
                   </h3>
                   <div className="space-y-2">
                     {data.additionalRides.map((ride, index) => (
