@@ -64,3 +64,8 @@ ignore = ["S101"]
 testpaths = ["tests"]
 markers = ["db: needs Postgres via TDA_TEST_DATABASE_URL (required when TDA_REQUIRE_DB_TESTS=1)"]
 addopts = "-p no:cacheprovider"
+filterwarnings = [
+  # Starlette 1.7's TestClient prefers a new `httpx2` package and still works with httpx. Adding an HTTP
+  # dependency is its own reviewed change, so only this one warning is accepted here.
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
