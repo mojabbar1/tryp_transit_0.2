@@ -25,7 +25,8 @@ ask**.
       (`feat/tda-phase-1b-domain`), and **P1c** T4, the rest of T5, and T6–T10 (`feat/tda-phase-1c-route`). Do only
       your part.
 - [ ] **Real-key provider check (carried from P0 R1, waived at the P0 merge in #3).** Before P1 starts, a human runs
-      the P0 revision with real keys: for each provider, `POST /api/transit-insights` returns HTTP 200 with usable
+      the P0 revision with real keys. (Scoped waiver, 2026-09-27: P1a and P1b may proceed without it; it is
+      **required before P1c starts**. See 05 §7.) For each provider, `POST /api/transit-insights` returns HTTP 200 with usable
       provider JSON, and the server log shows no `Using fallback response`. Record the provider, model, and date in
       05 §7. If the legacy SDK rejects the model, that pulls the `@google/genai` migration (T5) forward; stop and ask.
 - [ ] The **D-24 named baseline** is on `main` (P0's precondition), so the code paths referenced here exist.

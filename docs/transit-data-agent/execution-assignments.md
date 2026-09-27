@@ -27,9 +27,9 @@
 |-------|--------|-------|---------|----------|---------------------------|
 | P0 Stabilize | `feat/tda-phase-0-stabilize` | G0 | **Opus** | **Astra** | secrets, bbox/reducer/redirect correctness |
 | P0B Framework upgrade | `feat/tda-phase-0b-framework` | P0 merged | **Opus** | **Astra** | behavior-neutrality, peer-dep conformance |
-| P1a Web seams: contracts + env (T1–T2) | `feat/tda-phase-1a-contracts` | P0B merged + real-key check | **Opus** | **Astra** | contract invariants (`basis` enum, signed `difference`); server-only env |
+| P1a Web seams: contracts + env (T1–T2) | `feat/tda-phase-1a-contracts` | P0B merged + real-key check (waived for P1a/P1b on 2026-09-27; 05 §7) | **Opus** | **Astra** | contract invariants (`basis` enum, signed `difference`); server-only env |
 | P1b Web seams: domain math + `validate-claims` (T3, T5 validator + vectors) | `feat/tda-phase-1b-domain` | P1a merged | **Astra** | **Opus** | validator rejects swap/negation/unit vectors; fail-closed; DST; no invented values |
-| P1c Web seams: TomTom, LLM seam, route, UI (T4, T5 rest, T6–T10) | `feat/tda-phase-1c-route` | P1b merged | **Opus** | **Astra** | numbers by reference only; fail-closed fallback; additive response |
+| P1c Web seams: TomTom, LLM seam, route, UI (T4, T5 rest, T6–T10) | `feat/tda-phase-1c-route` | P1b merged + real-key check | **Opus** | **Astra** | numbers by reference only; fail-closed fallback; additive response |
 | P2 Scaffold | `feat/tda-phase-2-scaffold` | P0 merged | **Opus** | **Astra** | reader-role grants, append-only + non-destructive rollback |
 | P3 Connectors (1 PR each) | `feat/tda-phase-3-<connector>` | P2 merged | **Either** (one model/PR) | **the other** | DQ checks, append-only load, idempotency |
 | P4a Metrics + API | `feat/tda-phase-4a-metrics-api` | P3 3.1/3.2/3.5 | **Astra** | **Opus** | boardability edge cases; conditional endpoints; contract |
