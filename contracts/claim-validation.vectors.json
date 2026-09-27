@@ -1,0 +1,232 @@
+{
+  "rules": {
+    "version": 1,
+    "trust": "Facts and boolean flags are supplied by deterministic code, never by the model. Numerical phrases below are synthetic test fixtures, not approved live facts.",
+    "digits": "Reject every Unicode numeric character in nudge, including digits inside slot ids. Digits appear only in trusted fact phrases after successful validation.",
+    "slots": "Ids contain only lowercase ASCII letters and underscores, starting with a letter. Reject malformed braces, unknown ids, missing or unused declared ids, duplicate slots, duplicate fact ids or labels, and malformed inputs.",
+    "grammar": "One or two sentences, optionally ending in a period, exclamation mark or question mark. Semicolons separate clauses. Each clause is a standalone {{id}}, an exact fact label followed by ': {{id}}', or one complete phrase from prose below. Label/prose comparison ignores case and collapses whitespace. Unrecognized prose is rejected, not guessed.",
+    "prose": {
+      "consider transit": "always",
+      "compare your options": "always",
+      "transit timing is unavailable": "!transitServiceKnown",
+      "transit is faster": "transitServiceKnown && transitFaster",
+      "transit is cheaper": "transitCheaper",
+      "save with transit": "transitCheaper",
+      "check the next bus": "transitServiceKnown",
+      "an approved reward is available": "offerActive",
+      "an approved credit is available": "offerActive",
+      "traffic now": "trafficNow"
+    },
+    "flags": "Reject unsupported faster/quicker, cheaper/save, next-bus/transit-time, reward/credit/offer, and traffic claims in nudge or referenced fact labels/phrases. False transitFaster/transitCheaper does not establish the inverse comparison; no slower/costs-more prose is inferred.",
+    "swap": "Drive time: {{transit_minutes}} is rejected because the slot's trusted label is Transit time, not Drive time. Matching numbers would not reveal this entity swap.",
+    "period": "Daily saving: {{cost_saving_per_week}} is rejected because the trusted label is Weekly saving. Do not rescale or relabel a supplied fact.",
+    "negation": "Transit is not faster is rejected even with transitFaster=true: it is not a permitted complete claim. Do not strip negation or merely find the word faster.",
+    "unit": "Drive distance: {{drive_minutes}} is rejected because the trusted label is Drive time. A model cannot reinterpret a time phrase as distance.",
+    "substitution": "Only substitute after ok=true. Revalidate the exact inputs in the pure substitution helper. Preserve phrase text literally, including dollar signs."
+  },
+  "cases": [
+    {
+      "id": "exact",
+      "nudge": "Drive time: {{drive_minutes}}; Transit time: {{transit_minutes}}.",
+      "slots": ["drive_minutes", "transit_minutes"],
+      "facts": [
+        {"id": "drive_minutes", "label": "Drive time", "phrase": "about 25 minutes by car"},
+        {"id": "transit_minutes", "label": "Transit time", "phrase": "about 20 minutes by bus"}
+      ],
+      "flags": {"transitServiceKnown": true, "transitFaster": true, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": true},
+      "substituted": "Drive time: about 25 minutes by car; Transit time: about 20 minutes by bus."
+    },
+    {
+      "id": "swap",
+      "nudge": "Drive time: {{transit_minutes}}; Transit time: {{drive_minutes}}.",
+      "slots": ["drive_minutes", "transit_minutes"],
+      "facts": [
+        {"id": "drive_minutes", "label": "Drive time", "phrase": "about 25 minutes by car"},
+        {"id": "transit_minutes", "label": "Transit time", "phrase": "about 20 minutes by bus"}
+      ],
+      "flags": {"transitServiceKnown": true, "transitFaster": true, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "label_mismatch"}
+    },
+    {
+      "id": "period",
+      "nudge": "Daily saving: {{cost_saving_per_week}}.",
+      "slots": ["cost_saving_per_week"],
+      "facts": [{"id": "cost_saving_per_week", "label": "Weekly saving", "phrase": "$10 less than driving per week"}],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": true, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "label_mismatch"}
+    },
+    {
+      "id": "negation",
+      "nudge": "Transit is not faster. {{transit_minutes}}.",
+      "slots": ["transit_minutes"],
+      "facts": [{"id": "transit_minutes", "label": "Transit time", "phrase": "about 20 minutes by bus"}],
+      "flags": {"transitServiceKnown": true, "transitFaster": true, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "unsupported_prose"}
+    },
+    {
+      "id": "unit",
+      "nudge": "Drive distance: {{drive_minutes}}.",
+      "slots": ["drive_minutes"],
+      "facts": [{"id": "drive_minutes", "label": "Drive time", "phrase": "about 25 minutes by car"}],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "label_mismatch"}
+    },
+    {
+      "id": "unknown-slot",
+      "nudge": "{{invented_fact}}.",
+      "slots": ["invented_fact"],
+      "facts": [],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "unknown_slot"}
+    },
+    {
+      "id": "digit-in-nudge",
+      "nudge": "Drive time: 25 minutes.",
+      "slots": [],
+      "facts": [{"id": "drive_minutes", "label": "Drive time", "phrase": "about 25 minutes by car"}],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "digit_in_nudge"}
+    },
+    {
+      "id": "empty-nudge",
+      "nudge": " \n ",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "empty_nudge"}
+    },
+    {
+      "id": "missing-slot",
+      "nudge": "{{drive_minutes}}.",
+      "slots": [],
+      "facts": [{"id": "drive_minutes", "label": "Drive time", "phrase": "about 25 minutes by car"}],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "missing_slot"}
+    },
+    {
+      "id": "unsupported-faster",
+      "nudge": "Transit is faster.",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": true, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "flag_conflict"}
+    },
+    {
+      "id": "unknown-service",
+      "nudge": "Check the next bus.",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "flag_conflict"}
+    },
+    {
+      "id": "inactive-reward",
+      "nudge": "An approved reward is available.",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "flag_conflict"}
+    },
+    {
+      "id": "inactive-credit",
+      "nudge": "An approved credit is available.",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "flag_conflict"}
+    },
+    {
+      "id": "unsupported-saving",
+      "nudge": "Save with transit.",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "flag_conflict"}
+    },
+    {
+      "id": "unsupported-cheaper",
+      "nudge": "Transit is cheaper.",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "flag_conflict"}
+    },
+    {
+      "id": "unknown-traffic",
+      "nudge": "Traffic now.",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "flag_conflict"}
+    },
+    {
+      "id": "exact-trip-saving",
+      "nudge": "Saving per trip: {{cost_saving_per_trip}}. Consider transit.",
+      "slots": ["cost_saving_per_trip"],
+      "facts": [{"id": "cost_saving_per_trip", "label": "Saving per trip", "phrase": "$2 less than driving per trip"}],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": true, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": true},
+      "substituted": "Saving per trip: $2 less than driving per trip. Consider transit."
+    },
+    {
+      "id": "exact-weekly-saving",
+      "nudge": "Weekly saving: {{cost_saving_per_week}}.",
+      "slots": ["cost_saving_per_week"],
+      "facts": [{"id": "cost_saving_per_week", "label": "Weekly saving", "phrase": "$10 less than driving per week"}],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": true, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": true},
+      "substituted": "Weekly saving: $10 less than driving per week."
+    },
+    {
+      "id": "exact-faster",
+      "nudge": "Transit is faster. {{transit_minutes}}.",
+      "slots": ["transit_minutes"],
+      "facts": [{"id": "transit_minutes", "label": "Transit time", "phrase": "about 20 minutes by bus"}],
+      "flags": {"transitServiceKnown": true, "transitFaster": true, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": true},
+      "substituted": "Transit is faster. about 20 minutes by bus."
+    },
+    {
+      "id": "unavailable",
+      "nudge": "Transit timing is unavailable. Compare your options.",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": true},
+      "substituted": "Transit timing is unavailable. Compare your options."
+    },
+    {
+      "id": "unicode-digit",
+      "nudge": "Save ２ dollars.",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": true, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "digit_in_nudge"}
+    },
+    {
+      "id": "unsupported-free-prose",
+      "nudge": "The bus takes {{drive_minutes}}.",
+      "slots": ["drive_minutes"],
+      "facts": [{"id": "drive_minutes", "label": "Drive time", "phrase": "about 25 minutes by car"}],
+      "flags": {"transitServiceKnown": true, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "unsupported_prose"}
+    },
+    {
+      "id": "false-inverse",
+      "nudge": "Transit is slower.",
+      "slots": [],
+      "facts": [],
+      "flags": {"transitServiceKnown": true, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "unsupported_prose"}
+    },
+    {
+      "id": "hidden-service-claim",
+      "nudge": "{{transit_minutes}}.",
+      "slots": ["transit_minutes"],
+      "facts": [{"id": "transit_minutes", "label": "Transit time", "phrase": "about 20 minutes by bus"}],
+      "flags": {"transitServiceKnown": false, "transitFaster": false, "transitCheaper": false, "offerActive": false, "trafficNow": false},
+      "expected": {"ok": false, "reason": "flag_conflict"}
+    }
+  ]
+}
