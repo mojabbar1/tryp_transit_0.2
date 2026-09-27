@@ -1,0 +1,43 @@
+id: charleston
+name: Charleston, SC (Berkeley, Charleston, and Dorchester counties)
+timezone: America/New_York
+# Combined extent of Berkeley (45015), Charleston (45019), and Dorchester (45035) counties from the US Census
+# TIGERweb State_County MapServer (layer 1, returnExtentOnly, WGS84), retrieved 2026-09-27, rounded to 6 places.
+bbox:
+  min_lon: -80.791968
+  min_lat: 32.482565
+  max_lon: -79.221878
+  max_lat: 33.507172
+agencies:
+  - id: carta
+    name: Charleston Area Regional Transportation Authority (CARTA)
+    ntd_id: "40110"   # 03 S-3 (legacy 4110)
+# Drafts only. Names come from 03 S-5 and from the areas the app's stop list covers
+# (src/app/data/busStopCoordinates.ts). A human confirms each one and supplies probe_points before P3.6;
+# no coordinates are invented here.
+corridors:
+  - id: lcrt
+    name: Lowcountry Rapid Transit (LCRT)
+    description: Planned 21.3 mi bus rapid transit line, Ladson to downtown Charleston (03 S-5; BCDCOG sponsor)
+    probe_points: []
+    status: draft
+  - id: rivers-ave
+    name: Rivers Avenue (North Charleston)
+    description: North Charleston to the peninsula along Rivers Avenue (the app's Rivers Avenue stops)
+    probe_points: []
+    status: draft
+  - id: us17-mount-pleasant
+    name: US-17 / Coleman Boulevard (Mount Pleasant)
+    description: Mount Pleasant to the peninsula (the app's Coleman Boulevard and Johnnie Dodds stops)
+    probe_points: []
+    status: draft
+  - id: us17-west-ashley
+    name: US-17 / Sam Rittenberg Boulevard (West Ashley)
+    description: West Ashley to the peninsula (the app's Sam Rittenberg Boulevard stops)
+    probe_points: []
+    status: draft
+  - id: folly-road
+    name: Folly Road / James Island Connector (James Island)
+    description: James Island to the peninsula (the app's Folly Road and James Island Connector stops)
+    probe_points: []
+    status: draft

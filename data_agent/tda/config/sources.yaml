@@ -1,0 +1,374 @@
+# Source registry: the source of truth for the `source` table (02 §6.1). Every entry is `proposed`:
+# nothing runs until a PR flips it to `approved` after the terms review in 03 §2.4 (terms_reviewed_by / _at).
+# Values mirror the 03 catalog. Cadences (UTC cron) and stale_after_hours are proposals for P3 to finalize.
+# S-8 (SC511) is omitted: 03 excludes it (no public API; consumer terms only).
+sources:
+- id: carta-gtfs
+  catalog_id: S-1
+  name: CARTA GTFS static (Trillium)
+  kind: gtfs
+  url: https://data.trilliumtransit.com/gtfs/carta-sc-us/carta-sc-us.zip
+  license: 'Transitland registry: use without attribution; derived products allowed'
+  store_policy: ttl:180d
+  store_policy_reason: 'Open GTFS feed: raw snapshots kept 180 days (D-18); feed versions kept'
+  cadence: 0 9 * * *
+  stale_after_hours: 72
+  attribution_text: 'Schedule data: CARTA GTFS (via Trillium)'
+  notes: New versions about monthly; poll daily with a conditional GET
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: carta-gtfs-rt-alerts
+  catalog_id: S-2
+  name: CARTA GTFS-RT service alerts
+  kind: gtfs_rt
+  url: http://gtfs-realtime.trilliumtransit.com/gtfs-realtime/feed/carta-sc-us/service_alerts.proto
+  license: Same publisher as S-1
+  store_policy: ttl:180d
+  store_policy_reason: 'Open feed: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
+  cadence: '*/5 * * * *'
+  stale_after_hours: 1
+  rate_limit_per_min: 12
+  attribution_text: 'Service alerts: CARTA GTFS-RT (via Trillium)'
+  notes: 'Third-party text: untrusted input (02 §7.3). Plain http, as published'
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: carta-avl
+  catalog_id: S-2b
+  name: CARTA vehicle positions and trip updates
+  kind: rest
+  auth: agency
+  license: Needs a partnership with CARTA/Transdev; the Swiftly API bans redistribution
+  store_policy: none
+  store_policy_reason: Not public; nothing is stored without a partnership agreement
+  notes: Outreach (D-20). The AVL vendor is Swiftly
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: ntd-monthly
+  catalog_id: S-3
+  name: NTD Complete Monthly Ridership (FTA)
+  kind: socrata
+  url: https://data.transportation.gov/resource/8bui-9xvu.json
+  license: USGOV_WORKS (public domain)
+  store_policy: ttl:180d
+  store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
+  cadence: 0 10 * * 2
+  stale_after_hours: 1080
+  attribution_text: 'Source: FTA National Transit Database (public domain)'
+  notes: Query by ntd_id='40110' (CARTA), not the display name. Weekly refresh with a monthly data lag
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: tricounty-link-gtfs
+  catalog_id: S-4
+  name: Tri-County Link GTFS (BCDCOG rural)
+  kind: gtfs
+  url: http://data.trilliumtransit.com/gtfs/tricountylink-sc-us/tricountylink-sc-us.zip
+  license: No license flags stated; a human terms review is needed
+  store_policy: none
+  store_policy_reason: 'Terms not yet reviewed (03 §2.4): keep only the checksum until the review sets a policy'
+  cadence: 0 9 * * 1
+  stale_after_hours: 1080
+  notes: About monthly
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: lcrt-project
+  catalog_id: S-5
+  name: Lowcountry Rapid Transit (LCRT) project pages
+  kind: html
+  url: https://lowcountryrapidtransit.com/about/
+  license: Public web; cite facts only
+  store_policy: ttl:180d
+  store_policy_reason: 'Public web page cited as fact evidence: snapshots kept 180 days, and pinned while a published fact
+    cites them'
+  attribution_text: 'Source: Lowcountry Rapid Transit (BCDCOG)'
+  notes: Ad hoc. The FTA CIG pages return 403 to bots, so a human retrieves them into the inbox
+  auth: none
+  robots_required: true
+  status: proposed
+  owner: mojabbar
+- id: scdot-counts-annual
+  catalog_id: S-6a
+  name: SCDOT traffic counts (statewide annual CSVs)
+  kind: html
+  url: https://www.scdot.org/travel/travel-trafficdata.html
+  license: No explicit license; terms need review
+  store_policy: none
+  store_policy_reason: 'Terms not yet reviewed (03 §2.4): keep only the checksum until the review sets a policy'
+  cadence: 0 11 1 * *
+  stale_after_hours: 9600
+  attribution_text: 'Source: SCDOT traffic counts'
+  notes: Annual
+  auth: none
+  robots_required: true
+  status: proposed
+  owner: mojabbar
+- id: scdot-counts-bcdcog
+  catalog_id: S-6b
+  name: SCDOT counts mirrored by BCDCOG (ArcGIS FeatureServer)
+  kind: arcgis
+  url: https://services2.arcgis.com/BTzI2Eau2uhzyzR0/arcgis/rest/services/SC_DOT_Traffic_Counts_WFL1/FeatureServer/0/query
+  license: No licenseInfo; confirm the item owner and org before use
+  store_policy: none
+  store_policy_reason: 'Terms not yet reviewed (03 §2.4): keep only the checksum until the review sets a policy'
+  cadence: 0 11 1 * *
+  stale_after_hours: 9600
+  attribution_text: 'Source: SCDOT traffic counts (via BCDCOG)'
+  notes: allowAnonymousToQuery. Last modified about Feb 2025
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: scdot-ccs-inbox
+  catalog_id: S-6c
+  name: SCDOT continuous count stations (manual export)
+  kind: manual
+  url: https://scdottrafficdata.drakewell.com/publicmultinodemap.asp
+  license: Don't scrape the UI; a human exports the files into the inbox (03 §3)
+  store_policy: none
+  store_policy_reason: 'Terms not yet reviewed (03 §2.4): keep only the checksum until the review sets a policy'
+  attribution_text: 'Source: SCDOT continuous count stations'
+  notes: Monthly manual export (Excel/PDF) into data_agent/inbox/scdot-ccs-inbox/
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: tomtom-live
+  catalog_id: S-7
+  name: TomTom Traffic Flow, Incident Details, and Routing (live)
+  kind: rest
+  url: https://api.tomtom.com/
+  auth: api_key
+  license: Free tier; the terms likely prohibit storing live responses (D-7)
+  store_policy: none
+  store_policy_reason: TomTom live responses are never stored (03 §2.3, D-7)
+  attribution_text: © TomTom
+  notes: Used live by the web app (P1). A sampler exists only with D-7 approval
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: tomtom-traffic-stats
+  catalog_id: S-7b
+  name: TomTom Traffic Stats / MOVE (licensed history)
+  kind: rest
+  url: https://move.tomtom.com/
+  auth: paid
+  license: Licensed for historical analytics
+  store_policy: none
+  store_policy_reason: Paid license not purchased; nothing stored
+  attribution_text: © TomTom
+  notes: 'Option under D-7 and D-14 (money: the maintainer decides)'
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: tomtom-traffic-index
+  catalog_id: S-9
+  name: TomTom Traffic Index, Charleston
+  kind: html
+  url: https://www.tomtom.com/traffic-index/city/charleston-sc/
+  license: Cite headline figures with attribution; no bulk reuse
+  store_policy: none
+  store_policy_reason: 'Cite-only terms (no bulk reuse): keep only the checksum'
+  attribution_text: 'Source: TomTom Traffic Index'
+  notes: Annual (Q4/Jan). JavaScript-rendered; a human verifies figures
+  auth: none
+  robots_required: true
+  status: proposed
+  owner: mojabbar
+- id: npmrds
+  catalog_id: S-9b
+  name: NPMRDS (FHWA probe travel times)
+  kind: rest
+  auth: agency
+  license: Restricted to public agencies; possible via a BCDCOG/SCDOT partnership
+  store_policy: none
+  store_policy_reason: Not accessible without an agency partnership
+  notes: Outreach (D-20)
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: census-acs
+  catalog_id: S-10
+  name: Census ACS 5-year (CBSA 16700)
+  kind: census
+  url: https://api.census.gov/data/
+  auth: free_key
+  license: Public domain
+  store_policy: ttl:180d
+  store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
+  cadence: 0 12 15 * *
+  stale_after_hours: 9600
+  attribution_text: 'Source: U.S. Census Bureau, American Community Survey'
+  notes: Annual (about December)
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: eia-gas
+  catalog_id: S-11
+  name: EIA weekly regular gasoline, Lower Atlantic (PADD 1C)
+  kind: rest
+  url: https://api.eia.gov/v2/petroleum/pri/gnd/data/
+  auth: free_key
+  license: Public domain
+  store_policy: ttl:180d
+  store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
+  cadence: 0 20 * * 2
+  stale_after_hours: 240
+  attribution_text: 'Source: U.S. Energy Information Administration'
+  notes: Series EMM_EPMR_PTE_R1Z_DPG; the key is sent by the connector, never stored here
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: aaa-driving-costs
+  catalog_id: S-12
+  name: AAA Your Driving Costs (fact sheet)
+  kind: pdf
+  url: https://newsroom.aaa.com/wp-content/uploads/2025/09/UPDATE-AAA-Fact-Sheet-Your-Driving-Cost-9.2025-1.pdf
+  license: Cite with attribution; no bulk reuse
+  store_policy: none
+  store_policy_reason: 'Cite-only terms (no bulk reuse): keep only the checksum'
+  attribution_text: 'Source: AAA, Your Driving Costs 2025'
+  notes: Annual (about Aug/Sep); a human extracts figures
+  auth: none
+  robots_required: true
+  status: proposed
+  owner: mojabbar
+- id: epa-typical-vehicle
+  catalog_id: S-13
+  name: 'EPA: GHG emissions from a typical passenger vehicle'
+  kind: html
+  url: https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle
+  license: Public domain
+  store_policy: ttl:180d
+  store_policy_reason: 'Public web page cited as fact evidence: snapshots kept 180 days, and pinned while a published fact
+    cites them'
+  attribution_text: 'Source: U.S. EPA (EPA-420-F-23-014)'
+  notes: Reviewed periodically
+  auth: none
+  robots_required: true
+  status: proposed
+  owner: mojabbar
+- id: fta-2010-climate
+  catalog_id: S-14
+  name: 'FTA (2010): Public Transportation''s Role in Responding to Climate Change'
+  kind: pdf
+  url: https://www.epa.gov/sites/default/files/2016-04/documents/public_transportations_role_in_responding_to_climate_change.pdf
+  license: Public domain; stale (2010)
+  store_policy: ttl:180d
+  store_policy_reason: 'Public web page cited as fact evidence: snapshots kept 180 days, and pinned while a published fact
+    cites them'
+  attribution_text: 'Source: Federal Transit Administration (2010)'
+  notes: Static; replaced by S-14b once available
+  auth: none
+  robots_required: true
+  status: proposed
+  owner: mojabbar
+- id: ntd-annual-energy
+  catalog_id: S-14b
+  name: NTD annual energy and passenger-miles (CARTA bus CO2)
+  kind: socrata
+  license: Public domain
+  store_policy: ttl:180d
+  store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
+  attribution_text: 'Source: FTA National Transit Database (public domain)'
+  notes: Dataset IDs to be confirmed; annual
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: carta-fares-parking
+  catalog_id: S-15
+  name: CARTA fares and City of Charleston parking rates
+  kind: html
+  url: https://ridecarta.com/fares-passes/
+  license: Public web; check robots.txt; cite
+  store_policy: ttl:180d
+  store_policy_reason: 'Public web page cited as fact evidence: snapshots kept 180 days, and pinned while a published fact
+    cites them'
+  attribution_text: 'Sources: CARTA; City of Charleston'
+  allowed_hosts:
+  - www.ridecarta.com
+  - www.charleston-sc.gov
+  notes: On change; a human curates the values (05 §2)
+  auth: none
+  robots_required: true
+  status: proposed
+  owner: mojabbar
+- id: nws
+  catalog_id: S-16
+  name: NWS API (weather, alerts)
+  kind: rest
+  url: https://api.weather.gov/
+  license: Public domain; free for any purpose
+  store_policy: ttl:180d
+  store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
+  attribution_text: 'Source: National Weather Service'
+  notes: Live; requires a User-Agent with a contact (D-18)
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: noaa-tides
+  catalog_id: S-17
+  name: NOAA CO-OPS, Charleston station 8665530
+  kind: rest
+  url: https://api.tidesandcurrents.noaa.gov/api/prod/datagetter
+  license: Public domain
+  store_policy: ttl:180d
+  store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
+  attribution_text: 'Source: NOAA CO-OPS'
+  notes: Live, plus a monthly outlook
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: nhtsa-fars
+  catalog_id: S-18
+  name: NHTSA FARS CrashAPI (tri-county)
+  kind: rest
+  url: https://crashviewer.nhtsa.dot.gov/CrashAPI/crashes/GetCrashesByLocation
+  license: Public domain
+  store_policy: ttl:180d
+  store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
+  attribution_text: 'Source: NHTSA Fatality Analysis Reporting System'
+  notes: Returned 403 to automated fetch; don't evade it (03 §2.2). Annual, about a 1-year lag
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: charleston-arcgis-hubs
+  catalog_id: S-19
+  name: City of Charleston and BCDCOG (CHATS) ArcGIS Hub portals
+  kind: arcgis
+  url: https://data-charleston-sc.opendata.arcgis.com/
+  license: Standard Hub terms, per dataset
+  store_policy: none
+  store_policy_reason: 'Terms not yet reviewed (03 §2.4): keep only the checksum until the review sets a policy'
+  allowed_hosts:
+  - data-bcdcog.opendata.arcgis.com
+  - transportation.bcdcog.com
+  notes: Varies per dataset
+  auth: none
+  robots_required: false
+  status: proposed
+  owner: mojabbar
+- id: public-documents
+  catalog_id: S-20
+  name: Public documents (CARTA board packets, service changes)
+  kind: pdf
+  license: robots.txt check per host; cite facts with a verbatim quote and page
+  store_policy: ttl:180d
+  store_policy_reason: 'Public web page cited as fact evidence: snapshots kept 180 days, and pinned while a published fact
+    cites them'
+  notes: Ad hoc; one documents entry per URL (P5 Extractor)
+  auth: none
+  robots_required: true
+  status: proposed
+  owner: mojabbar

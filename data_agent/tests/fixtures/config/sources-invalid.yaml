@@ -1,0 +1,12 @@
+# A deliberately invalid registry: an html source must set robots_required (02 §5, 03 §2.4).
+sources:
+- id: bad-html
+  catalog_id: S-900
+  name: A page without a robots check
+  kind: html
+  url: https://example.test/page
+  store_policy: ttl:30d
+  store_policy_reason: fixture
+  robots_required: false
+  status: proposed
+  owner: test

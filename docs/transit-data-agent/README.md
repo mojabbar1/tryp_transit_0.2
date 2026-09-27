@@ -72,7 +72,7 @@ Rules for coding agents:
 | P0 Stabilize & secure | 1 | [phase-0-stabilize](./prompts/phase-0-stabilize.md) | G0 | ✅ Done 2026-09-25 (`fd52ce8`); R1 waived → P1 precondition | [#3](https://github.com/mojabbar1/tryp_transit_0.2/pull/3) |
 | P0B Next 16 / React 19 | 1 | [phase-0b-framework-upgrade](./prompts/phase-0b-framework-upgrade.md) | P0 | ✅ Done 2026-09-25 (`5a7833a`); exceptions in 05 §7 | [#4](https://github.com/mojabbar1/tryp_transit_0.2/pull/4) |
 | P1 Web seams & deterministic math | 2 | [phase-1-web-seams](./prompts/phase-1-web-seams.md) | P0B | ✅ Done 2026-09-27; provider checks simulated because no keys exist (05 §7). Transit stays `unavailable` until P4 | [#12](https://github.com/mojabbar1/tryp_transit_0.2/pull/12) · [#13](https://github.com/mojabbar1/tryp_transit_0.2/pull/13) · [#14](https://github.com/mojabbar1/tryp_transit_0.2/pull/14) |
-| P2 `data_agent` scaffold | 2 | [phase-2-data-agent-scaffold](./prompts/phase-2-data-agent-scaffold.md) | P0 (parallel with P0B, P1) | ⏳ | |
+| P2 `data_agent` scaffold | 2 | [phase-2-data-agent-scaffold](./prompts/phase-2-data-agent-scaffold.md) | P0 (parallel with P0B, P1) | ✅ Done 2026-09-27; Astra approved after 3 review rounds (05 §7). All 25 sources `proposed`, nothing enabled | [#15](https://github.com/mojabbar1/tryp_transit_0.2/pull/15) |
 | P3 Connectors (1 PR each) | 2 | [phase-3-connectors](./prompts/phase-3-connectors.md) | P2 | ⏳ `gtfs_static` ☐ `ntd_monthly` ☐ `census_acs` ☐ `eia_gas` ☐ `reference_facts` ☐ `scdot_*` ☐ `gtfs_rt_alerts` ☐ | |
 | P4a Metrics + read API | 2 | [phase-4 (PR 4a)](./prompts/phase-4-metrics-api-integration.md) | P3 (3.1, 3.2, 3.5) | ⏳ | |
 | P4b App integration | 2 | [phase-4 (PR 4b)](./prompts/phase-4-metrics-api-integration.md) | P1, P4a, 05 §2b | ⏳ | |
