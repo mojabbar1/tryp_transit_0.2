@@ -27,7 +27,7 @@
 |-------|--------|-------|---------|----------|---------------------------|
 | P0 Stabilize | `feat/tda-phase-0-stabilize` | G0 | **Opus** | **Astra** | secrets, bbox/reducer/redirect correctness |
 | P0B Framework upgrade | `feat/tda-phase-0b-framework` | P0 merged | **Opus** | **Astra** | behavior-neutrality, peer-dep conformance |
-| P1a Web seams: contracts + env (T1–T2) | `feat/tda-phase-1a-contracts` | P0B merged + real-key check | **Opus** | **Astra** | contract invariants (`basis` enum, signed `difference`); server-only env |
+| P1a Web seams: contracts + env (T1–T2) | `feat/tda-phase-1a-contracts` | P0B merged + provider check (simulated by maintainer decision, 2026-09-27; 05 §7) | **Opus** | **Astra** | contract invariants (`basis` enum, signed `difference`); server-only env |
 | P1b Web seams: domain math + `validate-claims` (T3, T5 validator + vectors) | `feat/tda-phase-1b-domain` | P1a merged | **Astra** | **Opus** | validator rejects swap/negation/unit vectors; fail-closed; DST; no invented values |
 | P1c Web seams: TomTom, LLM seam, route, UI (T4, T5 rest, T6–T10) | `feat/tda-phase-1c-route` | P1b merged | **Opus** | **Astra** | numbers by reference only; fail-closed fallback; additive response |
 | P2 Scaffold | `feat/tda-phase-2-scaffold` | P0 merged | **Opus** | **Astra** | reader-role grants, append-only + non-destructive rollback |

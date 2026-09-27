@@ -1,4 +1,19 @@
 import { StaticImageData } from 'next/image';
+import type { LatLng } from '@/lib/contracts/transit-insights';
+
+// The transit-insights types live in the zod contract; these re-exports keep the existing names.
+export type {
+  AdditionalRide,
+  Comparison,
+  IncentiveDetails,
+  Meta,
+  SourceRef,
+  TransitInsightRequest,
+  TransitInsightRequest as RequestBody,
+  TransitInsightResponse,
+} from '@/lib/contracts/transit-insights';
+
+export type LocationInterface = LatLng;
 
 export interface BackgroundPhotoProps {
   imgOne: StaticImageData;
@@ -17,64 +32,8 @@ export interface GeolocationContextProps {
   error: string | null;
 }
 
-export interface TrafficData {
-  flow: any;
-  incidents: any;
-}
-
-export interface LocationInterface {
-  lat: number;
-  lng: number;
-}
-
-export interface RequestBody {
-  departure: LocationInterface;
-  destination: LocationInterface;
-  timeToDestination: string;
-}
-
-export interface TravelContextProps {
-  travelTime: number | null;
-  trafficDensity: string | null;
-  costSavings: number | null;
-  setTravelData: (data: {
-    travelTime: number | null;
-    trafficDensity: string | null;
-    costSavings: number | null;
-  }) => void;
-}
-
 export interface BusStopCoordinates {
   [key: string]: LocationInterface;
-}
-
-// Enhanced interfaces for Phase 2 transit insights
-export interface IncentiveDetails {
-  type: 'eCredit' | 'partnerDiscount' | 'funReward';
-  description: string;
-  value: string;
-}
-
-export interface AdditionalRide {
-  departureTime?: string; // HH:MM format
-  travelTime: number;
-  trafficDensity: 'Light' | 'Medium' | 'Heavy';
-}
-
-export interface TransitInsightResponse {
-  travelTime: number | null;
-  trafficDensity: 'Light' | 'Medium' | 'Heavy' | null;
-  costSavingsPerTrip: string | null;
-  nudgeMessage: string | null;
-  incentiveDetails: IncentiveDetails | null;
-  additionalRides: AdditionalRide[] | null;
-}
-
-// Form submission interface
-export interface TransitInsightRequest {
-  fromLocation: string;
-  toLocation: string;
-  timeToDestination: string; // ISO string
 }
 
 // Error response interface

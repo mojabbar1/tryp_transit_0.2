@@ -1,11 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-
-interface AdditionalRide {
-  travelTime: number | null;
-  trafficDensity: string | null;
-}
+import type { AdditionalRide } from '@/lib/contracts/transit-insights';
 
 interface TravelContextProps {
   travelTime: number | null;
