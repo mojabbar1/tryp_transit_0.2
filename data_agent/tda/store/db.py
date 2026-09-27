@@ -9,6 +9,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from tda.config.settings import Settings, get_settings
 
 
+class MissingDatabaseURL(RuntimeError):
+    """A command needs a database URL that isn't configured; the message names the setting."""
+
+
 def sqlalchemy_url(url: str) -> str:
     """Convert a plain ``postgresql://`` URL into SQLAlchemy's psycopg 3 form."""
     parsed = make_url(url)
@@ -20,7 +24,7 @@ def sqlalchemy_url(url: str) -> str:
 def make_engine(url: str | None, *, purpose: str, **kwargs: object) -> Engine:
     """An engine for ``url``, or a clear error naming the setting that is missing."""
     if not url:
-        raise RuntimeError(f"no database URL configured for {purpose}")
+        raise MissingDatabaseURL(f"no database URL configured for {purpose}")
     return create_engine(sqlalchemy_url(url), pool_pre_ping=True, **kwargs)
 
 

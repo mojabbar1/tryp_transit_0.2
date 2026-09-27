@@ -12,15 +12,25 @@ grant, role, and append-only tests can't be silently skipped.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+import structlog
 from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
 from tda.store.db import sqlalchemy_url
+
+
+@pytest.fixture(autouse=True)
+def _default_logging() -> Iterator[None]:
+    """CLI tests configure structlog; put its defaults back so no test logs into another's stream."""
+    yield
+    structlog.reset_defaults()
+
 
 DB_URL = os.environ.get("TDA_TEST_DATABASE_URL")
 REQUIRE_DB = os.environ.get("TDA_REQUIRE_DB_TESTS") == "1"

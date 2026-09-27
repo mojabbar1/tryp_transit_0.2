@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     default_rate_limit_per_min: int = Field(30, gt=0)
     max_response_mb: int = Field(200, gt=0)
     api_port: int = Field(8081, gt=0, lt=65536)
+    log_json: bool = False
+    """JSON log lines (containers) instead of the console format (a terminal)."""
 
     @field_validator("user_agent")
     @classmethod

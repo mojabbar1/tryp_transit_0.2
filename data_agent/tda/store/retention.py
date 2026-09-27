@@ -34,6 +34,10 @@ def protected_snapshots(connection: Connection, source_id: str) -> set[str]:
     return set(rows)
 
 
-def apply_retention(connection: Connection, store: RawStore, source: Source) -> RetentionReport:
+def apply_retention(
+    connection: Connection, store: RawStore, source: Source, *, dry_run: bool = False
+) -> RetentionReport:
     """Enforce ``source.store_policy`` on its snapshots, keeping those cited by published facts."""
-    return store.enforce_retention(source, protected=protected_snapshots(connection, source.id))
+    return store.enforce_retention(
+        source, protected=protected_snapshots(connection, source.id), dry_run=dry_run
+    )

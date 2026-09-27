@@ -126,11 +126,13 @@ class RawStore:
             if path.is_file() and match and match["source"] == source_id:
                 yield f"{SCHEME}{key}", date(int(match["y"]), int(match["m"]), int(match["d"]))
 
-    def enforce_retention(self, source: Source, *, protected: Collection[str] = ()) -> RetentionReport:
+    def enforce_retention(
+        self, source: Source, *, protected: Collection[str] = (), dry_run: bool = False
+    ) -> RetentionReport:
         """Delete snapshots older than the source's TTL (all of them for ``none``), except ``protected``.
 
         ``protected`` holds the URIs cited by published facts (see ``tda.store.retention``); they are kept
-        regardless of TTL (02 §7.4). ``indefinite`` deletes nothing.
+        regardless of TTL (02 §7.4). ``indefinite`` deletes nothing. ``dry_run`` reports without deleting.
         """
         report = RetentionReport(source.id)
         if source.store_policy == "indefinite":
@@ -145,6 +147,7 @@ class RawStore:
             elif uri in protected:
                 report.protected.append(uri)
             else:
-                self.path(uri).unlink()
+                if not dry_run:
+                    self.path(uri).unlink()
                 report.deleted.append(uri)
         return report
