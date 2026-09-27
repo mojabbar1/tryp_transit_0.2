@@ -26,22 +26,23 @@
 │                    (src/, port 3000)                         │
 ├─────────────────────────────────────────────────────────────┤
 │  Pages          │  API Routes           │  Shared Libs       │
-│  - /find-rides  │  - /transit-insights  │  - lib/api/        │
-│  - /dashboard   │  - /transit-demo      │  - lib/utils.ts    │
-│  - /routes      │                       │  - contexts/       │
-└────────┬────────┴───────────┬───────────┴────────────────────┘
-         │                    │
-         │                    ▼
-         │         ┌──────────────────────┐
-         │         │   External APIs       │
-         │         │  - TomTom (traffic)   │
-         │         │  - Gemini/OpenAI (AI) │
-         │         └──────────────────────┘
-         │
-         ▼
+│  - /find-rides  │  - /transit-insights  │  - lib/insights/   │
+│  - /dashboard   │    (v2 engine)        │  - lib/domain/     │
+│  - /routes      │  - /transit-demo      │  - lib/llm/        │
+│                 │    (demo mode only)   │  - lib/api/ (TomTom)│
+└─────────────────┴───────────┬───────────┴────────────────────┘
+                              │
+                              ▼
+                   ┌──────────────────────────────┐
+                   │   External APIs               │
+                   │  - TomTom (route, flow)       │
+                   │  - Gemini/OpenAI (narration   │
+                   │    by reference only)         │
+                   └──────────────────────────────┘
+
 ┌─────────────────────────────────────────────────────────────┐
-│                  Python ML Service                           │
-│              (model_service/, port 5001)                     │
+│     Python ML Service (expansion stage; not called by the    │
+│     web app since P1, F-07)  (model_service/, port 5001)     │
 ├─────────────────────────────────────────────────────────────┤
 │  Flask App     │  Prediction Models    │  Data               │
 │  - /health     │  - Hourly ridership   │  - MTA CSV files    │
@@ -55,19 +56,24 @@
 
 ### Frontend (`src/`)
 
-Next.js 16 (App Router, Turbopack) on React 19; requires Node.js ≥ 20.9 (`engines` in `src/package.json`; CI uses Node 22). Lint runs through the ESLint 9 CLI (`src/eslint.config.mjs`), not `next lint`.
+Next.js 16 (App Router, Turbopack) on React 19; requires Node.js ≥ 22 (`engines` in `src/package.json`; the `openai` 7 SDK needs it; CI uses Node 22). Lint runs through the ESLint 9 CLI (`src/eslint.config.mjs`), not `next lint`.
 
 | Directory | Purpose |
 |-----------|---------|
 | `app/` | Next.js App Router pages and API routes |
-| `app/api/transit-insights/` | **Main API** — calls TomTom, AI, and ML service |
-| `app/api/transit-insights-demo/` | Mock endpoint for demos (no API keys needed) |
+| `app/api/transit-insights/` | **Main API**: a thin wrapper around the v2 engine (`lib/insights/v2.ts`); TomTom plus approved assumptions, with LLM narration by reference |
+| `app/api/transit-insights-demo/` | Demo scenarios, only with `NEXT_PUBLIC_DEMO_MODE=true` (404 otherwise) |
 | `app/data/` | Static data (bus stops, coordinates) |
 | `components/` | Reusable React components |
 | `components/ui/` | Shadcn/UI primitives |
 | `contexts/` | React Context providers (auth, geolocation, travel) |
 | `lib/` | Utilities and shared code |
-| `lib/api/` | **API clients** for Gemini, OpenAI, TomTom, ridership |
+| `lib/api/` | TomTom client (route with `arriveAt`, flow, incidents) |
+| `lib/contracts/` | zod contract for `/api/transit-insights` (single source of truth) |
+| `lib/domain/` | Pure deterministic math and the approved assumptions |
+| `lib/llm/` | Server-only LLM seam: providers, narration, claim validator, template |
+| `lib/insights/` | The v2 engine and narration facts |
+| `lib/env.ts` | Server-only, zod-validated environment |
 | `types/` | TypeScript interfaces |
 | `validation/` | Zod schemas for form validation |
 | `__tests__/` | Jest test suite |

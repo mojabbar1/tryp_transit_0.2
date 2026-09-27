@@ -5,7 +5,7 @@
 This is the clean, production-ready version of Tryp Transit. All legacy files and duplicate directories have been removed.
 
 ### Prerequisites
-- Node.js 20.9+ (Node 22 LTS recommended; CI uses Node 22)
+- Node.js 22+ (required by the `openai` 7 SDK; CI uses Node 22)
 - Python 3.11+
 - npm or yarn
 

@@ -69,7 +69,7 @@ python app.py
 ```
 
 #### 2. Frontend Setup
-Requires **Node.js ≥ 20.9** (Node 22 LTS recommended; CI uses Node 22).
+Requires **Node.js ≥ 22** (the `openai` 7 SDK needs it; CI uses Node 22).
 ```bash
 cd src
 
