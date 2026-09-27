@@ -10,8 +10,7 @@ import { z } from 'zod';
  * separate, client-readable flag and is deliberately not read here.
  */
 
-// D-4 defaults. They equal the P0 clients' constants in lib/api (asserted in the env tests); P1c
-// replaces those clients with the LLM seam, which reads models from here.
+// D-4 defaults; the LLM seam (src/lib/llm) reads the models from here.
 const D4_GEMINI_MODEL = 'gemini-3.8-flash';
 const D4_OPENAI_MODEL = 'gpt-5.6-terra';
 const DEFAULT_LLM_TIMEOUT_MS = 8000;
@@ -77,6 +76,8 @@ function defineSecret(target: object, key: string, value: string | undefined) {
   Object.defineProperty(target, key, { value, enumerable: false });
 }
 
+let warnedLegacyTomTomName = false;
+
 export function parseEnv(source: Record<string, string | undefined>): ServerEnv {
   const result = RawEnvSchema.safeParse(source);
   if (!result.success) {
@@ -101,6 +102,10 @@ export function parseEnv(source: Record<string, string | undefined>): ServerEnv 
   };
   defineSecret(env, 'geminiApiKey', raw.GEMINI_API_KEY);
   defineSecret(env, 'openaiApiKey', raw.OPENAI_API_KEY);
+  if (!raw.TOMTOM_API_KEY && raw.NEXT_PUBLIC_TOMTOM_API_KEY && !warnedLegacyTomTomName) {
+    warnedLegacyTomTomName = true;
+    console.warn('NEXT_PUBLIC_TOMTOM_API_KEY is deprecated; rename it to TOMTOM_API_KEY (server-only).');
+  }
   defineSecret(env, 'tomtomApiKey', raw.TOMTOM_API_KEY ?? raw.NEXT_PUBLIC_TOMTOM_API_KEY);
   return Object.freeze(env) as ServerEnv;
 }

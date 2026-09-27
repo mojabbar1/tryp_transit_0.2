@@ -77,7 +77,6 @@ export default function TestPage() {
         <h3 className="font-semibold text-yellow-800 mb-2">What this checks:</h3>
         <ol className="list-decimal list-inside text-yellow-700 space-y-1">
           <li>The web app is running and its API routes respond</li>
-          <li>Whether the ridership prediction service is reachable (up or down)</li>
           <li>Whether the LLM and traffic API keys are configured (yes/no only; values are never shown)</li>
           <li>Check the server logs for detailed error messages</li>
         </ol>

@@ -3,15 +3,6 @@
  */
 
 import { GET } from '@/app/api/health/route';
-import { checkRidershipServiceHealth } from '@/lib/api/ridership';
-
-jest.mock('@/lib/api/ridership', () => ({
-  checkRidershipServiceHealth: jest.fn(),
-}));
-
-const mockedRidershipHealth = checkRidershipServiceHealth as jest.MockedFunction<
-  typeof checkRidershipServiceHealth
->;
 
 const ENV_NAMES = [
   'USE_GEMINI',
@@ -32,7 +23,6 @@ describe('GET /api/health', () => {
 
   beforeEach(() => {
     for (const name of ENV_NAMES) delete process.env[name];
-    mockedRidershipHealth.mockReset();
   });
 
   afterAll(() => {
@@ -42,30 +32,17 @@ describe('GET /api/health', () => {
     }
   });
 
-  it('reports ok with the ridership service up and nothing configured', async () => {
-    mockedRidershipHealth.mockResolvedValue(true);
-
+  it('reports ok with nothing configured', async () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       status: 'ok',
-      checks: { ridershipService: 'up' },
       configured: { llm: false, traffic: false },
     });
   });
 
-  it('reports the ridership service as down when the health probe fails', async () => {
-    mockedRidershipHealth.mockResolvedValue(false);
-
-    const body = await (await GET()).json();
-
-    expect(body.status).toBe('ok');
-    expect(body.checks.ridershipService).toBe('down');
-  });
-
   it('checks the Gemini key when USE_GEMINI is "true"', async () => {
-    mockedRidershipHealth.mockResolvedValue(true);
     process.env.USE_GEMINI = 'true';
     process.env.OPENAI_API_KEY = PLACEHOLDER;
 
@@ -76,7 +53,6 @@ describe('GET /api/health', () => {
   });
 
   it('checks the OpenAI key when USE_GEMINI is not "true"', async () => {
-    mockedRidershipHealth.mockResolvedValue(true);
     process.env.GEMINI_API_KEY = PLACEHOLDER;
 
     expect((await (await GET()).json()).configured.llm).toBe(false);
@@ -86,14 +62,12 @@ describe('GET /api/health', () => {
   });
 
   it('treats the server-only TOMTOM_API_KEY as traffic configured', async () => {
-    mockedRidershipHealth.mockResolvedValue(true);
     process.env.TOMTOM_API_KEY = PLACEHOLDER;
 
     expect((await (await GET()).json()).configured.traffic).toBe(true);
   });
 
   it('exposes only booleans, never configuration values', async () => {
-    mockedRidershipHealth.mockResolvedValue(true);
     process.env.USE_GEMINI = 'true';
     process.env.GEMINI_API_KEY = PLACEHOLDER;
     process.env.OPENAI_API_KEY = PLACEHOLDER;

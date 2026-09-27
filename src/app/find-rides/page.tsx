@@ -88,8 +88,11 @@ const Dashboard = () => {
       setTravelData({
         travelTime: insights?.travelTime ?? null,
         trafficDensity: insights?.trafficDensity ?? null,
-        costSavings: toNumberOrNull(insights?.costSavingsPerTrip),
+        costSavings: toNumberOrNull(insights?.comparison?.costUsd?.difference ?? insights?.costSavingsPerTrip),
         additionalRides: insights?.additionalRides ?? [],
+        incentiveDetails: insights?.incentiveDetails ?? null,
+        offerActive: insights?.meta?.offerActive === true,
+        isDemo: insights?.meta?.demo === true,
       });
       succeeded = true;
     } catch (error) {

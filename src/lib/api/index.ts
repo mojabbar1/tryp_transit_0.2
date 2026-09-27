@@ -1,11 +1,8 @@
 /**
- * API utilities barrel export
- * 
+ * API utilities barrel export. The LLM seam lives in @/lib/llm (server-only), not here.
+ *
  * Usage:
- *   import { callGemini, callOpenAI, getTrafficData } from '@/lib/api';
+ *   import { getDriveRoute, getTrafficData } from '@/lib/api';
  */
 
-export * from './gemini';
-export * from './openai';
 export * from './tomtom';
-export * from './ridership';

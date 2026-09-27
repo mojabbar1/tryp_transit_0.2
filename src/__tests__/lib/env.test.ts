@@ -6,8 +6,6 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { inspect } from 'util';
 import { parseEnv } from '@/lib/env';
-import { DEFAULT_GEMINI_MODEL } from '@/lib/api/gemini';
-import { DEFAULT_OPENAI_MODEL } from '@/lib/api/openai';
 
 const GEMINI_KEY = 'placeholder-gemini-value';
 const OPENAI_KEY = 'placeholder-openai-value';
@@ -35,12 +33,6 @@ describe('parseEnv', () => {
       dataAgentBaseUrl: undefined,
     });
     expect([env.geminiApiKey, env.openaiApiKey, env.tomtomApiKey]).toEqual([undefined, undefined, undefined]);
-  });
-
-  it('uses the same D-4 model defaults as the P0 clients', () => {
-    const env = parseEnv({});
-    expect(env.geminiModel).toBe(DEFAULT_GEMINI_MODEL);
-    expect(env.openaiModel).toBe(DEFAULT_OPENAI_MODEL);
   });
 
   it.each([
@@ -83,6 +75,21 @@ describe('parseEnv', () => {
   it('prefers TOMTOM_API_KEY and falls back to the legacy NEXT_PUBLIC_ name', () => {
     expect(parseEnv({ TOMTOM_API_KEY: TOMTOM_KEY, NEXT_PUBLIC_TOMTOM_API_KEY: LEGACY_TOMTOM_KEY }).tomtomApiKey).toBe(TOMTOM_KEY);
     expect(parseEnv({ NEXT_PUBLIC_TOMTOM_API_KEY: LEGACY_TOMTOM_KEY }).tomtomApiKey).toBe(LEGACY_TOMTOM_KEY);
+  });
+
+  it('warns once, without the value, when only the legacy TomTom name is set', async () => {
+    await jest.isolateModulesAsync(async () => {
+      const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+      const { parseEnv: fresh } = await import('@/lib/env');
+      fresh({ TOMTOM_API_KEY: TOMTOM_KEY, NEXT_PUBLIC_TOMTOM_API_KEY: LEGACY_TOMTOM_KEY });
+      expect(warn).not.toHaveBeenCalled();
+      fresh({ NEXT_PUBLIC_TOMTOM_API_KEY: LEGACY_TOMTOM_KEY });
+      fresh({ NEXT_PUBLIC_TOMTOM_API_KEY: LEGACY_TOMTOM_KEY });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toContain('rename it to TOMTOM_API_KEY');
+      expect(String(warn.mock.calls[0][0])).not.toContain(LEGACY_TOMTOM_KEY);
+      warn.mockRestore();
+    });
   });
 
   it('keeps secrets readable but out of JSON, console output, and key listings', () => {

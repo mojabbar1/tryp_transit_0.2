@@ -45,9 +45,6 @@ export interface ApiErrorResponse {
 // GET /api/health — booleans only, never configuration values
 export interface HealthResponse {
   status: 'ok';
-  checks: {
-    ridershipService: 'up' | 'down';
-  };
   configured: {
     llm: boolean;
     traffic: boolean;

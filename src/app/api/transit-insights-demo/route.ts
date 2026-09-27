@@ -1,111 +1,33 @@
 /**
- * Transit Insights Demo/Mock API Route
- * 
- * Use this endpoint for demos without requiring API keys.
- * Returns deterministic, pre-configured responses for investor presentations.
- * 
+ * Transit Insights Demo API Route (demo mode only)
+ *
+ * Returns deterministic demo scenarios for walkthroughs without API keys. It answers only while
+ * NEXT_PUBLIC_DEMO_MODE=true; otherwise it returns 404, so no invented numbers reach live mode.
+ *
  * Usage:
  *   POST /api/transit-insights-demo
- *   Body: { "demoScenario": "rush-hour" | "weekend" | "night-out" }
- *   
- * Or pass regular trip data for a generic mock response.
+ *   Body: { "demoScenario": "rush-hour" | "weekend" | "night-out" }   (anything else falls back to "rush-hour")
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { TransitInsightResponse } from '@/types/interfaces';
-
-// Demo scenarios with deterministic responses for consistent investor demos
-const demoScenarios: Record<string, TransitInsightResponse> = {
-  'rush-hour': {
-    travelTime: 22,
-    trafficDensity: 'Heavy',
-    costSavingsPerTrip: '4.25',
-    nudgeMessage: 'Beat the rush hour traffic! Take the express bus and arrive stress-free while others sit in gridlock for 45+ minutes.',
-    incentiveDetails: {
-      type: 'eCredit',
-      description: 'Earn $2.00 transit credit for choosing public transportation during peak hours',
-      value: '$2.00'
-    },
-    additionalRides: [
-      {
-        departureTime: '08:15',
-        travelTime: 25,
-        trafficDensity: 'Heavy'
-      },
-      {
-        departureTime: '08:45',
-        travelTime: 28,
-        trafficDensity: 'Heavy'
-      }
-    ]
-  },
-  'weekend': {
-    travelTime: 35,
-    trafficDensity: 'Light',
-    costSavingsPerTrip: '2.75',
-    nudgeMessage: 'Perfect weekend adventure! Enjoy the scenic coastal route to Isle of Palms while saving money and reducing your carbon footprint.',
-    incentiveDetails: {
-      type: 'partnerDiscount',
-      description: '20% off at participating Isle of Palms restaurants and shops',
-      value: '20% discount'
-    },
-    additionalRides: [
-      {
-        departureTime: '13:30',
-        travelTime: 32,
-        trafficDensity: 'Light'
-      },
-      {
-        departureTime: '14:30',
-        travelTime: 38,
-        trafficDensity: 'Medium'
-      }
-    ]
-  },
-  'night-out': {
-    travelTime: 18,
-    trafficDensity: 'Light',
-    costSavingsPerTrip: '3.50',
-    nudgeMessage: 'Safe night out guaranteed! Skip the parking hassles and ride safely with well-lit stops and late-night security.',
-    incentiveDetails: {
-      type: 'funReward',
-      description: 'Free drink token at participating downtown bars and clubs',
-      value: '1 free drink'
-    },
-    additionalRides: [
-      {
-        departureTime: '23:00',
-        travelTime: 16,
-        trafficDensity: 'Light'
-      },
-      {
-        departureTime: '00:00',
-        travelTime: 15,
-        trafficDensity: 'Light'
-      }
-    ]
-  }
-};
+import { isDemoMode } from '@/lib/demo-mode';
+import { demoResponse, isDemoScenario } from '@/lib/demo/scenarios';
+import type { ApiErrorResponse, TransitInsightResponse } from '@/types/interfaces';
 
 export async function POST(req: NextRequest) {
+  if (!isDemoMode()) {
+    return NextResponse.json<ApiErrorResponse>({ error: 'Demo mode is off' }, { status: 404 });
+  }
   try {
-    const body = await req.json();
-    const { demoScenario } = body;
+    const body: unknown = await req.json().catch(() => ({}));
+    const requested = typeof body === 'object' && body !== null ? (body as { demoScenario?: unknown }).demoScenario : undefined;
 
-    // Add artificial delay to showcase loading experience
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // Artificial delay to showcase the loading experience
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    if (demoScenario && demoScenarios[demoScenario]) {
-      return NextResponse.json<TransitInsightResponse>(demoScenarios[demoScenario]);
-    }
-
-    // Fallback to default scenario if not found
-    return NextResponse.json<TransitInsightResponse>(demoScenarios['rush-hour']);
+    return NextResponse.json<TransitInsightResponse>(demoResponse(isDemoScenario(requested) ? requested : 'rush-hour', new Date()));
   } catch (error) {
-    console.error('Demo API error:', error);
-    return NextResponse.json(
-      { error: 'Demo service temporarily unavailable' },
-      { status: 500 }
-    );
+    console.error('Demo API error:', error instanceof Error ? error.name : typeof error);
+    return NextResponse.json<ApiErrorResponse>({ error: 'Demo service temporarily unavailable' }, { status: 500 });
   }
 }

@@ -9,37 +9,27 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { useTravelContext } from '@/contexts/travel-context';
+import { formatCostDifference } from '@/lib/format';
+import { shouldLeaveRoutesPage, visibleIncentive } from '@/lib/trip-view';
 import { isNil } from '@/lib/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
 const RoutesPage = () => {
-  const { costSavings, trafficDensity, travelTime } = useTravelContext();
+  const trip = useTravelContext();
+  const { hasTrip, costSavings, trafficDensity, travelTime, isDemo } = trip;
   const router = useRouter();
+  const costText = formatCostDifference(costSavings);
+  const incentive = visibleIncentive(trip);
 
   useEffect(() => {
-    // Explicit null/undefined checks: a legitimate costSavings of 0 must render, not redirect
-    if (isNil(costSavings) || isNil(trafficDensity) || isNil(travelTime)) {
+    // Leave only when no trip was loaded. A successful trip can have every measurement unavailable
+    // (transit time before GTFS, D-21; cost or traffic without TomTom), and it still renders.
+    if (shouldLeaveRoutesPage({ hasTrip })) {
       router.push('/dashboard');
     }
-  }, [costSavings, trafficDensity, travelTime, router]);
-
-  const getIncentive = (density: string | null) => {
-    if (!density) {
-      return 'No incentive';
-    }
-    switch (density.toLowerCase()) {
-      case 'light':
-        return '$1 e-card';
-      case 'medium':
-        return '$2 e-card';
-      case 'heavy':
-        return '$4 e-card';
-      default:
-        return 'No incentive';
-    }
-  };
+  }, [hasTrip, router]);
 
   const getCurrentTime = () => new Date();
 
@@ -58,14 +48,15 @@ const RoutesPage = () => {
 
   return (
     <>
-      <div className="p-6 bg-secondary text-secondary-foreground text-center">
-        <h2 className="text-3xl font-bold">DID YOU KNOW?</h2>
-        <p className="mt-2 text-lg">
-          On average, users save{' '}
-          <span className="font-bold">{costSavings}</span> on this trip by
-          taking the <span className="font-bold">bus</span> versus driving.
-        </p>
-      </div>
+      {costText && (
+        <div className="p-6 bg-secondary text-secondary-foreground text-center">
+          <h2 className="text-3xl font-bold">DID YOU KNOW?</h2>
+          <p className="mt-2 text-lg">
+            Taking the <span className="font-bold">bus</span> versus driving on this trip:{' '}
+            <span className="font-bold">{costText}</span> (base fare vs. fuel and maintenance).
+          </p>
+        </div>
+      )}
       <div className="flex flex-col items-center mx-10 mt-10 lg:mx-24">
         <h1 className="text-primary font-bold text-4xl mb-8">MY REWARDS</h1>
         <Card className="w-full max-w-2xl bg-primary-foreground rounded-lg overflow-hidden mb-8 shadow-2xl">
@@ -78,18 +69,24 @@ const RoutesPage = () => {
             <div className="grid grid-cols-1 gap-4">
               <div className="flex flex-col items-center bg-primary p-4 rounded-lg shadow-md w-full">
                 <p className="text-lg text-white font-medium">
-                  You should arrive at the bus stop by:{' '}
-                  <span className="font-bold">{calculateArrivalTime()}</span>
+                  {isNil(travelTime) ? (
+                    "Bus timing isn't available yet. Check CARTA's schedule."
+                  ) : (
+                    <>
+                      You should arrive at the bus stop by:{' '}
+                      <span className="font-bold">{calculateArrivalTime()}</span>
+                    </>
+                  )}
                 </p>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
               <div className="flex flex-col items-center bg-secondary p-4 rounded-lg shadow-md">
                 <p className="text-lg font-medium text-secondary-foreground">
-                  Traffic Density
+                  Traffic now
                 </p>
                 <p className="text-2xl text-primary-foreground font-bold">
-                  {trafficDensity}
+                  {trafficDensity ?? 'Unavailable'}
                 </p>
               </div>
               <div className="flex flex-col items-center bg-secondary p-4 rounded-lg shadow-md">
@@ -97,17 +94,20 @@ const RoutesPage = () => {
                   Travel Time
                 </p>
                 <p className="text-2xl text-primary-foreground font-bold">
-                  {travelTime} minutes
+                  {isNil(travelTime) ? 'Unavailable' : `${travelTime} minutes`}
                 </p>
               </div>
-              <div className="flex flex-col items-center bg-secondary p-4 rounded-lg shadow-md">
-                <p className="text-lg font-medium text-secondary-foreground">
-                  Incentive
-                </p>
-                <p className="text-2xl text-primary-foreground font-bold">
-                  {getIncentive(trafficDensity)}
-                </p>
-              </div>
+              {/* Only a reward the response carried with an active offer (D-25) */}
+              {incentive && (
+                <div className="flex flex-col items-center bg-secondary p-4 rounded-lg shadow-md">
+                  <p className="text-lg font-medium text-secondary-foreground">
+                    Incentive
+                    {isDemo && <span className="ml-1 px-2 py-0.5 bg-purple-200 text-purple-800 text-xs rounded-full">Demo</span>}
+                  </p>
+                  <p className="text-2xl text-primary-foreground font-bold">{incentive.value}</p>
+                  <p className="text-sm text-secondary-foreground text-center">{incentive.description}</p>
+                </div>
+              )}
             </div>
           </CardContent>
           <CardFooter className="p-4 bg-secondary flex justify-between">
