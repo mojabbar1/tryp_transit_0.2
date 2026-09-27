@@ -71,6 +71,11 @@ class Settings(BaseSettings):
         return self
 
     @property
+    def proposals_dir(self) -> Path:
+        """Where approved source proposals land as suggested ``sources.yaml`` entries (committed via PR)."""
+        return self.project_root / "proposals"
+
+    @property
     def config_dir(self) -> Path:
         """Directory holding ``sources.yaml`` and ``regions/``."""
         return self.project_root / "tda" / "config"
