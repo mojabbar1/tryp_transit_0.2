@@ -60,12 +60,22 @@ def cli_errors[F: Callable[..., Any]](fn: F) -> F:
             return fn(*args, **kwargs)
         except EXPECTED as error:
             message = str(error).strip().splitlines()[0] if str(error).strip() else type(error).__name__
-            if isinstance(error, OperationalError):
+            if isinstance(error, ValidationError):
+                message = _validation_summary(error)
+            elif isinstance(error, OperationalError):
                 message = f"database unreachable: {message}"
             typer.secho(f"error: {message}", err=True, fg="red")
             raise typer.Exit(2) from None
 
     return wrapper  # type: ignore[return-value]
+
+
+def _validation_summary(error: ValidationError, limit: int = 5) -> str:
+    """Every reason on one line, e.g. ``sources.3: Value error, source x: html ... robots_required``."""
+    details = error.errors(include_url=False, include_input=False)
+    parts = [f"{'.'.join(str(p) for p in d['loc']) or error.title}: {d['msg']}" for d in details[:limit]]
+    more = f" (+{len(details) - limit} more)" if len(details) > limit else ""
+    return f"invalid {error.title}: " + "; ".join(parts) + more
 
 
 def whoami() -> str:
