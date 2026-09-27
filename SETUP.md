@@ -120,10 +120,11 @@ tryp_transit_v0.2/
 
 Create `.env.local` in the `src/` directory (optional for testing):
 ```env
-OPENAI_API_KEY=your_openai_key
+OPENAI_API_KEY=your_openai_key       # optional: without an LLM key, narration uses the template
 TOMTOM_API_KEY=your_tomtom_key
-RIDERSHIP_API_BASE_URL=http://localhost:5001
+# NEXT_PUBLIC_DEMO_MODE=true         # enables the demo scenarios
 ```
+See `src/.env.example` for every setting. The web app doesn't call `model_service`.
 
 ### 🐳 Docker Deployment
 

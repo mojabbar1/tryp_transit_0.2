@@ -4,6 +4,7 @@
 
 ### ✅ Environment Configuration
 - [ ] Copy `src/.env.example` to `src/.env.local`
+- [ ] Set `NEXT_PUBLIC_DEMO_MODE=true` in `.env.local` (the demo scenarios are hidden and `/api/transit-insights-demo` returns 404 otherwise); restart `npm run dev` after changing it
 - [ ] Add OpenAI API key to `.env.local`
 - [ ] Add TomTom API key to `.env.local`
 - [ ] Verify both services are running (ports 3000 and 5001)

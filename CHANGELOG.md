@@ -2,6 +2,40 @@
 
 All notable changes to the Tryp Transit project are documented here.
 
+## [0.3.0-alpha.1] - 2026-09-27 — Web seams and deterministic trip math (Phase 1)
+
+P1 shipped as three PRs: #12 (contracts and env), #13 (domain math and the claim validator), and the route PR
+(TomTom, the LLM seam, the route, and the UI). **Trip numbers are now computed, never invented.**
+
+- **One engine** (`src/lib/insights/v2.ts`). The old LLM prompt that produced travel times, savings, and rewards
+  is deleted, with no switch back (D-27); rollback is reverting the PR.
+- **Deterministic math** from TomTom (an `arriveAt` route, current flow, and incidents, each with a 5 s timeout,
+  returning partial data on failure) and the approved 05 §2 assumptions: a signed marginal trip cost that is
+  never clamped, and a "Traffic now" density.
+- **Honest gaps.**
+  - Transit timing is `unavailable` until GTFS (D-21), so `travelTime` is null and `additionalRides` is empty.
+  - CO2 is omitted because there is no bus distance yet.
+  - Parking is omitted because its applicability isn't approved.
+  - Each gap is a snake_case code in `meta.degraded`.
+- **Narration by reference.** The LLM (Gemini via `@google/genai`, OpenAI via the Responses API, both with strict
+  JSON) references facts by slot and never emits a digit. A validator rejects everything else, and the
+  deterministic template takes over (fail closed).
+- **Rewards and demo.** `incentiveDetails` appears only with an active offer (D-25). The demo scenarios appear
+  only with `NEXT_PUBLIC_DEMO_MODE=true`, and they are badged in the UI.
+- **Contract.** A zod contract in `src/lib/contracts/transit-insights.ts`. The legacy fields keep their types;
+  `comparison` and `meta` are additive.
+- **Env.** `src/lib/env.ts` is server-only and validated.
+  - New: `LLM_PROVIDER`, `LLM_TIMEOUT_MS`, `REGION_TIMEZONE`, `DATA_AGENT_BASE_URL` and
+    `NEXT_PUBLIC_DEMO_MODE`.
+  - Removed: `RIDERSHIP_API_BASE_URL`. The web app calls no prediction service (F-07), so `/api/health`
+    no longer probes one.
+- **Dependencies.** `@google/genai` ^2.23 replaces `@google/generative-ai`; `openai` goes from ^4.52 to ^7.20;
+  `server-only` is added. **Node ≥ 22 is now required** (openai 7 needs it, and Node 20 is end-of-life).
+- **UI.** "Transit timing unavailable", a signed "save $x" / "costs $x more", "Traffic now", and "Live traffic
+  unavailable". The routes page no longer derives a bus-stop time from an invented bus time.
+- **Verification caveat.** The maintainer has no API keys, so provider behavior was verified only against a
+  local simulator whose replies the builder authored (05 §7). Real-provider behavior is still unverified.
+
 ## [0.2.3] - 2026-09-25 — Framework upgrade (Phase 0B)
 
 - **Next.js 14.2.35 → 16.3.5 and React 18 → 19.3.0** (`@types/react` 19), via `@next/codemod@16.3.5 upgrade`.

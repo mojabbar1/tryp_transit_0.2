@@ -95,7 +95,7 @@ npm run lint
 - **TomTom API Key**: Get from [TomTom Developer](https://developer.tomtom.com/)
 
 ### AI Provider Toggle
-The app supports both Gemini and OpenAI. Set `USE_GEMINI=true` to use Gemini (default), or `USE_GEMINI=false` for OpenAI.
+Narration can use Gemini or OpenAI. Set `LLM_PROVIDER=gemini|openai|none`; when it's unset, the legacy `USE_GEMINI=true|false` still selects the provider. Numbers never come from the LLM: with no key (or `none`), trips still return deterministic figures with template narration.
 
 ### Frontend (`src/.env.local`)
 ```env
@@ -111,9 +111,10 @@ GEMINI_API_KEY="your_gemini_api_key_here"
 # Traffic Data (server-only; the legacy NEXT_PUBLIC_TOMTOM_API_KEY name is still read as a fallback)
 TOMTOM_API_KEY="your_tomtom_api_key_here"
 
-# ML Service
-RIDERSHIP_API_BASE_URL="http://localhost:5001"
+# Demo scenarios (investor walkthroughs) are off unless this is "true"
+# NEXT_PUBLIC_DEMO_MODE=true
 ```
+The web app doesn't call `model_service` (P1, F-07); see `src/.env.example` for every setting.
 
 ### Backend (`model_service/.env` - Optional)
 ```env

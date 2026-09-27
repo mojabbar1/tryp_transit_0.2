@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Live-provider check: the P1 entry precondition carried over from P0 (reviewer R1, waived at the #3 merge).
+# Scope: the pre-P1c route, which returned LLM trip JSON. P1c replaced that route with deterministic numbers and
+# narration metadata, so on a P1c+ checkout this script exits early; verify narration with the P1 prompt's checks.
 #
 # A human runs this with real keys already configured for the app (src/.env.local or the environment).
 # For each provider it starts the production build, sends one fixed trip to POST /api/transit-insights,
@@ -13,6 +15,10 @@
 #   KEEP_LOG=1    keep the server log (it may contain secrets; never share it)
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)/src" || { echo "not a git repo"; exit 1; }
+if [ -f lib/insights/v2.ts ]; then
+  echo "This check targets the pre-P1c route (LLM trip JSON). This checkout has the P1c v2 engine; use the P1 prompt's verification (meta.narration) instead."
+  exit 2
+fi
 
 which="${1:-both}"
 port="${PORT:-3290}"

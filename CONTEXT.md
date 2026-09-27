@@ -86,20 +86,28 @@ Next.js 16 (App Router, Turbopack) on React 19; requires Node.js ≥ 20.9 (`engi
 ## Environment Variables
 
 ### Frontend (`src/.env.local`)
+Read only on the server, through the zod-validated `src/lib/env.ts` (`getEnv()`; `import 'server-only'`).
+Blank values count as unset, and validation errors name variables but never echo values.
 ```bash
-# AI Provider (set one)
-USE_GEMINI=true                    # Use Gemini instead of OpenAI
-GEMINI_API_KEY=your_key            # Required if USE_GEMINI=true
-OPENAI_API_KEY=your_key            # Required if USE_GEMINI=false
-GEMINI_MODEL=                      # Optional; blank/unset = gemini-3.8-flash
-OPENAI_MODEL=                      # Optional; blank/unset = gpt-5.6-terra
+# Narration provider: gemini | openai | none. Unset = legacy rule (USE_GEMINI="true" -> gemini, else openai).
+# A selected provider without a key becomes "none" (template narration).
+LLM_PROVIDER=
+USE_GEMINI=true                    # Legacy selector, used only when LLM_PROVIDER is unset
+GEMINI_API_KEY=your_key
+OPENAI_API_KEY=your_key
+GEMINI_MODEL=                      # Optional; blank/unset = gemini-3.8-flash (D-4)
+OPENAI_MODEL=                      # Optional; blank/unset = gpt-5.6-terra (D-4)
+LLM_TIMEOUT_MS=8000                # Narration deadline; on timeout the template is used
 
 # Traffic Data (server-only; legacy NEXT_PUBLIC_TOMTOM_API_KEY still read as a fallback, with a warning)
 TOMTOM_API_KEY=your_key
+REGION_TIMEZONE=America/New_York   # Arrival times resolve in this zone
+DATA_AGENT_BASE_URL=               # Unused until P4
 
-# ML Service
-RIDERSHIP_API_BASE_URL=http://localhost:5001
+# Demo scenarios and demo-only copy (client-readable; never gates a secret). Default off.
+NEXT_PUBLIC_DEMO_MODE=false
 ```
+The web app calls no prediction service (F-07), so there is no ridership URL here.
 
 ### Backend (`model_service/.env`)
 ```bash
@@ -113,21 +121,22 @@ API_PORT=5001                      # Default 5001
 
 ## Key Patterns
 
-### 1. Multi-Provider AI Support
-The app supports both Gemini and OpenAI. Toggle via `USE_GEMINI` env var:
-
-```typescript
-// src/lib/api/gemini.ts — Gemini client
-// src/lib/api/openai.ts — OpenAI client
-
-// In transit-insights/route.ts:
-const useGemini = process.env.USE_GEMINI === 'true';
-if (useGemini) {
-  rawResponse = await callGemini(prompt);
-} else {
-  rawResponse = await callOpenAI(prompt);
-}
-```
+### 1. Deterministic numbers, one engine (P1)
+`POST /api/transit-insights` is a thin wrapper around `src/lib/insights/v2.ts`, the only engine. There is no
+legacy engine and no switch back to invented numbers (D-27); rollback is reverting the PR.
+- Every number comes from TomTom (`src/lib/api/tomtom.ts`: an `arriveAt` route, flows, and incidents, each
+  with a 5 s timeout, settled independently) or from the approved assumptions (`src/lib/domain/assumptions.ts`,
+  copied verbatim from 05 §2 and guarded by a drift test).
+- Domain math in `src/lib/domain/` is pure: `resolveArrival` (DST-aware), `densityFromFlows`,
+  `calculateCost` (marginal and signed; never clamped), `calculateEmissions`, `getTransitResult`, and
+  `evaluateIncentivePolicy`.
+- Anything unavailable is omitted and named by a snake_case code in `meta.degraded`, for example
+  `parking_not_approved`, `co2_transit_distance_unavailable`, `arrival_target_too_soon` or
+  `traffic_not_configured`.
+- `comparison.transit.basis` is `unavailable | scheduled | realtime`. Before GTFS (P4) it is always
+  `unavailable`: no minutes, no departures, a null legacy `travelTime`, and empty `additionalRides` (D-21).
+- `incentiveDetails` is null unless `meta.offerActive` (D-25). Demo scenarios (`src/lib/demo/`) are the
+  only source of invented figures, only with `NEXT_PUBLIC_DEMO_MODE=true`, and always with `meta.demo: true`.
 
 ### 2. Graceful Degradation
 The ML service falls back to realistic mock predictions when Chronos isn't available:
@@ -148,21 +157,19 @@ def predict(hours_future):
     ...
 ```
 
-### 4. JSON Response Parsing
-AI responses may come as raw JSON or markdown-wrapped. The parser handles both:
-
-```typescript
-// src/lib/api/gemini.ts
-export function parseJsonResponse<T>(text: string): T {
-  try {
-    return JSON.parse(text);
-  } catch {
-    const extracted = extractJsonFromMarkdown(text);
-    if (extracted) return JSON.parse(extracted);
-    throw new Error('Could not parse JSON');
-  }
-}
-```
+### 4. Narration by reference, fail closed
+The LLM (`src/lib/llm/`: `@google/genai` or the OpenAI Responses API, both with strict JSON output) never
+emits a digit.
+- It receives self-describing facts `{ id, label, phrase }` and flags. It answers `{ nudge, slots }`, where
+  each clause is `{{fact_id}}`, `<label>: {{fact_id}}`, or one allowlisted phrase
+  (`validate-claims.ts#allowedProse`).
+- `validateNudge` rejects any of these: digits, including other Unicode numerals; unknown or unused slots; a
+  label that doesn't match its fact (which catches swap, period, and unit errors); a claim the flags
+  contradict; and free prose.
+- Only a validated nudge is substituted. A provider error, timeout, bad JSON, schema mismatch, or rejection
+  falls back to the deterministic template (`template.ts`), with `narration_fallback` recorded and the reason
+  logged.
+- The shared vectors in `contracts/claim-validation.vectors.json` are reused by P5's Python code.
 
 ### 5. Demo-Only Authentication
 Current auth uses localStorage (MVP only). See `auth-context-provider.tsx`:
@@ -178,32 +185,23 @@ const currentUser = localStorage.getItem('currentUser');
 
 ### POST `/api/transit-insights`
 
-**Request:**
-```typescript
-interface RequestBody {
-  departure: { lat: number; lng: number };
-  destination: { lat: number; lng: number };
-  timeToDestination: string; // "HH:MM" format
-}
-```
+The zod contract in `src/lib/contracts/transit-insights.ts` is the single source of truth; `src/types/interfaces.ts` re-exports it.
 
-**Response:**
+**Request:** `{ departure: { lat, lng }, destination: { lat, lng }, timeToDestination: "HH:MM" }`. An invalid body returns 400, with the issue paths in `details`.
+
+**Response:** the legacy fields (their types are unchanged), plus the additive `comparison` and `meta`:
 ```typescript
-interface TransitInsightResponse {
-  travelTime: number;                    // minutes
-  trafficDensity: "Light" | "Medium" | "Heavy";
-  costSavingsPerTrip: string;            // e.g., "3.50"
-  nudgeMessage: string;                  // AI-generated encouragement
-  incentiveDetails: {
-    type: "eCredit" | "partnerDiscount" | "funReward";
-    description: string;
-    value: string;
-  };
-  additionalRides: Array<{
-    departureTime?: string;
-    travelTime: number;
-    trafficDensity: string;
-  }>;
+{
+  travelTime: number | null;              // null until GTFS (D-21)
+  trafficDensity: "Light" | "Medium" | "Heavy" | null;   // "Traffic now" (current flow)
+  costSavingsPerTrip: string | null;      // signed drive − transit, e.g. "-0.51"
+  nudgeMessage: string | null;            // validated narration or the template
+  incentiveDetails: {...} | null;         // only while meta.offerActive (D-25)
+  additionalRides: [...] | null;          // [] until GTFS
+  comparison?: { drive: {...} | null; transit: { basis, minutes, nextDepartures, source };
+                 costUsd?: { drive, transit, difference /* signed */, factRefs }; co2Kg?: {...} };
+  meta?: { generatedAt, region, timezone, demo, offerActive, trafficDensityLabel?,
+           narration: { source: "template" | "llm", provider, model?, validated }, degraded, citations };
 }
 ```
 
@@ -227,14 +225,17 @@ npm run lockfile:fix   # After installing through a registry proxy: npm-10 regen
 ```
 
 ### Test Files
-- `__tests__/lib/convertToUTC.test.ts` — Time utilities
-- `__tests__/lib/api/gemini.test.ts` — JSON parsing, model-ID resolution
-- `__tests__/lib/api/openai.test.ts` — Model-ID resolution
-- `__tests__/lib/api/tomtom.test.ts` — Bbox calculation (lon-first), key resolution
-- `__tests__/lib/request-state.test.ts` — Request lifecycle reducer (loading always clears)
-- `__tests__/lib/utils.test.ts` — Number parsing and null checks
-- `__tests__/app/api/health.test.ts` — `/api/health` (booleans only)
-- `__tests__/data/busStops.test.ts` — Data consistency
+- `__tests__/lib/contracts/transit-insights.test.ts`: contract invariants and the legacy-type guard
+- `__tests__/lib/env.test.ts`: server-only env (provider selection, defaults, secrets never printed)
+- `__tests__/lib/domain/*.test.ts`: assumptions drift guard, DST arrival, density, signed cost, emissions, transit and incentive
+- `__tests__/lib/llm/*.test.ts`: the claim validator plus shared vectors, narration fallbacks, and both provider adapters
+- `__tests__/lib/api/tomtom.test.ts`: bbox (lon-first) and area guard, `arriveAt` routing, timeouts, partial data
+- `__tests__/app/api/transit-insights.test.ts`: v2 route (happy path, degraded, template, fail-closed, 400)
+- `__tests__/lib/demo/scenarios.test.ts`: demo scenarios parse and are gated by `NEXT_PUBLIC_DEMO_MODE`
+- `__tests__/lib/request-state.test.ts`: request lifecycle reducer (loading always clears)
+- `__tests__/lib/utils.test.ts`, `__tests__/lib/format.test.ts`: number parsing, null checks, signed cost copy
+- `__tests__/app/api/health.test.ts`: `/api/health` (booleans only)
+- `__tests__/data/busStops.test.ts`: data consistency
 
 ---
 
@@ -248,12 +249,13 @@ npm run lockfile:fix   # After installing through a registry proxy: npm-10 regen
 ### Switching AI Provider
 ```bash
 # In src/.env.local
-USE_GEMINI=true   # Use Gemini
-USE_GEMINI=false  # Use OpenAI
+LLM_PROVIDER=gemini   # or openai, or none (template narration only)
 ```
 
 ### Running Without API Keys
-Use the demo endpoint which returns mock data:
+The live route still works: with no LLM key it uses the template, and with no TomTom key it reports
+`traffic_not_configured`. For scripted walkthroughs, set `NEXT_PUBLIC_DEMO_MODE=true` and use the demo endpoint;
+it returns 404 while demo mode is off:
 ```
 POST /api/transit-insights-demo
 { "demoScenario": "rush-hour" | "weekend" | "night-out" }
