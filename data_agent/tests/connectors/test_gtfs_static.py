@@ -128,6 +128,107 @@ def test_non_zips_and_zip_bombs_are_rejected(monkeypatch: pytest.MonkeyPatch) ->
         parse_feed(zipped())
 
 
+def _without_timepoint() -> str:
+    """The fixture's stop_times.txt without its timepoint column (GTFS: then every time is exact)."""
+    return "\n".join(line.rsplit(",", 1)[0] for line in files()["stop_times.txt"].splitlines()) + "\n"
+
+
+@pytest.mark.parametrize(
+    ("contents", "message"),
+    [
+        (
+            replace("stop_times.txt", "T1,07:00:00,07:00:00,FX01,1,0,0,0.0,1", "T1,,,FX01,1,0,0,0.0,1"),
+            "stop_times.txt row 2: arrival_time is required at an exact timepoint",
+        ),
+        (
+            replace(
+                "stop_times.txt", "T1,07:20:00,07:20:00,FX06,6,0,0,4.0,1", "T1,,07:20:00,FX06,6,0,0,4.0,0"
+            ),
+            "stop_times.txt row 7: arrival_time is required at the first and last stop of trip T1",
+        ),
+        (
+            replace(
+                "stop_times.txt", "T1,07:04:00,07:04:00,FX02,2,0,0,0.8,0", "T1,07:04:00,,FX02,2,0,0,0.8,1"
+            ),
+            "stop_times.txt row 3: departure_time is required at an exact timepoint",
+        ),
+        (
+            replace("stop_times.txt", "T2,,,FX04,3,0,0,1.6,0", "T2,,,FX04,3,0,0,1.6,"),
+            "stop_times.txt row 10: arrival_time is required at an exact timepoint (timepoint 1 or empty)",
+        ),
+        ({"stop_times.txt": _without_timepoint()}, "stop_times.txt row 10: arrival_time is required"),
+        (
+            replace("stop_times.txt", "FX02,2,0,0,0.8,0", "FX02,2,0,0,0.8,2"),
+            "stop_times.txt row 3: timepoint 2 is not 0 or 1",
+        ),
+    ],
+)
+def test_required_times_follow_gtfs_timepoints(contents: dict[str, str | None], message: str) -> None:
+    with pytest.raises(ValidationFailed, match=_escape(message)):
+        parse_feed(zipped(contents))
+
+
+FLEX_COLUMNS = "start_pickup_drop_off_window,end_pickup_drop_off_window,location_group_id"
+
+
+def _flex_stop_times(old: str | None = None, new: str = "") -> dict[str, str | None]:
+    """stop_times.txt with three empty Flex columns (as CARTA exports them), optionally one line edited."""
+    lines = files()["stop_times.txt"].splitlines()
+    content = "\n".join([f"{lines[0]},{FLEX_COLUMNS}", *(f"{line},,," for line in lines[1:])]) + "\n"
+    if old is not None:
+        assert old in content, old
+        content = content.replace(old, new, 1)
+    return {"stop_times.txt": content}
+
+
+def test_empty_flex_columns_and_header_only_files_parse() -> None:
+    header_only = {
+        "booking_rules.txt": "booking_rule_id,booking_type\n",
+        "location_groups.txt": "location_group_id,location_id,location_group_name\n",
+        "frequencies.txt": "trip_id,start_time,end_time,headway_secs,exact_times\n",
+        "locations.geojson": '{"type": "FeatureCollection", "features": []}',
+    }
+    _, tables = parse_feed(zipped({**_flex_stop_times(), **header_only}))
+    assert len(tables["gtfs_stop_time"]) == FIXTURE_COUNTS["gtfs_stop_time"]
+
+
+@pytest.mark.parametrize(
+    ("contents", "message"),
+    [
+        (
+            _flex_stop_times(
+                "T1,07:04:00,07:04:00,FX02,2,0,0,0.8,0,,,", "T1,,,FX02,2,0,0,0.8,0,07:00:00,08:00:00,"
+            ),
+            "stop_times.txt row 3: uses GTFS-Flex (start_pickup_drop_off_window, end_pickup_drop_off_window)",
+        ),
+        (
+            _flex_stop_times("T1,07:04:00,07:04:00,FX02,2,0,0,0.8,0,,,", "T1,,,,2,0,0,0.8,0,,,LG1"),
+            "stop_times.txt row 3: uses GTFS-Flex (location_group_id)",
+        ),
+        (
+            {"booking_rules.txt": "booking_rule_id,booking_type\nBR1,0\n"},
+            "booking_rules.txt has rows: GTFS-Flex",
+        ),
+        (
+            {"location_groups.txt": "location_group_id,location_id,location_group_name\nLG1,,Zone\n"},
+            "location_groups.txt has rows: GTFS-Flex",
+        ),
+        (
+            {"locations.geojson": '{"type": "FeatureCollection", "features": [{"type": "Feature"}]}'},
+            "locations.geojson has features: GTFS-Flex",
+        ),
+        ({"locations.geojson": "not json"}, "locations.geojson is not valid GeoJSON"),
+        (
+            {"frequencies.txt": "trip_id,start_time,end_time,headway_secs\nT1,07:00:00,09:00:00,600\n"},
+            "frequencies.txt has rows: headway-based trips",
+        ),
+    ],
+)
+def test_unsupported_features_are_refused_not_dropped(contents: dict[str, str | None], message: str) -> None:
+    with pytest.raises(ValidationFailed, match=_escape(message)):
+        parse_feed(zipped(contents))
+
+
 def _escape(message: str) -> str:
     return "".join("\\" + c if c in ".()[]*+?^$|{}" else c for c in message)
 
@@ -340,6 +441,83 @@ def test_versions_and_activate(gtfs: Any, cli: Any, writer_engine: Engine) -> No
     refused = cli("gtfs", "activate", str(v2))
     assert refused.exit_code == 2 and "rolled back" in refused.stderr
     assert cli("gtfs", "activate", "999999").exit_code == 2
+
+
+def test_an_earlier_load_of_a_reloaded_feed_can_be_activated(
+    gtfs: Any, cli: Any, writer_engine: Engine
+) -> None:
+    connector, router = gtfs
+    feed_a = zipped()
+    _serve(router, feed_a)
+    connector.run(live=True)
+    _serve(router, _second_feed(), etag='"v2"')
+    connector.run(live=True)
+    _serve(router, feed_a, etag='"v3"')
+    assert connector.run(live=True).status == "success", "A again after B is a new version"
+    (a1, _, _), (b, _, _), (a2, _, _) = _versions(writer_engine)
+    assert "is now active" in cli("gtfs", "activate", str(b)).stdout
+    assert "is now active" in cli("gtfs", "activate", str(a1)).stdout
+    assert [(i, active) for i, _, active in _versions(writer_engine)] == [(a1, True), (b, False), (a2, False)]
+
+
+def _two_versions(
+    connector: GtfsStaticConnector, router: respx.MockRouter, engine: Engine
+) -> tuple[int, int]:
+    _serve(router, zipped())
+    connector.run(live=True)
+    _serve(router, _second_feed(), etag='"v2"')
+    connector.run(live=True)
+    (v1, _, _), (v2, _, _) = _versions(engine)
+    return v1, v2
+
+
+def test_activation_order_is_commit_order_not_transaction_start(gtfs: Any, writer_engine: Engine) -> None:
+    v1, v2 = _two_versions(*gtfs, writer_engine)
+    with writer_engine.connect() as older:
+        older.execute(text("SELECT now()"))  # this transaction starts first
+        with writer_engine.begin() as newer:
+            gtfs_static.activate(newer, "carta-gtfs", v1, "bob")
+        gtfs_static.activate(older, "carta-gtfs", v2, "alice")
+        older.commit()
+    assert [(i, active) for i, _, active in _versions(writer_engine)] == [(v1, False), (v2, True)]
+
+
+def test_a_load_that_activates_after_a_manual_activation_wins(
+    gtfs: Any, writer_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    connector, router = gtfs
+    _serve(router, zipped())
+    connector.run(live=True)
+    ((v1, _, _),) = _versions(writer_engine)
+    today = gtfs_static._today
+
+    def today_after_a_manual_activation(timezone: str) -> Any:
+        # Runs inside the load's transaction, just before the load activates its new version.
+        with writer_engine.begin() as other:
+            gtfs_static.activate(other, "carta-gtfs", v1, "bob")
+        return today(timezone)
+
+    monkeypatch.setattr(gtfs_static, "_today", today_after_a_manual_activation)
+    _serve(router, _second_feed(), etag='"v2"')
+    assert connector.run(live=True).status == "success"
+    assert [active for _, _, active in _versions(writer_engine)] == [False, True]
+
+
+def test_activations_of_a_source_wait_for_each_other(gtfs: Any, writer_engine: Engine) -> None:
+    connector, router = gtfs
+    _serve(router, zipped())
+    connector.run(live=True)
+    ((v1, _, _),) = _versions(writer_engine)
+    with writer_engine.connect() as first, writer_engine.connect() as second:
+        gtfs_static.activate(first, "carta-gtfs", v1, "alice")  # holds the source's lock until it commits
+        second.execute(text("SET LOCAL lock_timeout = '200ms'"))
+        with pytest.raises(DBAPIError, match="lock timeout"):
+            gtfs_static.activate(second, "carta-gtfs", v1, "bob")
+        second.rollback()
+        first.commit()
+    assert (
+        rows(writer_engine, "SELECT activated_by FROM tda.gtfs_feed_activation ORDER BY id")[-1][0] == "alice"
+    )
 
 
 # Migration (Postgres)
