@@ -43,6 +43,7 @@ that's blocked without an answer.
 | D-25 | **Rewards** | Live-mode incentives: (a) **hidden until an approved, funded, redeemable offer inventory exists**; demo-only copy meanwhile, behind the demo badge · (b) keep showing example rewards | **(a)**. The app currently advertises $1–$4 gift cards nothing can pay (F-26). | P1 | **(a)** accept default — mojabbar, 2026-09-27 (chat; see §7) |
 | D-26 | **Measurement design (G1)** | Before any impact claim, agree: the eligible-trip denominator, exposure/assignment (default: a randomized holdout), duplicate handling, the outcome tier (≥ 2 self-report; ≥ 3 verified), and a pre-declared decision rule. Owner: product + privacy. | **Default:** opt-in self-report with a randomized holdout; partner-verified trips as an upgrade. No traffic-reduction claim before Tier ≥ 3 data. | G1 (built in P7) | |
 | D-27 | **P1 rollback mechanism** | (a) **no legacy engine**; roll back the P1 route change by reverting the PR · (b) keep an `INSIGHTS_ENGINE=legacy` runtime switch | **(a)**. A runtime switch that re-enables LLM-invented numbers defeats the refactor. | P1 | **(a)** accept default — mojabbar, 2026-09-27 (chat; see §7) |
+| D-28 | **Repository visibility and `main` protection** | Visibility: (a) keep this repo public · (b) make it private (by changing this repo's visibility; GitHub doesn't allow a private fork of a public repo) · Protection: (a) a ruleset on `main` · (b) none | none documented; the builder advised public (2026-09-27) | P3 | Visibility **(a) keep public**; protection delegated to the builder "if pros outweigh cons", assessed **(a)** (below) — mojabbar, 2026-09-28 08:08 ET (chat: "keep the repo public. put branch protection of main if pros outwieght cons") |
 
 > **Standing authority (maintainer, 2026-09-27 16:58 ET, verbatim):** *"you may accept the documented default for any
 > decision unless it involves money, privacy, or G1."* The builder applies it only when a phase needs a decision, and records
@@ -52,6 +53,24 @@ that's blocked without an answer.
 > - **D-10** and **D-26** (G1)
 > - any paid data or service (such as D-7's licensed TomTom history)
 > - §2 values that aren't documented defaults, such as `parking.applies_to_stops`
+
+> **D-28 `main` protection (the builder's assessment, delegated 2026-09-28 08:08 ET): the pros outweigh the cons.**
+> - **Pros:**
+>   - GitHub itself enforces the plan's first operating rule, no merge until CI is green, instead of it resting on habit;
+>   - it blocks direct pushes, force pushes and deleting `main`;
+>   - it's free on a public repo.
+> - **Cons, and how the rules handle them:**
+>   - A CI outage or a renamed job would block merges until fixed. The owner can bypass as a repository admin.
+>   - Required GitHub approvals would deadlock, because the builder's commits and the reviewer's comments come from
+>     one account. So no approval is required, and the reviewer's verdicts stay PR comments.
+>   - "Require branches to be up to date" would add CI runs and conflict with stacked PRs, so it's off.
+> - **The rules** ([`.github/rulesets/main.json`](../../.github/rulesets/main.json)):
+>   - changes to `main` go through a pull request (0 approvals);
+>   - the four CI checks must pass, reported by GitHub Actions only;
+>   - no force pushes and no deletion;
+>   - repository admins may bypass.
+> - **Applied by the owner account `mojabbar1`,** because rulesets need admin and the builder's account has push access
+>   only: Settings → Rules → Rulesets → New ruleset → Import a ruleset, then choose that file. ☐ pending
 
 ## 2. Assumptions table (the P1 source of truth; P3.5 moves it into the fact store)
 
@@ -163,7 +182,8 @@ that drive the plan:
   reward; there is no legacy engine; the response is additive only.
 - **P2:** proposed sources can't run; `/v1/facts` never leaks candidates; the reader role can't write; an
   append-then-rollback drill restores the prior value.
-- **P3:** the terms review is recorded, loads are append-only, and a human ran the live smoke test.
+- **P3:** the terms review is recorded, loads are append-only, and the live smoke test was run by a human, or by the
+  builder where the maintainer delegated it (§6).
 - **P4:** every page number has a citation (or the page says "data unavailable"); demo mode is clearly badged;
   `/v1/compare` never returns a departed bus.
 - **P5:** the model has no write tools; nothing reaches the queue before validation; the budget reservation
@@ -225,7 +245,23 @@ that drive the plan:
 > - The builder asked for the rest at about 22:40 ET. The maintainer was not available, which is **not** approval, so
 >   every row is still pending and the drafts are left as they are.
 >
-> Until the maintainer signs, the P3 prompt's procedure applies unchanged:
+> **P3 sign-off (maintainer, 2026-09-28 08:08 ET, verbatim):** *"approve all for p3."* The same message also said
+> *"keep the repo public. put branch protection of main if pros outwieght cons. continue with implementation plans"*
+> (D-28).
+> - It is the **"approve all"** package defined below, not its human-run variant. So:
+>   - **Signed rows:** `gtfs_static`, `gtfs_rt_alerts`, `ntd_monthly`, `eia_gas` and `reference_facts` (candidates
+>     only).
+>   - **Terms accepted with them** (each row's §6a determination):
+>     - S-1 and S-2: the registry-only licence;
+>     - S-3 and S-11: public domain;
+>     - S-11: the acquisition change to the keyless bulk file;
+>     - S-9 and S-12…S-15, with the builder's non-commercial guardrail for S-13/S-14.
+>   - **Drafts #17–#19 are ratified:** review and fixes continue there.
+>   - **The builder runs the live smoke tests** (two ingestions plus the DB and DQ checks) in an isolated local
+>     database. §5 and the P3 prompt are aligned with this.
+> - **Not signed:** `census_acs` (it needs a key first), `scdot_*`, `tomtom_sampler`, and the expansion connectors.
+>
+> For rows that aren't signed, the P3 prompt's procedure applies unchanged:
 > - The builder only researches and prepares packets. A connector is built and tested only after its row is
 >   signed, in its **own PR**, reviewed as usual. **Nothing merges** before that.
 > - Every source stays `proposed`, so running it only records `skipped_disabled`.
@@ -234,7 +270,7 @@ that drive the plan:
 > When a row is signed, that connector is built in its own PR (or its draft is finished, if ratified). The PR gets
 > the `status: approved` flip and the live smoke-test output (two ingestions plus the DB and DQ checks), then merges,
 > as the P3 definition of done requires. Per the P3 prompt, a human runs the smoke tests unless the maintainer
-> explicitly delegates them to the builder.
+> explicitly delegates them to the builder, as the 08:08 ET sign-off does for its rows.
 >
 > **To sign, one reply is enough.** To keep it short, a reply of **"approve all"** means exactly this package, listed
 > here in full. Each approval also accepts that connector's §6a terms determination:
@@ -260,12 +296,12 @@ no-privacy, and non-destructive conditions. It is not a sign-off.
 
 | Connector | Source | Stage | Terms reviewed by / date | `store_policy` | Key provisioned | Approved to enable |
 |-----------|--------|-------|--------------------------|----------------|-----------------|--------------------|
-| `gtfs_static` (draft #17) | S-1 | Pilot | prepared and re-verified by Claude Opus (builder), 2026-09-27; **human terms sign-off pending** | `ttl:180d` raw zip (D-18); normalized rows kept indefinitely; raw cited by a published fact kept regardless of TTL (03 §3.1) | n/a | ☐ pending: eligible, but the **licence is registry-only** (§6a), which the maintainer must accept explicitly or wait on CARTA/Trillium (D-20) |
-| `ntd_monthly` (draft #18) | S-3 | Pilot | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` raw (D-18); normalized rows kept indefinitely | n/a (the optional app token isn't used) | ☐ pending: eligible (public domain) |
-| `reference_facts` (draft #19) | S-9, S-12…S-15 | Pilot | prepared and terms re-checked by the builder, 2026-09-27 (§6a); **terms accepted by the maintainer for S-9, S-13, S-14 and S-15, 2026-09-27 22:37 ET (stated purpose: educational; see above)**; S-12's determination and the row sign-off pending | n/a: nothing is fetched | n/a | ☐ pending: eligible to load **`candidate`** facts only. Values are entered by a human (P3.5), and each fact still needs `tda review approve`. The cited sources stay `proposed` because nothing fetches them. The S-9, S-13, S-14 and S-15 terms findings are accepted; the builder's non-commercial guardrail for S-13/S-14 applies (see above) |
+| `gtfs_static` (draft #17) | S-1 | Pilot | prepared and re-verified by Claude Opus (builder), 2026-09-27; **terms accepted by mojabbar, 2026-09-28 08:08 ET ("approve all for p3")** | `ttl:180d` raw zip (D-18); normalized rows kept indefinitely; raw cited by a published fact kept regardless of TTL (03 §3.1) | n/a | ☑ **signed**, mojabbar, 2026-09-28 08:08 ET ("approve all for p3"), accepting the **registry-only licence** (§6a). Enabled when #17 merges with its smoke output |
+| `ntd_monthly` (draft #18) | S-3 | Pilot | prepared and re-verified by the builder, 2026-09-27; **terms accepted by mojabbar, 2026-09-28 08:08 ET ("approve all for p3")** | `ttl:180d` raw (D-18); normalized rows kept indefinitely | n/a (the optional app token isn't used) | ☑ **signed**, mojabbar, 2026-09-28 08:08 ET ("approve all for p3") (public domain). Enabled when #18 merges with its smoke output |
+| `reference_facts` (draft #19) | S-9, S-12…S-15 | Pilot | prepared and terms re-checked by the builder, 2026-09-27 (§6a); **terms accepted by the maintainer for S-9, S-13, S-14 and S-15, 2026-09-27 22:37 ET (stated purpose: educational; see above)**; **S-12's determination and the row signed by mojabbar, 2026-09-28 08:08 ET ("approve all for p3")** | n/a: nothing is fetched | n/a | ☑ **signed**, mojabbar, 2026-09-28 08:08 ET ("approve all for p3"): loads **`candidate`** facts only. Values are entered by a human (P3.5), and each fact still needs `tda review approve`. The cited sources stay `proposed` because nothing fetches them. The builder's non-commercial guardrail for S-13/S-14 applies (see above) |
 | `census_acs` | S-10 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27 | `ttl:180d` | ☐ **a key is required** (keyless calls redirect to `missing_key.html`) | ☐ not eligible yet: waits until the maintainer supplies a free key and signs this row (the P3 precondition includes the key; nothing is built before then) |
-| `eia_gas` | S-11 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` | n/a if the acquisition change is approved: EIA's official keyless bulk file of the same series (API v2 needs a registered key) | ☐ pending: eligible; the **acquisition change** needs the sign-off |
-| `gtfs_rt_alerts` | S-2 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **human terms sign-off pending** | `ttl:30d` raw (P3 spec); normalized rows kept indefinitely | n/a | ☐ pending: eligible, with the same **registry-only licence** as S-1 (there's no alert-specific grant) |
+| `eia_gas` | S-11 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **terms accepted by mojabbar, 2026-09-28 08:08 ET ("approve all for p3")** | `ttl:180d` | n/a: EIA's official keyless bulk file of the same series (API v2 needs a registered key) | ☑ **signed**, mojabbar, 2026-09-28 08:08 ET ("approve all for p3"), including the **acquisition change** to the bulk file. Built in its own PR |
+| `gtfs_rt_alerts` | S-2 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **terms accepted by mojabbar, 2026-09-28 08:08 ET ("approve all for p3")** | `ttl:30d` raw (P3 spec); normalized rows kept indefinitely | n/a | ☑ **signed**, mojabbar, 2026-09-28 08:08 ET ("approve all for p3"), accepting the same **registry-only licence** as S-1 (there's no alert-specific grant). Built in its own PR |
 | `scdot_counts` / `scdot_ccs_inbox` | S-6a/b/c | Expansion | the builder, 2026-09-27: **terms unclear** | | n/a | ⛔ not eligible: the SCDOT site says "All Rights Reserved" and publishes no data licence (which doesn't prove reuse is forbidden); the BCDCOG layer has no `licenseInfo`. Needs a maintainer decision or the D-20 data-sharing ask |
 | `tomtom_sampler` | S-7/S-7b | Expansion | **requires D-7 (b) or (c)** | | ☐ | ⛔ excluded: paid and legal (D-7, D-14) |
 | `nws` / `noaa_tides` / `nhtsa_fars` / `documents` | S-16/17/18/5/19/20 | Expansion | | | n/a | ☐ after G1 |
