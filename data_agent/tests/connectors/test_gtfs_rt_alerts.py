@@ -118,7 +118,7 @@ def _nul(alert: Any) -> None:
         (feed(edit=_trip_update), "entity 'TU1' is not an alert"),
         (feed({"A1": _no_entity}), "alert 'A1' has no informed_entity"),
         (feed({"A1": _empty_selector}), "alert 'A1': an informed_entity selects nothing"),
-        (feed({"A1": _backwards}), "alert 'A1': an active period starts after it ends"),
+        (feed({"A1": _backwards}), "alert 'A1': active_period 1 starts after it ends"),
         (feed({"A1": _huge_time}), "alert 'A1': time 18446744073709551615 is out of range"),
         (feed({"A1": _nul}), "alert 'A1' contains a NUL character"),
     ],
@@ -126,6 +126,113 @@ def _nul(alert: Any) -> None:
 def test_invalid_feeds_are_rejected(body: bytes, message: str) -> None:
     with pytest.raises(ValidationFailed, match=message.replace("(", r"\(").replace(")", r"\)")):
         parse_alerts(body)
+
+
+def _periods_open_both_ways(alert: Any) -> None:
+    detour(alert)
+    del alert.active_period[:]
+    alert.active_period.add().start = 2**64 - 1
+    alert.active_period.add().end = END
+
+
+def _empty_period(alert: Any) -> None:
+    detour(alert)
+    alert.active_period.add()
+
+
+def _backwards_communication(alert: Any) -> None:
+    detour(alert)
+    period = alert.communication_period.add()
+    period.start, period.end = END, START
+
+
+def _empty_route(alert: Any) -> None:
+    alert.informed_entity.add(route_id="")
+
+
+def _empty_trip(alert: Any) -> None:
+    alert.informed_entity.add().trip.SetInParent()
+
+
+def _direction_only(alert: Any) -> None:
+    alert.informed_entity.add(direction_id=1)
+
+
+def _with_payload(name: str) -> Callable[[Any], None]:
+    def edit(message: Any) -> None:
+        getattr(message.entity[0], name).SetInParent()
+
+    return edit
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (feed({"A1": _periods_open_both_ways}), "alert 'A1': time 18446744073709551615 is out of range"),
+        (feed({"A1": _empty_period}), "alert 'A1': active_period 2 has neither start nor end"),
+        (feed({"A1": _backwards_communication}), "alert 'A1': communication_period 1 starts after it ends"),
+        (feed({"A1": _empty_route}), "alert 'A1': an informed_entity selects nothing"),
+        (feed({"A1": _empty_trip}), "alert 'A1': an informed_entity selects nothing"),
+        (feed({"A1": _direction_only}), "alert 'A1': an informed_entity has a direction_id but no route_id"),
+        (feed(edit=_with_payload("shape")), "entity 'A1' is not an alert alone"),
+        (feed(edit=_with_payload("stop")), "entity 'A1' is not an alert alone"),
+        (feed(edit=_with_payload("trip_modifications")), "entity 'A1' is not an alert alone"),
+    ],
+)
+def test_the_review_round_1_cases_are_rejected(body: bytes, message: str) -> None:
+    with pytest.raises(ValidationFailed, match=message.replace("(", r"\(").replace(")", r"\)")):
+        parse_alerts(body)
+
+
+def test_every_period_kind_and_selector_is_kept() -> None:
+    def rich(alert: Any) -> None:
+        period = alert.communication_period.add()
+        period.start, period.end = START, END
+        alert.impact_period.add().start = START
+        alert.informed_entity.add(route_type=0)
+        modified = alert.informed_entity.add().trip.modified_trip
+        modified.modifications_id, modified.affected_trip_id = "M1", "T1"
+        alert.tts_header_text.translation.add(text="Route one detour", language="en")
+        alert.header_text.translation.add(text=r"a literal \u0000 is not a NUL")
+
+    (row,) = parse_alerts(feed({"A1": rich}))
+    assert (row["active_from"], row["active_until"], json.loads(row["active_periods"])) == (None, None, [])
+    assert json.loads(row["communication_periods"]) == [{"start": START, "end": END}]
+    assert json.loads(row["impact_periods"]) == [{"start": START, "end": None}]
+    assert json.loads(row["informed_entities"]) == [
+        {"route_type": 0},
+        {"trip": {"modified_trip": {"affected_trip_id": "T1", "modifications_id": "M1"}}},
+    ]
+    alert = json.loads(row["alert"])
+    assert alert["tts_header_text"]["translation"] == [{"text": "Route one detour", "language": "en"}]
+    assert json.loads(row["header_text"]) == [{"language": None, "text": r"a literal \u0000 is not a NUL"}]
+
+
+def _without_version() -> bytes:
+    message = rt.FeedMessage()
+    message.header.incrementality = rt.FeedHeader.FULL_DATASET
+    message.entity.add(id="A1").alert.informed_entity.add(route_id="R1")
+    return message.SerializePartialToString()
+
+
+def _without_translation_text() -> bytes:
+    message = rt.FeedMessage()
+    message.ParseFromString(feed({"A1": detour}))
+    message.entity[0].alert.header_text.translation.add(language="fr")
+    return message.SerializePartialToString()
+
+
+def test_required_fields_are_checked_and_invalid_bodies_are_kept_as_they_came() -> None:
+    for body in (_without_version(), _without_translation_text()):
+        assert canonical(body) == body, "not canonicalized, so the evidence is the original bytes"
+        with pytest.raises(ValidationFailed, match="the feed is missing required fields"):
+            parse_alerts(body)
+
+
+def test_the_canonical_body_keeps_fields_it_does_not_know() -> None:
+    unknown_field = b"\x28\x01"  # FeedMessage field 5, varint 1: not in the schema
+    assert canonical(feed() + unknown_field) != canonical(feed())
+    assert parse_alerts(canonical(feed() + unknown_field)) == parse_alerts(feed())
 
 
 # Loading (Postgres)
@@ -231,6 +338,25 @@ def test_an_invalid_feed_fails_the_run_and_loads_nothing(
     assert rows(writer_engine, "SELECT count(*) FROM tda.service_alert")[0][0] == 0
     raw = rows(writer_engine, "SELECT raw_uri FROM tda.fetch_run WHERE id = :i", i=outcome.run_id)[0][0]
     assert (tmp_path / "raw" / raw.removeprefix("raw://")).exists(), "the evidence is kept"
+
+
+def test_a_bad_snapshot_fails_and_keeps_the_good_one_current(
+    alerts: Any, writer_engine: Engine, tmp_path: Path
+) -> None:
+    connector, router, _ = alerts
+    _serve(router, feed())
+    connector.run(live=True)
+    _serve(router, feed({"A1": _periods_open_both_ways}))
+    assert connector.run(live=True).status == "failed"
+    assert _current(writer_engine) == ["A1", "A2"], "the previous snapshot is still current"
+    _serve(router, _without_version())
+    outcome = connector.run(live=True)
+    assert outcome.status == "failed" and "missing required fields" in (outcome.message or "")
+    run = rows(
+        writer_engine, "SELECT raw_uri, http_status, bytes FROM tda.fetch_run WHERE id = :i", i=outcome.run_id
+    )[0]
+    assert (run.http_status, run.bytes) == (200, len(_without_version()))
+    assert (tmp_path / "raw" / run.raw_uri.removeprefix("raw://")).read_bytes() == _without_version()
 
 
 def test_alerts_are_append_only_and_the_reader_sees_only_the_current_view(

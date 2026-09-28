@@ -226,18 +226,28 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
 ### `gtfs_rt_alerts` (S-2, `carta-gtfs-rt-alerts`): CARTA's GTFS-realtime service alerts
 
 - **Fetches** the alerts feed every 5 minutes over https (the catalog listed http; https works, 05 §6a).
-- **Canonical snapshot:** the stored raw snapshot has the header timestamp cleared and entities sorted by id, so
-  an unchanged set of alerts has the same sha256 and is `not_modified`.
-- **Loads** one append-only `service_alert` row per alert: cause, effect, severity, active periods and their
-  overall window, informed entities, and the header, description, and url translations.
+- **Canonical snapshot:** the stored raw snapshot is the whole message with the header timestamp cleared and
+  entities sorted by id (unknown fields and extensions kept), serialized deterministically. An unchanged set of
+  alerts has the same sha256 and is `not_modified`.
+  - Deterministic means repeatable for the pinned protobuf runtime, not a universal canonical form; an upgrade
+    may cost one extra load.
+  - A body that doesn't decode, or lacks required fields, is stored as it came, so a failed run keeps the
+    evidence.
+- **Loads** one append-only `service_alert` row per alert:
+  - typed columns: cause, effect, severity, the active window, active/communication/impact periods, informed
+    entities (with modified trips), and the header, description and url translations;
+  - **the complete alert as JSON**, so no field the feed sends is dropped.
+
   `current_service_alert` is the latest successful snapshot, so an alert that ends drops out; rolling that
   snapshot back restores the previous one.
 - **Untrusted text** (02 §7.3): alert text is stored as data only, and nothing interprets it.
-- **Data-quality checks** (a failure → `failed`, nothing loaded):
-  - the body is a GTFS-realtime FeedMessage (version 1.0 or 2.0) with a FULL_DATASET header;
-  - every entity has a unique id and is an alert, not deleted;
-  - each alert has at least one informed entity, and each one selects something;
-  - each active period is valid (start ≤ end, within range);
+- **Data-quality checks** (a failure → `failed`, nothing loaded; the previous snapshot stays current):
+  - the body is a GTFS-realtime FeedMessage (version 1.0 or 2.0) with every required field and a FULL_DATASET
+    header;
+  - every entity has a unique id and carries an alert and no other payload, and isn't deleted;
+  - each alert has an informed entity. Each one selects something real: empty IDs and empty trips don't
+    count, and a direction_id needs a route_id;
+  - every active, communication and impact period has a bound, each bound is a valid time, and start ≤ end;
   - no text contains a NUL character.
   Routes and stops that the active GTFS feed doesn't have are logged (`gtfs_rt.unknown_references`), not fatal.
 - Raw snapshots are kept 30 days (`ttl:30d`); normalized alerts are kept.
