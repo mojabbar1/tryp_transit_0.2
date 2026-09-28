@@ -21,12 +21,13 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 from sqlalchemy import Connection, text
 
 from tda.config.models import SourceRegistry
 from tda.facts.versions import FactDraft, write_fact
 from tda.review.queue import submit
+from tda.store.lineage import key_lock
 from tda.store.sources import upsert_source
 
 DEFAULT_FILE = Path(__file__).resolve().parent / "reference_facts.yaml"
@@ -52,6 +53,23 @@ class ReferenceEntry(BaseModel):
     period_end: date | None = None
     note: str | None = None
     todo: str | None = None
+
+    @field_validator(
+        "value_text",
+        "unit",
+        "source_id",
+        "geography",
+        "page",
+        "quote",
+        "verified_by",
+        "note",
+        "todo",
+        mode="before",
+    )
+    @classmethod
+    def _blank_is_missing(cls, value: object) -> object:
+        """Blank text is missing, so it can't satisfy an evidence rule; other text stays verbatim."""
+        return None if isinstance(value, str) and not value.strip() else value
 
     @property
     def filled(self) -> bool:
@@ -121,9 +139,15 @@ def check_sources(reference: ReferenceFile, registry: SourceRegistry) -> None:
 def load_reference(
     connection: Connection, registry: SourceRegistry, path: Path = DEFAULT_FILE, *, requested_by: str
 ) -> LoadReport:
-    """Queue every filled entry that changed as a ``candidate`` fact with a pending review item."""
+    """Queue every filled entry that changed as a ``candidate`` fact with a pending review item.
+
+    Each key's latest-content check, write, and queue submission happen under its fact lock, so two loads at
+    once can't both queue the same change. All the locks come first, in key order, so they can't deadlock.
+    """
     reference, digest = read_reference(path)
     check_sources(reference, registry)
+    for key in sorted(entry.key for entry in reference.facts if entry.filled):
+        key_lock(connection, "fact", key)
     report = LoadReport()
     for entry in reference.facts:
         if not entry.filled:
