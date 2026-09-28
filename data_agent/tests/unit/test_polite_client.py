@@ -352,3 +352,18 @@ def test_retries_spend_the_budget_too(clock: Clock, router: respx.MockRouter) ->
 
 def test_logged_urls_drop_query_strings_and_credentials() -> None:
     assert redact("https://user:pw@h.test/a/b?key=SECRET#f") == "https://h.test/a/b"
+
+
+def test_extra_headers_cannot_replace_the_user_agent_and_stay_on_the_host(
+    clock: Clock, router: respx.MockRouter
+) -> None:
+    """P3.2: an API token goes to the source's host only, never across a redirect to another host."""
+    router.get(PAGE).respond(302, headers={"Location": "https://cdn.test/x"})
+    cdn = router.get("https://cdn.test/x").respond(200)
+    _client(clock).fetch(
+        _rest(allowed_hosts=["cdn.test"]), headers={"X-App-Token": "tok", "User-Agent": "Mozilla/5.0"}
+    )
+    first, redirected = router.calls[0].request, cdn.calls[0].request
+    assert (first.headers["x-app-token"], first.headers["user-agent"]) == ("tok", DEFAULT_USER_AGENT)
+    assert "x-app-token" not in redirected.headers
+    assert redirected.headers["user-agent"] == DEFAULT_USER_AGENT

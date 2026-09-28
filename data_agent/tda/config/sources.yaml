@@ -59,6 +59,10 @@ sources:
   kind: socrata
   url: https://data.transportation.gov/resource/8bui-9xvu.json
   license: USGOV_WORKS (public domain)
+  terms_url: https://data.transportation.gov/api/views/8bui-9xvu.json
+  terms_summary: 'Dataset metadata (re-verified 2026-09-27, 05 §6a): licence "Public Domain U.S. Government"
+    (USGOV_WORKS, https://www.usa.gov/government-works). Fetch, store, and republish with FTA NTD attribution.
+    Enabling still needs the maintainer''s 05 §6 sign-off.'
   store_policy: ttl:180d
   store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
   cadence: 0 10 * * 2
