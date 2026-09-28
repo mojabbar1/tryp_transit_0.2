@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Iterator
 from decimal import ROUND_HALF_EVEN, Decimal
 from pathlib import Path
@@ -22,6 +23,7 @@ from tda.connectors import ntd_monthly
 from tda.connectors.base import ValidationFailed
 from tda.connectors.ntd_monthly import NtdMonthlyConnector, parse_rows
 from tda.connectors.registry import connector_class
+from tda.facts.rules import ntd_monthly as ntd_rules
 from tda.http.polite_client import PoliteClient
 from tda.store.raw_store import RawStore
 from tests.conftest import DbUrls
@@ -247,7 +249,12 @@ def test_a_new_month_republishes_only_the_facts_that_changed(ntd: Any, writer_en
     assert make().run(live=True).status == "success"
     facts = _facts(writer_engine)
     assert facts["carta.ridership.upt.monthly.bus"] == (Decimal(230001), "2026-08-01", "approved", 2)
-    assert "carta.ridership.upt.monthly.bus.yoy_pct" in facts
+    assert facts["carta.ridership.upt.monthly.bus.yoy_pct"] == (
+        _yoy(state["data"], "MB", "2026-08", "2025-08"),
+        "2026-08-01",
+        "approved",
+        2,
+    )
     assert facts["carta.ridership.upt.monthly.commuter_bus"][3] == 1, "unchanged, so no new version"
     superseded = rows(
         writer_engine,
@@ -282,6 +289,139 @@ def test_an_invalid_response_fails_the_run_and_loads_nothing(ntd: Any, writer_en
     assert outcome.status == "failed" and "non-negative" in (outcome.message or "")
     assert rows(writer_engine, "SELECT count(*) FROM tda.ridership_monthly")[0][0] == 0
     assert rows(writer_engine, "SELECT count(*) FROM tda.fact")[0][0] == 0
+
+
+def _bus_july_2026_changed(
+    data: list[dict[str, Any]], *, drop_july_2025: bool = False
+) -> list[dict[str, Any]]:
+    """July 2026 bus UPT becomes 230,000; optionally July 2025's bus row is left out."""
+    edited = [
+        {**r, "upt": "230000"} if r["mode"] == "MB" and r["date"].startswith("2026-07") else r
+        for r in data
+        if not (drop_july_2025 and r["mode"] == "MB" and r["date"].startswith("2025-07"))
+    ]
+    return edited
+
+
+def _approved(engine: Engine, key: str) -> Any:
+    (fact,) = rows(
+        engine,
+        "SELECT value_num, period_start, derived_from, evidence FROM tda.fact "
+        "WHERE key = :k AND status = 'approved'",
+        k=key,
+    )
+    return fact
+
+
+def test_facts_cite_every_run_their_rows_came_from(ntd: Any, writer_engine: Engine) -> None:
+    make, state = ntd
+    first = make().run(live=True).run_id
+    state["data"] = _bus_july_2026_changed(sample(), drop_july_2025=True)
+    connector = make()
+    second = connector.run(live=True).run_id
+    yoy = _approved(writer_engine, "carta.ridership.upt.monthly.bus.yoy_pct")
+    assert yoy.derived_from["input_run_ids"] == [first, second], (
+        "July 2025 from the first run, July 2026 the second"
+    )
+    change = (Decimal(230000) / Decimal(159221) - 1) * 100
+    assert yoy.value_num == change.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
+    assert _approved(writer_engine, "carta.ridership.upt.monthly.bus").derived_from["input_run_ids"] == [
+        second
+    ]
+    connector.rollback(first, dry_run=False)
+    facts = _facts(writer_engine)
+    assert facts["carta.ridership.upt.monthly.bus.yoy_pct"][2] == "needs_review", (
+        "its denominator was rolled back"
+    )
+    assert facts["carta.ridership.upt.monthly.bus"][2] == "approved"
+
+
+def test_a_slower_run_cannot_publish_over_a_newer_one(
+    ntd: Any, writer_engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    make, state = ntd
+    aggregated, resume = threading.Event(), threading.Event()
+    drafts = ntd_rules._drafts
+
+    def pause_the_first_run(*args: Any, **kwargs: Any) -> Any:
+        if threading.current_thread().name == "older" and not aggregated.is_set():
+            aggregated.set()
+            assert resume.wait(20), "the test never resumed the older run"
+        return drafts(*args, **kwargs)
+
+    monkeypatch.setattr(ntd_rules, "_drafts", pause_the_first_run)
+    outcomes: dict[str, Any] = {}
+
+    def run(name: str) -> None:
+        outcomes[name] = make().run(live=True)
+
+    older = threading.Thread(target=run, args=("older",), name="older")
+    older.start()
+    assert aggregated.wait(20), "the older run should pause after reading the view"
+    state["data"] = _bus_july_2026_changed(sample())
+    newer = threading.Thread(target=run, args=("newer",), name="newer")
+    newer.start()
+    newer.join(1.0)
+    assert newer.is_alive(), "the newer run waits for the older run's publication lock"
+    resume.set()
+    for thread in (older, newer):
+        thread.join(30)
+        assert not thread.is_alive()
+    assert (outcomes["older"].status, outcomes["newer"].status) == ("success", "success")
+    current = rows(
+        writer_engine,
+        "SELECT sum(upt) FROM tda.current_ridership_monthly WHERE mode = 'MB' AND month = '2026-07-01'",
+    )[0][0]
+    bus = _approved(writer_engine, "carta.ridership.upt.monthly.bus")
+    assert current == bus.value_num == 230000, "the approved fact matches the winning current rows"
+    versions = rows(
+        writer_engine, "SELECT count(*) FROM tda.fact WHERE key = 'carta.ridership.upt.monthly.commuter_bus'"
+    )[0][0]
+    assert versions == 1, "an unchanged value gains no version"
+
+
+def _with_upt(
+    data: list[dict[str, Any]], mode: str, tos: str, month: str, upt: str | None
+) -> list[dict[str, Any]]:
+    return [
+        {**r, "upt": upt} if (r["mode"], r["tos"]) == (mode, tos) and r["date"].startswith(month) else r
+        for r in data
+    ]
+
+
+def test_a_month_with_an_unknown_count_is_withheld_not_summed(ntd: Any, writer_engine: Engine) -> None:
+    make, state = ntd
+    state["data"] = _with_upt(sample(), "DR", "TN", "2026-07", None)
+    with structlog.testing.capture_logs() as logs:
+        assert make().run(live=True).status == "success"
+    facts, data = _facts(writer_engine), sample()
+    assert facts["carta.ridership.upt.monthly.demand_response"][:2] == (
+        Decimal(_upt(data, "DR", "2026-06")),
+        "2026-06-01",
+    ), "the latest complete month is June"
+    assert facts["carta.ridership.upt.monthly.demand_response.yoy_pct"][:2] == (
+        _yoy(data, "DR", "2026-06", "2025-06"),
+        "2026-06-01",
+    )
+    assert facts["carta.ridership.upt.monthly.bus"][1] == "2026-07-01", "other modes are unaffected"
+    dr = _approved(writer_engine, "carta.ridership.upt.monthly.demand_response")
+    assert dr.evidence["tos"] == ["PT", "TN"] and dr.evidence["month"] == "2026-06-01"
+    assert any(e["event"] == "ntd.incomplete_period" and e["months"] == ["2026-07-01"] for e in logs)
+
+
+def test_a_year_over_year_change_needs_a_complete_prior_month(ntd: Any, writer_engine: Engine) -> None:
+    make, state = ntd
+    state["data"] = _with_upt(sample(), "DR", "TN", "2025-07", None)
+    with structlog.testing.capture_logs() as logs:
+        assert make().run(live=True).status == "success"
+    facts = _facts(writer_engine)
+    assert facts["carta.ridership.upt.monthly.demand_response"][:2] == (
+        Decimal(_upt(sample(), "DR", "2026-07")),
+        "2026-07-01",
+    )
+    assert "carta.ridership.upt.monthly.demand_response.yoy_pct" not in facts
+    assert "carta.ridership.upt.monthly.bus.yoy_pct" in facts
+    assert any(e["event"] == "ntd.incomplete_period" and e.get("fact") == "yoy_pct" for e in logs)
 
 
 def test_the_reader_sees_the_current_view_only(ntd: Any, db: DbUrls) -> None:

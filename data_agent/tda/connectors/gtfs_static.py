@@ -10,7 +10,13 @@ Data-quality checks. Any failure marks the run ``failed`` and loads nothing:
   and/or calendar_dates;
 - there is at least one stop, and each table's key is unique;
 - stop_times reference known trips and stops, and trips reference known routes (no orphans);
-- times parse as H:MM:SS, allowing 24:00:00 and later (GTFS service days); dates parse, and start <= end.
+- times parse as H:MM:SS, allowing 24:00:00 and later (GTFS service days); dates parse, and start <= end;
+- required times are present: ``arrival_time`` at each trip's first and last stop, and both times at every
+  exact timepoint (``timepoint`` 1, or empty, which GTFS treats as exact). Only approximate stops
+  (``timepoint`` 0) may leave both blank;
+- features this loader doesn't store are refused rather than dropped: GTFS-Flex (Flex fields in stop_times,
+  or Flex files with rows) and headway-based trips (``frequencies.txt`` with rows). Header-only files, as in
+  CARTA's feed, are fine.
 A trip whose service_id isn't in calendar or calendar_dates never runs; that is logged, not fatal.
 """
 
@@ -19,6 +25,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import json
 import re
 import zipfile
 from collections import defaultdict
@@ -33,7 +40,7 @@ from sqlalchemy import Connection, text
 from tda.connectors.base import Connector, FetchResult, LoadStats, PriorRun, Row, ValidationFailed
 from tda.connectors.registry import register
 from tda.http.polite_client import NotModified, RequestBudget
-from tda.store.lineage import LineageError, lock_input_runs
+from tda.store.lineage import LineageError, key_lock, lock_input_runs
 from tda.store.observations import content_hash, insert_observations
 
 log = structlog.get_logger(__name__)
@@ -50,6 +57,31 @@ CHILD_TABLES = (
     "gtfs_shape",
 )
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+# GTFS-Flex stop_times fields, plus the earlier Flex draft's fields that some producers still export (empty).
+FLEX_FIELDS = (
+    "start_pickup_drop_off_window",
+    "end_pickup_drop_off_window",
+    "location_group_id",
+    "location_id",
+    "pickup_booking_rule_id",
+    "drop_off_booking_rule_id",
+    "start_service_area_id",
+    "end_service_area_id",
+    "start_service_area_radius",
+    "end_service_area_radius",
+    "min_arrival_time",
+    "max_departure_time",
+    "mean_duration_factor",
+    "mean_duration_offset",
+    "safe_duration_factor",
+    "safe_duration_offset",
+)
+UNSUPPORTED_FILES = {
+    "location_groups.txt": "GTFS-Flex",
+    "location_group_stops.txt": "GTFS-Flex",
+    "booking_rules.txt": "GTFS-Flex",
+    "frequencies.txt": "headway-based trips",
+}
 _TIME = re.compile(r"^(\d{1,3}):([0-5]\d):([0-5]\d)$")
 _DATE = re.compile(r"^\d{8}$")
 
@@ -131,6 +163,41 @@ def _unique(rows: list[dict[str, Any]], key: tuple[str, ...], name: str) -> None
         seen.add(value)
 
 
+def _reject_unsupported(archive: zipfile.ZipFile, names: set[str]) -> None:
+    """Refuse files whose rows this loader would drop silently (header-only and empty files are fine)."""
+    for name, feature in UNSUPPORTED_FILES.items():
+        if name in names and _read(archive, name).rows:
+            raise ValidationFailed(f"{name} has rows: {feature} isn't supported")
+    if "locations.geojson" in names:
+        raw = archive.read("locations.geojson").strip()
+        if raw:
+            try:
+                features = json.loads(raw).get("features")
+            except (ValueError, AttributeError):
+                raise ValidationFailed("locations.geojson is not valid GeoJSON") from None
+            if features:
+                raise ValidationFailed("locations.geojson has features: GTFS-Flex isn't supported")
+
+
+def _check_times(src: _Rows, stop_times: list[dict[str, Any]]) -> None:
+    """GTFS required times: arrival at each trip's first and last stop, and both times at exact timepoints."""
+    trips: dict[str, list[int]] = defaultdict(list)
+    for i, stop_time in enumerate(stop_times):
+        timepoint = stop_time["timepoint"]
+        if timepoint not in (None, 0, 1):
+            raise src.fail(i, f"timepoint {timepoint} is not 0 or 1")
+        if timepoint != 0:
+            for field in ("arrival_time", "departure_time"):
+                if stop_time[field] is None:
+                    raise src.fail(i, f"{field} is required at an exact timepoint (timepoint 1 or empty)")
+        trips[stop_time["trip_id"]].append(i)
+    for trip_id, indices in trips.items():
+        ordered = sorted(indices, key=lambda i: stop_times[i]["stop_sequence"])
+        for i in dict.fromkeys((ordered[0], ordered[-1])):
+            if stop_times[i]["arrival_time"] is None:
+                raise src.fail(i, f"arrival_time is required at the first and last stop of trip {trip_id}")
+
+
 def parse_feed(raw: bytes) -> tuple[dict[str, Any], Parsed]:
     """Validate a GTFS zip and return (feed version row, rows per table). Raises ValidationFailed."""
     archive = _open(raw)
@@ -140,6 +207,7 @@ def parse_feed(raw: bytes) -> tuple[dict[str, Any], Parsed]:
         missing.append("calendar.txt or calendar_dates.txt")
     if missing:
         raise ValidationFailed(f"required files missing: {', '.join(missing)}")
+    _reject_unsupported(archive, names)
 
     agency = _read(archive, "agency.txt")
     if not agency.rows:
@@ -208,6 +276,10 @@ def parse_feed(raw: bytes) -> tuple[dict[str, Any], Parsed]:
     ]
 
     src = _read(archive, "stop_times.txt")
+    for i, row in enumerate(src.rows):
+        flex = [field for field in FLEX_FIELDS if row.get(field)]
+        if flex:
+            raise src.fail(i, f"uses GTFS-Flex ({', '.join(flex)}), which isn't supported")
     stop_times = []
     for i in range(len(src.rows)):
         sequence = src.number(i, "stop_sequence", int, required=True)
@@ -228,6 +300,7 @@ def parse_feed(raw: bytes) -> tuple[dict[str, Any], Parsed]:
                 "timepoint": src.number(i, "timepoint", int),
             }
         )
+    _check_times(src, stop_times)
     tables["gtfs_stop_time"] = stop_times
 
     tables["gtfs_calendar"] = []
@@ -396,10 +469,13 @@ def activate(
 ) -> None:
     """Make a feed version active by appending an activation.
 
-    During a load (``loading_run``), the version must belong to that run. Otherwise, as from ``tda gtfs
-    activate``, its run is locked ``FOR SHARE`` and must still be a success (the lineage rule), so an
-    activation can't race a rollback of that feed.
+    Activations of a source are serialized by a transaction-scoped lock taken first, so the newest by id is
+    the newest to commit. During a load (``loading_run``), the version must belong to that run. Otherwise,
+    as from ``tda gtfs activate``, its run is locked ``FOR SHARE`` and must still be a success (the lineage
+    rule): the same test the current view uses, so any current version can be activated, and an activation
+    can't race a rollback of that feed.
     """
+    key_lock(connection, "gtfs_activation", source_id)
     run_id = connection.execute(
         text("SELECT fetch_run_id FROM tda.gtfs_feed_version WHERE id = :i AND source_id = :s"),
         {"i": feed_version_id, "s": source_id},

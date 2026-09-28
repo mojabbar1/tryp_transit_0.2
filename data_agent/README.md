@@ -165,16 +165,25 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
 - **Activation** is an append-only log (`gtfs_feed_activation`), not a mutable flag. A new feed activates in the
   load transaction if its service has started in the agency's time zone. `current_gtfs_feed_version.is_active`
   marks the newest activation whose load is still valid, so rolling back a feed's run makes the previous feed
-  active again. `tda gtfs versions` lists the versions; `tda gtfs activate <id> [--by NAME]` switches the active
-  one.
+  active again. Every version whose load succeeded stays current, including an earlier load of the same zip (A,
+  B, then A again is three versions), so any of them can be activated by id. Activations of a source are
+  serialized and ordered by id, which is commit order, not transaction start time. `tda gtfs versions` lists the
+  versions; `tda gtfs activate <id> [--by NAME]` switches the active one.
 - **Data-quality checks** (any failure → `failed`, nothing loaded, raw zip kept as evidence):
   - the required files are present, with calendar and/or calendar_dates;
   - there is at least one stop, and each table's keys are unique;
   - there are no orphan stop_times (trip or stop) and no orphan trips (route);
-  - times are `H:MM:SS`, with 24:00:00 and later allowed and blanks allowed for non-timepoints;
+  - times are `H:MM:SS`, with 24:00:00 and later allowed;
+  - required times are present: `arrival_time` at each trip's first and last stop, and both times at every exact
+    timepoint (`timepoint` 1, or empty, which GTFS treats as exact). Only approximate stops (`timepoint` 0) may
+    leave them blank;
+  - features this loader doesn't store are refused, not dropped: GTFS-Flex (Flex fields in stop_times, or Flex
+    files with rows) and headway-based trips (`frequencies.txt` with rows). Header-only files, as in CARTA's feed,
+    are fine;
   - dates are `YYYYMMDD`, with start ≤ end;
   - coordinates are in range;
-  - the zip unpacks to ≤ 512 MB.
+  - the zip declares ≤ 512 MB unpacked. That limits the archive, not memory: parsing is in memory, and the #17
+    reviewer measured about 664 MiB peak RSS on a synthetic feed of CARTA's size (148,842 stop times).
 - **Idempotent:** a 304 or the same sha256 is `not_modified`. The real CARTA feed (148,842 stop times) loads in
   about 15 s.
 - **Run it:** `tda ingest carta-gtfs --live`, once the source is enabled. Tests use the synthetic feed in
@@ -199,12 +208,17 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
   Month gaps per mode and type of service are logged (`ntd.month_gaps`). All 790 real CARTA rows
   (2002-01 to 2026-07) pass.
 - **Facts** (`tda/facts/rules/ntd_monthly.py`, auto-published because NTD is public domain):
-  - `carta.ridership.upt.monthly.<mode>` (the latest month; types of service summed) and `….yoy_pct` (versus
-    the same month a year earlier).
+  - `carta.ridership.upt.monthly.<mode>` (the latest **complete** month; types of service summed) and
+    `….yoy_pct` (versus the same month a year earlier, which must also be complete). A month where any type of
+    service has an unknown (null) UPT is logged (`ntd.incomplete_period`) and not published, so a partial sum is
+    never presented as an all-service total.
   - They are published in the load transaction after the run is marked a success (the connector's `publish`
-    hook), so the lineage rule holds.
-  - A fact gets a new version only when its value or period changes. Rolling back the run flags its facts
-    `needs_review`.
+    hook). Each fact cites the runs its rows actually came from (both months for `yoy_pct`, which can differ),
+    and those runs are locked `FOR SHARE` first; a rolled-back input fails the load instead of publishing.
+  - Publication is serialized per source (a transaction-scoped lock taken before reading), so a slower run
+    can't publish over a newer one.
+  - A fact gets a new version only when its value, period, or unit changes. Rolling back any cited run flags
+    the fact `needs_review`.
 
 ### `reference_facts` (S-9, S-12…S-15, plus the 05 §2 decisions): human-verified reference values
 
