@@ -32,18 +32,26 @@ sources:
   catalog_id: S-2
   name: CARTA GTFS-RT service alerts
   kind: gtfs_rt
-  url: http://gtfs-realtime.trilliumtransit.com/gtfs-realtime/feed/carta-sc-us/service_alerts.proto
-  license: Same publisher as S-1
-  store_policy: ttl:180d
-  store_policy_reason: 'Open feed: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
+  url: https://gtfs-realtime.trilliumtransit.com/gtfs-realtime/feed/carta-sc-us/service_alerts.proto
+  license: 'Same publisher as S-1: registry-only licence, with no alert-specific grant'
+  terms_url: https://www.transit.land/feeds/f-djz4-carta~sc~us
+  terms_summary: 'Registry-only licence (re-verified 2026-09-27, 05 §6a): the same publisher as S-1, with no
+    alert-specific grant. Raw snapshots kept 30 days; normalized alerts kept; the raw feed is never
+    redistributed. Accepted by the maintainer, 2026-09-28 (05 §6).'
+  store_policy: ttl:30d
+  store_policy_reason: 'Live feed (P3 spec): raw snapshots kept 30 days; normalized alerts kept indefinitely'
   cadence: '*/5 * * * *'
   stale_after_hours: 1
   rate_limit_per_min: 12
   attribution_text: 'Service alerts: CARTA GTFS-RT (via Trillium)'
-  notes: 'Third-party text: untrusted input (02 §7.3). Plain http, as published'
+  notes: 'Third-party text: untrusted input (02 §7.3). Fetched over https (the catalog listed http; https works,
+    05 §6a)'
   auth: none
   robots_required: false
-  status: proposed
+  # Signed in 05 §6 by mojabbar, 2026-09-28 08:08 ET ("approve all for p3"), accepting the registry-only licence.
+  status: approved
+  terms_reviewed_by: mojabbar
+  terms_reviewed_at: 2026-09-28
   owner: mojabbar
 - id: carta-avl
   catalog_id: S-2b

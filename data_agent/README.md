@@ -223,6 +223,25 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
     month) moves its approved fact to `needs_review` in the same step (`ntd.facts_withdrawn`), keeping the
     version; the next complete publication supersedes it.
 
+### `gtfs_rt_alerts` (S-2, `carta-gtfs-rt-alerts`): CARTA's GTFS-realtime service alerts
+
+- **Fetches** the alerts feed every 5 minutes over https (the catalog listed http; https works, 05 §6a).
+- **Canonical snapshot:** the stored raw snapshot has the header timestamp cleared and entities sorted by id, so
+  an unchanged set of alerts has the same sha256 and is `not_modified`.
+- **Loads** one append-only `service_alert` row per alert: cause, effect, severity, active periods and their
+  overall window, informed entities, and the header, description, and url translations.
+  `current_service_alert` is the latest successful snapshot, so an alert that ends drops out; rolling that
+  snapshot back restores the previous one.
+- **Untrusted text** (02 §7.3): alert text is stored as data only, and nothing interprets it.
+- **Data-quality checks** (a failure → `failed`, nothing loaded):
+  - the body is a GTFS-realtime FeedMessage (version 1.0 or 2.0) with a FULL_DATASET header;
+  - every entity has a unique id and is an alert, not deleted;
+  - each alert has at least one informed entity, and each one selects something;
+  - each active period is valid (start ≤ end, within range);
+  - no text contains a NUL character.
+  Routes and stops that the active GTFS feed doesn't have are logged (`gtfs_rt.unknown_references`), not fatal.
+- Raw snapshots are kept 30 days (`ttl:30d`); normalized alerts are kept.
+
 ## Read API
 
 `tda api serve` runs FastAPI as `tda_reader`, in read-only sessions:
