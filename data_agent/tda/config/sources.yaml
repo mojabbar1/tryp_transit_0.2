@@ -238,17 +238,26 @@ sources:
   catalog_id: S-11
   name: EIA weekly regular gasoline, Lower Atlantic (PADD 1C)
   kind: rest
-  url: https://api.eia.gov/v2/petroleum/pri/gnd/data/
-  auth: free_key
+  url: https://www.eia.gov/dnav/pet/hist_xls/EMM_EPMR_PTE_R1Z_DPGw.xls
+  auth: none
   license: Public domain
+  terms_url: https://www.eia.gov/about/copyrights_reuse.php
+  terms_summary: 'Public domain (re-verified 2026-09-27, 05 §6a): EIA''s reuse terms allow use and redistribution
+    with source acknowledgment. Fetched from EIA''s official keyless bulk file of the series, because API v2
+    needs a registered key; the maintainer accepted that acquisition change, 2026-09-28 (05 §6).'
   store_policy: ttl:180d
   store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
-  cadence: 0 20 * * 2
+  # Wednesdays 12:00 UTC: the day after EIA's Tuesday release (it gives no release hour).
+  cadence: 0 12 * * 3
   stale_after_hours: 240
   attribution_text: 'Source: U.S. Energy Information Administration'
-  notes: Series EMM_EPMR_PTE_R1Z_DPG; the key is sent by the connector, never stored here
-  robots_required: false
-  status: proposed
+  notes: Series EMM_EPMR_PTE_R1Z_DPG, from the keyless bulk .xls linked from the series page. Prices are dated
+    Mondays
+  robots_required: true
+  # Signed in 05 §6 by mojabbar, 2026-09-28 08:08 ET ("approve all for p3"), with the bulk-file acquisition change.
+  status: approved
+  terms_reviewed_by: mojabbar
+  terms_reviewed_at: 2026-09-28
   owner: mojabbar
 - id: aaa-driving-costs
   catalog_id: S-12

@@ -19,6 +19,7 @@ dependencies = [
   "apscheduler>=3.10,<4",
   "pyyaml>=6.0",
   "gtfs-realtime-bindings>=3.0",
+  "xlrd>=2.0",
 ]
 
 [project.scripts]
