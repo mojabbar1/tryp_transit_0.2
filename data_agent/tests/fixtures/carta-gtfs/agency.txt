@@ -1,0 +1,2 @@
+agency_id,agency_name,agency_url,agency_timezone
+FX,Fixture Transit Authority,https://example.test/,America/New_York

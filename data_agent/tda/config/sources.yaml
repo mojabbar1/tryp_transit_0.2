@@ -1,5 +1,6 @@
-# Source registry: the source of truth for the `source` table (02 §6.1). Every entry is `proposed`:
-# nothing runs until a PR flips it to `approved` after the terms review in 03 §2.4 (terms_reviewed_by / _at).
+# Source registry: the source of truth for the `source` table (02 §6.1). An entry is `proposed` until a PR flips
+# it to `approved`, after the terms review in 03 §2.4 and the maintainer's sign-off in 05 §6 (terms_reviewed_by
+# / _at). Nothing that isn't approved runs.
 # Values mirror the 03 catalog. Cadences (UTC cron) and stale_after_hours are proposals for P3 to finalize.
 # S-8 (SC511) is omitted: 03 excludes it (no public API; consumer terms only).
 sources:
@@ -9,6 +10,11 @@ sources:
   kind: gtfs
   url: https://data.trilliumtransit.com/gtfs/carta-sc-us/carta-sc-us.zip
   license: 'Transitland registry: use without attribution; derived products allowed'
+  terms_url: https://www.transit.land/feeds/f-djz4-carta~sc~us
+  terms_summary: 'Registry-only licence (re-verified 2026-09-27, 05 §6a): Transitland lists use without attribution
+    and derived products as allowed; its licence URL, redistribution, and commercial-use fields are empty, and the
+    feed''s feed_license is empty. Raw zip kept 180 days; normalized rows kept; derived facts carry CARTA/Trillium
+    attribution; the raw feed is never redistributed. Accepted by the maintainer, 2026-09-28 (05 §6).'
   store_policy: ttl:180d
   store_policy_reason: 'Open GTFS feed: raw snapshots kept 180 days (D-18); feed versions kept'
   cadence: 0 9 * * *
@@ -17,7 +23,10 @@ sources:
   notes: New versions about monthly; poll daily with a conditional GET
   auth: none
   robots_required: false
-  status: proposed
+  # Signed in 05 §6 by mojabbar, 2026-09-28 08:08 ET ("approve all for p3"), accepting the registry-only licence.
+  status: approved
+  terms_reviewed_by: mojabbar
+  terms_reviewed_at: 2026-09-28
   owner: mojabbar
 - id: carta-gtfs-rt-alerts
   catalog_id: S-2

@@ -150,6 +150,45 @@ approving a version supersedes the key's other published versions, so exactly on
 arrive as `candidate` (or `approved` when a reviewed rule auto-publishes) and are approved or rejected with
 `tda review`.
 
+## Connectors (P3)
+
+A source runs only after the maintainer signs its row in
+[05 §6](../docs/transit-data-agent/05-decisions-and-review.md) and its connector PR sets `status: approved`, with
+the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disabled`.
+
+### `gtfs_static` (S-1, `carta-gtfs`): CARTA's GTFS schedule
+
+- **Loads** each changed feed (a new zip sha256) as a new `gtfs_feed_version` plus seven append-only tables:
+  `gtfs_stop`, `gtfs_route`, `gtfs_trip`, `gtfs_stop_time`, `gtfs_calendar`, `gtfs_calendar_date`, and
+  `gtfs_shape`. Every natural key includes `feed_version_id`. Read them through the `current_gtfs_*` views; the
+  reader role can't see the base tables.
+- **Activation** is an append-only log (`gtfs_feed_activation`), not a mutable flag. A new feed activates in the
+  load transaction if its service has started in the agency's time zone. `current_gtfs_feed_version.is_active`
+  marks the newest activation whose load is still valid, so rolling back a feed's run makes the previous feed
+  active again. Every version whose load succeeded stays current, including an earlier load of the same zip (A,
+  B, then A again is three versions), so any of them can be activated by id. Activations of a source are
+  serialized and ordered by id, which is commit order, not transaction start time. `tda gtfs versions` lists the
+  versions; `tda gtfs activate <id> [--by NAME]` switches the active one.
+- **Data-quality checks** (any failure → `failed`, nothing loaded, raw zip kept as evidence):
+  - the required files are present, with calendar and/or calendar_dates;
+  - there is at least one stop, and each table's keys are unique;
+  - there are no orphan stop_times (trip or stop) and no orphan trips (route);
+  - times are `H:MM:SS`, with 24:00:00 and later allowed;
+  - required times are present: `arrival_time` at each trip's first and last stop, and both times at every exact
+    timepoint (`timepoint` 1, or empty, which GTFS treats as exact). Only approximate stops (`timepoint` 0) may
+    leave them blank;
+  - features this loader doesn't store are refused, not dropped: GTFS-Flex (Flex fields in stop_times, or Flex
+    files with rows) and headway-based trips (`frequencies.txt` with rows). Header-only files, as in CARTA's feed,
+    are fine;
+  - dates are `YYYYMMDD`, with start ≤ end;
+  - coordinates are in range;
+  - the zip declares ≤ 512 MB unpacked. That limits the archive, not memory: parsing is in memory, and the #17
+    reviewer measured about 664 MiB peak RSS on a synthetic feed of CARTA's size (148,842 stop times).
+- **Idempotent:** a 304 or the same sha256 is `not_modified`. The real CARTA feed (148,842 stop times) loads in
+  about 15 s.
+- **Run it:** `tda ingest carta-gtfs --live`, once the source is enabled. Tests use the synthetic feed in
+  `tests/fixtures/carta-gtfs/`.
+
 ## Read API
 
 `tda api serve` runs FastAPI as `tda_reader`, in read-only sessions:
@@ -177,12 +216,12 @@ tda/
   config/       settings (TDA_*), sources.yaml, regions/, validation, `tda sources`
   store/        engines, bootstrap, ORM mirror, observations, raw store, retention, source sync, `tda db|retention`
   http/         the polite client
-  connectors/   Connector base, rollback, registry (empty until P3), `tda ingest|runs`
+  connectors/   Connector base, rollback, registry, connectors (P3), `tda ingest|runs|gtfs`
   facts/        fact versions
   metrics/      metric registry (empty until P4)
   review/       the review queue, `tda review`
   api/          the read API, OpenAPI snapshot, `tda api`
   pipelines/    ingest (shared by CLI and worker), scheduler
 migrations/     Alembic (runs as tda_owner)
-tests/          unit/, db/ (need Postgres), support/ (EchoConnector, factories), fixtures/
+tests/          unit/, db/ and connectors/ (need Postgres), support/ (EchoConnector, factories), fixtures/
 ```

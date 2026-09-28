@@ -7,11 +7,15 @@ migrations, so a stale local schema can't hide a change. With trust auth the wri
 
 With ``TDA_REQUIRE_DB_TESTS=1`` (CI), a DB test that would skip is reported as a failure instead, so the
 grant, role, and append-only tests can't be silently skipped.
+
+No test reaches the internet (P3): a socket may connect only to loopback or a Unix socket. The database is
+unaffected (libpq opens its own connections), and respx-mocked HTTP never opens a socket.
 """
 
 from __future__ import annotations
 
 import os
+import socket
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,7 +26,24 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
+from tda.metrics.registry import MetricRegistry
 from tda.store.db import sqlalchemy_url
+
+LOOPBACK = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+@pytest.fixture(autouse=True)
+def _no_internet(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail any test that opens a connection beyond this machine (an approved source would fetch live)."""
+    connect = socket.socket.connect
+
+    def guarded(self: socket.socket, address: object) -> None:
+        host = address[0] if isinstance(address, tuple) else None
+        if self.family != socket.AF_UNIX and host not in LOOPBACK:
+            raise AssertionError(f"a test tried to reach the network: {address!r}")
+        connect(self, address)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded)
 
 
 @pytest.fixture(autouse=True)
@@ -49,8 +70,9 @@ class DbUrls:
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Mark every test that needs Postgres: all of tests/db, and any test that uses the database fixtures."""
     for item in items:
-        if DB_TESTS in Path(str(item.fspath)).parents:
+        if DB_TESTS in Path(str(item.fspath)).parents or "db_urls" in getattr(item, "fixturenames", ()):
             item.add_marker(pytest.mark.db)
 
 
@@ -120,3 +142,17 @@ def db(db_urls: DbUrls) -> DbUrls:
         connection.execute(text(f"TRUNCATE {TABLES} RESTART IDENTITY CASCADE"))
     engine.dispose()
     return db_urls
+
+
+@pytest.fixture
+def writer_engine(db: DbUrls) -> Iterator[Engine]:
+    """An engine connected as tda_writer."""
+    engine = db.engine("writer")
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def metrics() -> MetricRegistry:
+    """An empty metric registry for one test."""
+    return MetricRegistry()

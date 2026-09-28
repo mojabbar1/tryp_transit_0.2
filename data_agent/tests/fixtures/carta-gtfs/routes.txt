@@ -1,0 +1,3 @@
+route_id,agency_id,route_short_name,route_long_name,route_type,route_color,route_text_color
+R1,FX,1,Fixture Crosstown,3,0055A4,FFFFFF
+R2,FX,2,Fixture Express,3,A40000,FFFFFF
