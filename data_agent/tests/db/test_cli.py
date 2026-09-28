@@ -123,10 +123,10 @@ def test_ingest_runs_and_rollback_through_the_cli(
 def test_sources_sync_validate_and_list(invoke: Invoke, writer_engine: Engine) -> None:
     assert "25 sources OK" in invoke("sources", "validate").stdout
     listed = invoke("sources", "list").stdout
-    assert "25 sources: 2 approved, 23 proposed" in listed
+    assert "25 sources: 3 approved, 22 proposed" in listed
     synced = invoke("sources", "sync")
     assert synced.exit_code == 0 and "carta-gtfs" in synced.stdout
-    assert rows(writer_engine, "SELECT count(*) FROM tda.source WHERE status = 'proposed'")[0][0] == 23
+    assert rows(writer_engine, "SELECT count(*) FROM tda.source WHERE status = 'proposed'")[0][0] == 22
     assert "inserted: -" in invoke("sources", "sync").stdout, "a second sync changes nothing"
 
 
@@ -171,8 +171,8 @@ def test_retention_and_scheduler_once(invoke: Invoke, monkeypatch: pytest.Monkey
     with respx.mock(assert_all_called=False) as router:
         once = invoke("scheduler", "run", "--once")
     assert not router.calls, "no network"
-    assert once.exit_code == 0 and "scheduler: 2 ingest job(s)" in once.stdout
-    assert ran == ["ingest:carta-gtfs", "ingest:ntd-monthly", "retention"]
+    assert once.exit_code == 0 and "scheduler: 3 ingest job(s)" in once.stdout
+    assert ran == ["ingest:carta-gtfs", "ingest:carta-gtfs-rt-alerts", "ingest:ntd-monthly", "retention"]
 
 
 def test_api_openapi_writes_the_snapshot(
