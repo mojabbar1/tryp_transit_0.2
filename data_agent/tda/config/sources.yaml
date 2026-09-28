@@ -66,7 +66,7 @@ sources:
   terms_url: https://data.transportation.gov/api/views/8bui-9xvu.json
   terms_summary: 'Dataset metadata (re-verified 2026-09-27, 05 §6a): licence "Public Domain U.S. Government"
     (USGOV_WORKS, https://www.usa.gov/government-works). Fetch, store, and republish with FTA NTD attribution.
-    Enabling still needs the maintainer''s 05 §6 sign-off.'
+    Accepted by the maintainer, 2026-09-28 (05 §6).'
   store_policy: ttl:180d
   store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
   cadence: 0 10 * * 2
@@ -75,7 +75,10 @@ sources:
   notes: Query by ntd_id='40110' (CARTA), not the display name. Weekly refresh with a monthly data lag
   auth: none
   robots_required: false
-  status: proposed
+  # Signed in 05 §6 by mojabbar, 2026-09-28 08:08 ET ("approve all for p3"): public domain.
+  status: approved
+  terms_reviewed_by: mojabbar
+  terms_reviewed_at: 2026-09-28
   owner: mojabbar
 - id: tricounty-link-gtfs
   catalog_id: S-4
