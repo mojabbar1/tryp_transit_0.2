@@ -46,8 +46,9 @@ unclear, or if the source's decision (for example D-7) isn't recorded.
    path, **append-only re-load (`current_<table>` shows the latest row)**, **`tda runs rollback` (dry-run and
    confirm)**, and the fact rules. **No network access in tests.**
 7. **Config:** complete the source's `sources.yaml` entry: `terms_url`, `terms_summary`, `store_policy` with a
-   justification, `attribution_text`, and `cadence`. Leave `status: proposed`. The human reviewer flips it to
-   `approved` in this PR after the terms review.
+   justification, `attribution_text`, and `cadence`. Leave `status: proposed` until the human's terms review and
+   sign-off are recorded in 05 §6. The flip to `approved` then lands in this PR, citing that record. The human
+   commits it, or the builder does so on the recorded sign-off.
 8. **Docs:** add a section to `data_agent/README.md` for this connector, covering what it loads, the DQ checks,
    and how to run it.
 
@@ -95,7 +96,8 @@ cd data_agent && uv sync && uv run ruff check . && uv run ruff format --check . 
 uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head   # migration round-trip
 ```
 
-Live smoke test, **run by a human** after approval (from the repo root). `$TDA_DATABASE_URL` is the plain
+Live smoke test, **run by a human** after approval, or by the builder where the maintainer delegates it in 05 §6 (in an
+isolated local database). Run it from the repo root. `$TDA_DATABASE_URL` is the plain
 `postgresql://…` writer URL:
 ```bash
 docker compose up -d postgres
@@ -110,8 +112,10 @@ psql "$TDA_DATABASE_URL" -c "select count(*) from tda.current_gtfs_stop_time st 
 
 - [ ] CI is green. The connector tests cover the pass and fail paths, idempotency, and 304/not-modified.
 - [ ] The migration round-trips.
-- [ ] `sources.yaml` is complete, and the reviewer has set `approved` after the terms review.
-- [ ] The human's live smoke output is pasted, including the second-run no-op.
+- [ ] `sources.yaml` is complete, and `approved` is set only after the human's terms review and sign-off are
+      recorded in 05 §6.
+- [ ] The live smoke output is pasted (from the human, or from the builder where 05 §6 delegates it), including the
+      second-run no-op.
 - [ ] The catalog is updated if anything changed.
 
 ## Rollback

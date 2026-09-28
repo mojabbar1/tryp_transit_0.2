@@ -53,7 +53,8 @@ The reviewer session reads the diff, runs the same checks, and posts findings.
 - **G0:** merge `claude-opus4.5-refactor` **and** these docs into `main`; **revoke the leaked Gemini key** in
   Google Cloud; answer **D-4, D-13, D-16, D-24**; sign G0 in 05 §G0 and P0 in §7.
 - **Per-phase sign-off:** sign each phase in 05 §7 before its session may start.
-- **Source approvals (P3):** review each source's terms and flip `status: approved` by PR.
+- **Source approvals (P3):** review each source's terms and sign its row in 05 §6. The `status: approved` flip then
+  lands by PR; the builder may commit it on the recorded sign-off.
 - **Live smoke tests that need real API keys** and the **G1 gate** decision.
 - **Publishing** any agent report or enabling any source (queue approval).
 
