@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 import yaml
+from apscheduler.triggers.cron import CronTrigger
 from pydantic import ValidationError
 
 from tda.config.models import Region, Source, SourceRegistry
@@ -128,6 +130,7 @@ BASE = {
         ({"store_policy": "forever"}, "store_policy"),
         ({"cadence": "every monday", "stale_after_hours": 24}, "cron|Wrong number of fields|fields"),
         ({"cadence": "0 9 * * *"}, "set together"),
+        ({"cadence": "0 12 * * 3", "stale_after_hours": 24}, "write the day of the week as a name"),
         ({"status": "approved"}, "terms review"),
         ({"auth": "password"}, "auth"),
         ({"id": "Not_A_Slug"}, "id"),
@@ -136,6 +139,23 @@ BASE = {
 def test_source_rejects_invalid_fixtures(patch: dict, message: str) -> None:
     with pytest.raises(ValidationError, match=message):
         Source.model_validate(BASE | patch)
+
+
+def test_weekly_cadences_fire_on_the_named_day() -> None:
+    # APScheduler reads "3" as Thursday (Monday is 0), so cadences name their day instead.
+    monday = datetime(2026, 9, 28, tzinfo=UTC)
+    fires = {
+        s.id: CronTrigger.from_crontab(s.cadence, timezone="UTC")
+        .get_next_fire_time(None, monday)
+        .strftime("%a %H:%M")
+        for s in load_sources().sources
+        if s.cadence
+    }
+    assert (fires["eia-gas"], fires["ntd-monthly"], fires["tricounty-link-gtfs"]) == (
+        "Wed 12:00",
+        "Tue 10:00",
+        "Mon 09:00",
+    )
 
 
 def test_source_approval_needs_terms_review_and_attribution() -> None:

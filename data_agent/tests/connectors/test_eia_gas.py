@@ -50,11 +50,15 @@ def test_the_real_bulk_file_parses() -> None:
     }
 
 
-def test_old_prices_below_a_dollar_are_real_but_recent_ones_must_be_sane() -> None:
-    history = _weeks(["0.954"] * 5 + ["1.250"] * 52)
-    assert len(validate(history)) == 57, "genuine sub-$1 prices before the latest 52 weeks are kept"
-    with pytest.raises(ValidationFailed, match="below \\$1, outside the sane range for recent weeks"):
-        validate(_weeks(["1.250"] * 52 + ["0.954"]))
+def test_sub_dollar_prices_are_real_before_2002_but_not_since() -> None:
+    history = _weeks(["0.954"] * 5 + ["1.250"] * 3, start=date(2001, 12, 3))
+    assert len(validate(history)) == 8, "EIA's genuine sub-$1 weeks end in December 2001"
+    with pytest.raises(ValidationFailed, match="2002-01-07: \\$0.954 is outside \\$1–\\$10"):
+        validate(_weeks(["0.954"], start=date(2002, 1, 7)))
+    with pytest.raises(ValidationFailed, match="1999-03-29: \\$0.300 is outside \\$0.50–\\$10"):
+        validate(_weeks(["0.300"], start=date(1999, 3, 29)))
+    with pytest.raises(ValidationFailed, match="2025-09-15: \\$0.001 is outside \\$1–\\$10"):
+        validate(_weeks(["0.001"], start=date(2025, 9, 15)))
 
 
 @pytest.mark.parametrize(
@@ -64,8 +68,8 @@ def test_old_prices_below_a_dollar_are_real_but_recent_ones_must_be_sane() -> No
         ([(date(2024, 1, 2), Decimal("3.1"))], "2024-01-02 is not a Monday"),
         (_weeks(["3.1", "3.2"])[:1] + [(date(2024, 1, 15), Decimal("3.2"))], "weeks are not continuous"),
         (_weeks(["3.1"]) * 2, "weeks are not continuous"),
-        (_weeks(["0"]), "is not between \\$0 and \\$10"),
-        (_weeks(["10.000"]), "is not between \\$0 and \\$10"),
+        (_weeks(["0"]), "is outside \\$1–\\$10"),
+        (_weeks(["10.000"]), "is outside \\$1–\\$10"),
     ],
 )
 def test_invalid_prices_are_rejected(prices: list[tuple[date, Decimal]], message: str) -> None:

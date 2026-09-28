@@ -119,6 +119,11 @@ class Source(_Strict):
     def _cron(cls, value: str | None) -> str | None:
         if value is not None:
             CronTrigger.from_crontab(value, timezone="UTC")
+            # APScheduler numbers Monday as 0 but crontab numbers Sunday as 0: a numeric weekday is ambiguous.
+            if any(ch.isdigit() for ch in value.split()[4]):
+                raise ValueError(
+                    f"cadence {value!r}: write the day of the week as a name (mon, tue, ... sun)"
+                )
         return value
 
     @model_validator(mode="after")

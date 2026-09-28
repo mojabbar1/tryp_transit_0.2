@@ -246,7 +246,7 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
 
 - **Fetches** EIA's official keyless bulk file of series `EMM_EPMR_PTE_R1Z_DPG`
   (`https://www.eia.gov/dnav/pet/hist_xls/EMM_EPMR_PTE_R1Z_DPGw.xls`) with a polite conditional GET, honouring
-  `robots.txt`. It runs on Wednesdays, the day after EIA's Tuesday release. The maintainer accepted this
+  `robots.txt`. It runs on Wednesdays (`0 12 * * wed`), the day after EIA's Tuesday release. The maintainer accepted this
   acquisition change in 05 §6, because API v2 needs a registered key.
 - **Loads** append-only `fuel_price_weekly` rows keyed by (series_id, week), read via
   `current_fuel_price_weekly`. The whole history (weekly from 1993) loads on the first run.
@@ -254,8 +254,8 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
   - the body is an .xls whose "Data 1" sheet is the expected series;
   - every row has a date and a numeric price;
   - the weeks are continuous (Mondays, 7 days apart, no gaps or repeats);
-  - every price is above $0 and below $10, and the latest 52 weeks are within P3's sane range of $1–$10.
-    Older weeks may be below $1, because the series really was, until December 2001.
+  - every price is below $10, and every week since 2002 is within P3's sane range of $1–$10. Before 2002 the
+    floor is $0.50: the series really was below $1 until December 2001 (its minimum is $0.854).
 - **Fact** (`tda/facts/rules/eia_gas.py`, auto-published because EIA data is public domain):
   `fuel.gasoline.regular.padd1c.usd_per_gal`, the latest week's price. It uses the NTD rule's lineage (the input
   run is locked `FOR SHARE`) and per-source serialization, and gets a new version only when the value, week, or

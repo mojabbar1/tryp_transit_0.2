@@ -77,7 +77,7 @@ sources:
     Accepted by the maintainer, 2026-09-28 (05 §6).'
   store_policy: ttl:180d
   store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
-  cadence: 0 10 * * 2
+  cadence: 0 10 * * tue
   stale_after_hours: 1080
   attribution_text: 'Source: FTA National Transit Database (public domain)'
   notes: Query by ntd_id='40110' (CARTA), not the display name. Weekly refresh with a monthly data lag
@@ -96,7 +96,7 @@ sources:
   license: No license flags stated; a human terms review is needed
   store_policy: none
   store_policy_reason: 'Terms not yet reviewed (03 §2.4): keep only the checksum until the review sets a policy'
-  cadence: 0 9 * * 1
+  cadence: 0 9 * * mon
   stale_after_hours: 1080
   notes: About monthly
   auth: none
@@ -248,7 +248,7 @@ sources:
   store_policy: ttl:180d
   store_policy_reason: 'Public domain: raw snapshots kept 180 days (D-18); normalized rows kept indefinitely'
   # Wednesdays 12:00 UTC: the day after EIA's Tuesday release (it gives no release hour).
-  cadence: 0 12 * * 3
+  cadence: 0 12 * * wed
   stale_after_hours: 240
   attribution_text: 'Source: U.S. Energy Information Administration'
   notes: Series EMM_EPMR_PTE_R1Z_DPG, from the keyless bulk .xls linked from the series page. Prices are dated

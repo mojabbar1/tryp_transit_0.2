@@ -8,8 +8,9 @@ Data-quality checks. Any failure marks the run ``failed`` and loads nothing:
 - the body is an .xls workbook whose "Data 1" sheet is the expected series (Sourcekey EMM_EPMR_PTE_R1Z_DPG);
 - every row has a date and a numeric price;
 - the weeks are continuous: Mondays, each 7 days after the last, with no gaps or repeats;
-- every price is above $0 and below $10, and each of the latest 52 weeks is within P3's sane range of $1–$10.
-  Older weeks may be below $1, because the series has genuine sub-$1 prices until December 2001.
+- every price is below $10, and every week since 2002 is within P3's sane range of $1–$10. Before 2002 the
+  floor is $0.50, because the series has genuine sub-$1 prices until December 2001 (its minimum is $0.854);
+  a unit or scale error still fails either way.
 
 Facts (``tda/facts/rules/eia_gas.py``): ``fuel.gasoline.regular.padd1c.usd_per_gal``, the latest week's price,
 auto-published because EIA data is public domain.
@@ -39,7 +40,9 @@ SHEET = "Data 1"
 FIRST_DATA_ROW = 3
 MAX_PRICE = Decimal(10)
 SANE_MIN = Decimal(1)
-RECENT_WEEKS = 52
+# Every week since has been at least $1 (the series' last sub-$1 week is 2001-12-17).
+SANE_FROM = date(2002, 1, 1)
+HISTORICAL_MIN = Decimal("0.50")
 
 
 def parse_workbook(raw: bytes) -> list[tuple[date, Decimal]]:
@@ -81,12 +84,9 @@ def validate(prices: list[tuple[date, Decimal]]) -> list[dict[str, Any]]:
             raise ValidationFailed(f"{week} is not a Monday")
         if i and week != prices[i - 1][0] + timedelta(days=7):
             raise ValidationFailed(f"weeks are not continuous: {prices[i - 1][0]} is followed by {week}")
-        if not Decimal(0) < price < MAX_PRICE:
-            raise ValidationFailed(f"{week}: ${price} is not between $0 and ${MAX_PRICE}")
-        if i >= len(prices) - RECENT_WEEKS and price < SANE_MIN:
-            raise ValidationFailed(
-                f"{week}: ${price} is below ${SANE_MIN}, outside the sane range for recent weeks"
-            )
+        floor = SANE_MIN if week >= SANE_FROM else HISTORICAL_MIN
+        if not floor <= price < MAX_PRICE:
+            raise ValidationFailed(f"{week}: ${price} is outside ${floor}–${MAX_PRICE}")
     return [{"series_id": SERIES, "week": week, "usd_per_gal": price} for week, price in prices]
 
 
