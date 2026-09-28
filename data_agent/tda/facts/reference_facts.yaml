@@ -1,0 +1,134 @@
+# Reference facts (P3.5): the 05 §2 assumptions, loaded as `candidate` facts by `tda facts load-reference`.
+#
+# The agent never fills in a number (P3.5). Every value starts as `value: null` (or `value_text: null`) with a
+# `todo` saying where to verify it. A HUMAN enters the verified value, plus `quote` or `page`, `retrieved_at`, and
+# `verified_by`. The loader refuses a filled entry that's missing any of them. The approved values and their
+# verbatim evidence are in docs/transit-data-agent/05-decisions-and-review.md §2 and §2a. Null entries are skipped.
+# Each loaded fact is a `candidate` until someone runs `tda review approve <item>`.
+facts:
+  - key: drive.fuel_price_usd_per_gal
+    value: null
+    unit: USD per gallon (weekly regular gasoline, Lower Atlantic PADD 1C)
+    source_id: eia-gas
+    geography: region:padd-1c
+    url: https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?n=PET&s=EMM_EPMR_PTE_R1Z_DPG&f=W
+    todo: provided weekly by the eia_gas connector (P3.4); enter a value only for a manual snapshot (05 §2)
+
+  - key: drive.mpg
+    value: null
+    unit: miles per gallon (average gasoline vehicle on the road)
+    source_id: epa-typical-vehicle
+    geography: country:us
+    url: https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle
+    todo: verify from the EPA page (EPA-420-F-23-014), the fuel-economy sentence; approved value in 05 §2
+
+  - key: co2.car_g_per_mile
+    value: null
+    unit: g CO2 per vehicle-mile (tailpipe)
+    source_id: epa-typical-vehicle
+    geography: country:us
+    url: https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle
+    todo: verify from the EPA page, the grams-per-mile sentence; approved value in 05 §2
+
+  - key: drive.maintenance_usd_per_mile
+    value: null
+    unit: USD per mile (maintenance, repair and tires; includes an extended warranty)
+    source_id: aaa-driving-costs
+    geography: country:us
+    url: https://newsroom.aaa.com/wp-content/uploads/2025/09/UPDATE-AAA-Fact-Sheet-Your-Driving-Cost-9.2025-1.pdf
+    todo: verify from the AAA fact sheet p.1 ("Maintenance, Repair & Tires"); approved value in 05 §2
+
+  - key: drive.total_cost_usd_per_mile
+    value: null
+    unit: USD per mile (total cost to own and operate, 15,000 miles a year; annual stats only)
+    source_id: aaa-driving-costs
+    geography: country:us
+    url: https://newsroom.aaa.com/wp-content/uploads/2025/09/UPDATE-AAA-Fact-Sheet-Your-Driving-Cost-9.2025-1.pdf
+    todo: verify from the AAA fact sheet p.1 ("Average Ownership Costs Per Mile", 15k column); approved value in 05 §2
+
+  - key: parking.downtown_usd
+    value: null
+    unit: USD per standard-rate workday in a City garage
+    source_id: carta-fares-parking
+    geography: place:charleston-sc
+    url: https://www.charleston-sc.gov/1025/Where-to-Park
+    todo: verify from the City's Where to Park page (garage rates and daily max); approved value and scenario in 05 §2
+
+  - key: transit.base_fare_usd
+    value: null
+    unit: USD per fixed-route one-way ride
+    source_id: carta-fares-parking
+    geography: agency:ntd:40110
+    url: https://ridecarta.com/fares-passes/
+    todo: verify from CARTA Fares & Passes ("Fixed Route One-Way"); approved value in 05 §2
+
+  - key: co2.bus_g_per_passenger_mile
+    value: null
+    unit: g CO2 per passenger-mile (2010 national bus average, a proxy)
+    source_id: fta-2010-climate
+    geography: country:us
+    url: https://www.epa.gov/sites/default/files/2016-04/documents/public_transportations_role_in_responding_to_climate_change.pdf
+    todo: verify from the FTA deck slide 3 ("Bus Transit" bar, lb converted to g); approved value in 05 §2
+
+  - key: headline.congestion.level_pct
+    value: null
+    unit: percent average congestion level (TomTom Traffic Index 2025, City view)
+    source_id: tomtom-traffic-index
+    geography: place:charleston-sc
+    url: https://www.tomtom.com/traffic-index/city/charleston-sc/
+    note: from 05 §2 key headline.congestion; display only, and label the area "City"
+    todo: verify on the TomTom page (City view, "Average congestion level"); approved value in 05 §2
+
+  - key: headline.congestion.rush_hour_hours_lost
+    value: null
+    unit: hours lost to rush-hour traffic in 2025 (TomTom Traffic Index, City view, 10 km commute)
+    source_id: tomtom-traffic-index
+    geography: place:charleston-sc
+    url: https://www.tomtom.com/traffic-index/city/charleston-sc/
+    note: from 05 §2 key headline.congestion; display only, and label the area "City"
+    todo: verify on the TomTom page (City view, "Time lost due to traffic in rush hour"); approved value in 05 §2
+
+  # Decisions rather than measurements: their evidence is the 05 §2 decision record itself.
+  - key: cost.basis
+    value_text: null
+    source_id: null
+    url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
+    todo: enter the decision recorded in 05 §2 (cost.basis)
+
+  - key: co2.car_occupancy
+    value: null
+    unit: persons per car (a drive-alone commute)
+    source_id: null
+    url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
+    todo: enter the decision recorded in 05 §2 (co2.car_occupancy)
+
+  - key: traffic.density_thresholds
+    value_text: null
+    source_id: null
+    url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
+    todo: enter the decision recorded in 05 §2 (traffic.density_thresholds)
+
+  - key: transit.access_buffer_min
+    value: null
+    unit: minutes of walk-to-stop buffer
+    source_id: null
+    url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
+    todo: enter the decision recorded in 05 §2 (transit.access_buffer_min)
+
+  - key: incentive.policy
+    value_text: null
+    source_id: null
+    url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
+    todo: enter the decision recorded in 05 §2 (incentive.policy)
+
+  - key: nudge.tone_rules
+    value_text: null
+    source_id: null
+    url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
+    todo: enter the decision recorded in 05 §2 (nudge.tone_rules)
+
+  - key: parking.applies_to_stops
+    value_text: null
+    source_id: null
+    url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
+    todo: NOT approved yet in 05 §2 (the concrete stop list is new); leave null until it is
