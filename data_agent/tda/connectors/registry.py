@@ -8,7 +8,7 @@ from tda.connectors.base import Connector
 
 CONNECTORS: dict[str, type[Connector]] = {}
 # Imported on first lookup (a connector module imports this one, so importing them here would be a cycle).
-BUILTIN = ("tda.connectors.gtfs_static",)
+BUILTIN = ("tda.connectors.gtfs_static", "tda.connectors.ntd_monthly")
 
 
 def register(cls: type[Connector]) -> type[Connector]:

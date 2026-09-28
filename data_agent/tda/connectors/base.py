@@ -190,6 +190,14 @@ class Connector(ABC):
     def load(self, connection: Connection, rows: list[Row], run_id: int) -> LoadStats:
         """Append the rows for ``run_id`` (see ``insert_observations``); runs inside the run's transaction."""
 
+    def publish(self, connection: Connection, run_id: int) -> None:
+        """Promote facts from this run (P3 fact rules); by default there are none.
+
+        It runs in the load transaction after the run is marked a success, so the run passes the lineage check
+        (``tda.store.lineage``), and a failure here fails the whole load.
+        """
+        return None
+
     def request_budget(self) -> RequestBudget | None:
         """A per-run request budget; None means unlimited (only rate limits apply)."""
         return None
@@ -315,6 +323,7 @@ class Connector(ABC):
             with self.engine.begin() as connection:
                 stats = self.load(connection, rows, run_id)
                 self._update(connection, run_id, "success", **facts)
+                self.publish(connection, run_id)
         except Exception as error:
             return self._finish(run_id, "failed", error=_describe(error), **facts)
         log.info("ingest.success", source=self.source.id, run_id=run_id, rows=stats.rows)

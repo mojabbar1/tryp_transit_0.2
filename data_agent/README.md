@@ -189,6 +189,40 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
 - **Run it:** `tda ingest carta-gtfs --live`, once the source is enabled. Tests use the synthetic feed in
   `tests/fixtures/carta-gtfs/`.
 
+### `ntd_monthly` (S-3, `ntd-monthly`): FTA National Transit Database monthly ridership
+
+- **Fetches** every monthly row for the region agency's NTD ID (CARTA: `ntd_id='40110'`, from
+  `regions/charleston.yaml`; never the display name) from Socrata `8bui-9xvu`:
+  - It pages with `$limit`/`$offset` under a total `$order`, and sends `X-App-Token` only if
+    `TDA_SOCRATA_APP_TOKEN` is set. The polite client never sends such headers across a redirect to another
+    host.
+  - It combines the pages into one canonical JSON body, so an unchanged week has the same sha256 and is
+    `not_modified`.
+- **Loads** append-only `ridership_monthly` rows keyed by (ntd_id, mode, tos, month); read them via
+  `current_ridership_monthly`.
+- **Data-quality checks** (a failure → `failed`, nothing loaded):
+  - there is at least one row, and each has the expected `ntd_id`, a mode, a type of service, and a
+    first-of-month date;
+  - counts are non-negative, and UPT and VOMS are whole numbers;
+  - keys are unique.
+  Month gaps per mode and type of service are logged (`ntd.month_gaps`). All 790 real CARTA rows
+  (2002-01 to 2026-07) pass.
+- **Facts** (`tda/facts/rules/ntd_monthly.py`, auto-published because NTD is public domain):
+  - `carta.ridership.upt.monthly.<mode>` (the latest **complete** month; types of service summed) and
+    `….yoy_pct` (versus the same month a year earlier, which must also be complete). A month where any type of
+    service has an unknown (null) UPT is logged (`ntd.incomplete_period`) and not published, so a partial sum is
+    never presented as an all-service total.
+  - They are published in the load transaction after the run is marked a success (the connector's `publish`
+    hook). Each fact cites the runs its rows actually came from (both months for `yoy_pct`, which can differ),
+    and those runs are locked `FOR SHARE` first; a rolled-back input fails the load instead of publishing.
+  - Publication is serialized per source (a transaction-scoped lock taken before reading), so a slower run
+    can't publish over a newer one.
+  - A fact gets a new version only when its value, period, or unit changes. Rolling back any cited run flags
+    the fact `needs_review`.
+  - A correction that leaves a key without a valid value (for example, a null count now in the year-earlier
+    month) moves its approved fact to `needs_review` in the same step (`ntd.facts_withdrawn`), keeping the
+    version; the next complete publication supersedes it.
+
 ## Read API
 
 `tda api serve` runs FastAPI as `tda_reader`, in read-only sessions:

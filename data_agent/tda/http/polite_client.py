@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -206,21 +206,29 @@ class PoliteClient:
         etag: str | None = None,
         last_modified: str | None = None,
         budget: RequestBudget | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> FetchResponse | NotModified:
-        """GET ``url`` (default: the source's URL) politely; see the module docstring for every rule."""
+        """GET ``url`` (default: the source's URL) politely; see the module docstring for every rule.
+
+        Extra ``headers`` (for example an API token) can't replace the User-Agent, and they are dropped if a
+        redirect leaves the original host, as browsers do with credentials.
+        """
         url = url or (str(source.url) if source.url else None)
         if url is None:
             raise ValueError(f"source {source.id} has no url to fetch")
         self._check_host(source, url, previous=None)
-        headers = {}
+        origin_host = _host(url)
+        extra = {k: v for k, v in (headers or {}).items() if k.lower() != "user-agent"}
+        conditional: dict[str, str] = {}
         if etag:
-            headers["If-None-Match"] = etag
+            conditional["If-None-Match"] = etag
         if last_modified:
-            headers["If-Modified-Since"] = last_modified
+            conditional["If-Modified-Since"] = last_modified
         for _ in range(MAX_REDIRECTS + 1):
             if source.robots_required and not self.robots_allows(source, url):
                 raise RobotsDisallowed(f"robots.txt disallows {redact(url)} for our User-Agent")
-            attempt = self._with_retries(source, url, headers, budget)
+            sent = {**conditional, **(extra if _host(url) == origin_host else {})}
+            attempt = self._with_retries(source, url, sent, budget)
             if attempt.status in REDIRECTS and "location" in attempt.headers:
                 target = urljoin(url, attempt.headers["location"])
                 self._check_host(source, target, previous=url)

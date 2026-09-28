@@ -96,7 +96,7 @@ def test_region_rejects_invalid_fixtures(patch: dict, message: str) -> None:
 
 
 # Sources whose 05 §6 row is signed and whose connector PR has merged. Each connector PR adds its own.
-APPROVED = {"carta-gtfs"}
+APPROVED = {"carta-gtfs", "ntd-monthly"}
 
 
 def test_only_signed_sources_are_approved() -> None:

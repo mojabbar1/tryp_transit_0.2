@@ -6,7 +6,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from tda import __version__
@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     default_rate_limit_per_min: int = Field(30, gt=0)
     max_response_mb: int = Field(200, gt=0)
     api_port: int = Field(8081, gt=0, lt=65536)
+    socrata_app_token: SecretStr | None = None
+    """Optional Socrata app token (TDA_SOCRATA_APP_TOKEN) for higher rate limits; never logged."""
     log_json: bool = False
     """JSON log lines (containers) instead of the console format (a terminal)."""
 
