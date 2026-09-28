@@ -95,10 +95,16 @@ def test_region_rejects_invalid_fixtures(patch: dict, message: str) -> None:
         Region.model_validate(data)
 
 
-def test_every_catalog_source_is_proposed() -> None:
+# Sources whose 05 §6 row is signed and whose connector PR has merged. Each connector PR adds its own.
+APPROVED = {"carta-gtfs"}
+
+
+def test_only_signed_sources_are_approved() -> None:
     registry = load_sources()
     assert len(registry.sources) == 25
-    assert {s.status for s in registry.sources} == {"proposed"}
+    assert {s.id for s in registry.sources if s.status == "approved"} == APPROVED
+    assert {s.status for s in registry.sources if s.id not in APPROVED} == {"proposed"}
+    assert all(s.terms_reviewed_by and s.terms_reviewed_at for s in registry.sources if s.id in APPROVED)
     assert "S-8" not in {s.catalog_id for s in registry.sources}
     assert all(s.robots_required for s in registry.sources if s.kind in ("html", "pdf"))
 
