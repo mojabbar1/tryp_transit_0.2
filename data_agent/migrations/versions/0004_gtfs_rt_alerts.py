@@ -29,10 +29,14 @@ COLUMNS = [
     "active_from timestamptz",
     "active_until timestamptz",
     "active_periods jsonb NOT NULL",
+    "communication_periods jsonb NOT NULL",
+    "impact_periods jsonb NOT NULL",
     "informed_entities jsonb NOT NULL",
     "header_text jsonb NOT NULL",
     "description_text jsonb NOT NULL",
     "url jsonb NOT NULL",
+    # The complete alert as JSON (every field the bindings know), so nothing the feed says is dropped.
+    "alert jsonb NOT NULL",
     "CHECK (active_from IS NULL OR active_until IS NULL OR active_from <= active_until)",
 ]
 

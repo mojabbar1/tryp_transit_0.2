@@ -226,18 +226,28 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
 ### `gtfs_rt_alerts` (S-2, `carta-gtfs-rt-alerts`): CARTA's GTFS-realtime service alerts
 
 - **Fetches** the alerts feed every 5 minutes over https (the catalog listed http; https works, 05 §6a).
-- **Canonical snapshot:** the stored raw snapshot has the header timestamp cleared and entities sorted by id, so
-  an unchanged set of alerts has the same sha256 and is `not_modified`.
-- **Loads** one append-only `service_alert` row per alert: cause, effect, severity, active periods and their
-  overall window, informed entities, and the header, description, and url translations.
+- **Canonical snapshot:** the stored raw snapshot is the whole message with the header timestamp cleared and
+  entities sorted by id (unknown fields and extensions kept), serialized deterministically. An unchanged set of
+  alerts has the same sha256 and is `not_modified`.
+  - Deterministic means repeatable for the pinned protobuf runtime, not a universal canonical form; an upgrade
+    may cost one extra load.
+  - A body that doesn't decode, or lacks required fields, is stored as it came, so a failed run keeps the
+    evidence.
+- **Loads** one append-only `service_alert` row per alert:
+  - typed columns: cause, effect, severity, the active window, active/communication/impact periods, informed
+    entities (with modified trips), and the header, description and url translations;
+  - **the complete alert as JSON**, so no field the feed sends is dropped.
+
   `current_service_alert` is the latest successful snapshot, so an alert that ends drops out; rolling that
   snapshot back restores the previous one.
 - **Untrusted text** (02 §7.3): alert text is stored as data only, and nothing interprets it.
-- **Data-quality checks** (a failure → `failed`, nothing loaded):
-  - the body is a GTFS-realtime FeedMessage (version 1.0 or 2.0) with a FULL_DATASET header;
-  - every entity has a unique id and is an alert, not deleted;
-  - each alert has at least one informed entity, and each one selects something;
-  - each active period is valid (start ≤ end, within range);
+- **Data-quality checks** (a failure → `failed`, nothing loaded; the previous snapshot stays current):
+  - the body is a GTFS-realtime FeedMessage (version 1.0 or 2.0) with every required field and a FULL_DATASET
+    header;
+  - every entity has a unique id and carries an alert and no other payload, and isn't deleted;
+  - each alert has an informed entity. Each one selects something real: empty IDs and empty trips don't
+    count, and a direction_id needs a route_id;
+  - every active, communication and impact period has a bound, each bound is a valid time, and start ≤ end;
   - no text contains a NUL character.
   Routes and stops that the active GTFS feed doesn't have are logged (`gtfs_rt.unknown_references`), not fatal.
 - Raw snapshots are kept 30 days (`ttl:30d`); normalized alerts are kept.
@@ -260,6 +270,21 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
   `fuel.gasoline.regular.padd1c.usd_per_gal`, the latest week's price. It uses the NTD rule's lineage (the input
   run is locked `FOR SHARE`) and per-source serialization, and gets a new version only when the value, week, or
   unit changes.
+
+### `reference_facts` (S-9, S-12…S-15, plus the 05 §2 decisions): human-verified reference values
+
+- `tda/facts/reference_facts.yaml` has one entry per 05 §2 assumption key (`headline.congestion` is split into its
+  two numbers). **The agent never fills in a value**: each ships as `value: null` (or `value_text: null`), with
+  a `todo` naming where to verify it.
+- **A human enters each verified value**, together with a verbatim `quote` or a `page`, `retrieved_at`, and
+  `verified_by`. The loader refuses a filled entry that's missing any of them. A cited `source_id` must exist in
+  `sources.yaml`. Nothing is fetched, so the cited sources stay `proposed`.
+- `tda facts load-reference [--check] [--by NAME]` queues every filled, changed entry as a **`candidate`** fact
+  (`created_by: human`) with a pending review item; null entries are skipped. Re-loading unchanged entries,
+  including rejected ones, queues nothing; a changed value becomes a new version.
+- A candidate is never served. It becomes citable at `/v1/facts` only after `tda review approve <item>`.
+- Blank (whitespace-only) text counts as missing, so it can't stand in for evidence. Loads running at once are
+  serialized per key, so a change is queued once; locks are taken in one order (fact keys, then source ids).
 
 ## Read API
 
@@ -289,7 +314,7 @@ tda/
   store/        engines, bootstrap, ORM mirror, observations, raw store, retention, source sync, `tda db|retention`
   http/         the polite client
   connectors/   Connector base, rollback, registry, connectors (P3), `tda ingest|runs|gtfs`
-  facts/        fact versions
+  facts/        fact versions, fact rules (P3), reference facts, `tda facts`
   metrics/      metric registry (empty until P4)
   review/       the review queue, `tda review`
   api/          the read API, OpenAPI snapshot, `tda api`

@@ -198,6 +198,10 @@ sources:
   kind: html
   url: https://www.tomtom.com/traffic-index/city/charleston-sc/
   license: Cite headline figures with attribution; no bulk reuse
+  terms_url: https://www.tomtom.com/legal/terms-of-use/
+  terms_summary: 'TomTom''s terms of use (checked 2026-09-27, 05 §6a) call all site content its proprietary property
+    and grant no licence. Citing a headline figure with attribution, with no bulk reuse, is this project''s policy.
+    Accepted by the maintainer for educational use (05 §6).'
   store_policy: none
   store_policy_reason: 'Cite-only terms (no bulk reuse): keep only the checksum'
   attribution_text: 'Source: TomTom Traffic Index'
@@ -265,6 +269,8 @@ sources:
   kind: pdf
   url: https://newsroom.aaa.com/wp-content/uploads/2025/09/UPDATE-AAA-Fact-Sheet-Your-Driving-Cost-9.2025-1.pdf
   license: Cite with attribution; no bulk reuse
+  terms_summary: 'No terms page is linked from newsroom.aaa.com (checked 2026-09-27, 05 §6a); it is a press fact
+    sheet. Cite with attribution, with no bulk reuse (project policy); accepted with the P3 sign-off (05 §6).'
   store_policy: none
   store_policy_reason: 'Cite-only terms (no bulk reuse): keep only the checksum'
   attribution_text: 'Source: AAA, Your Driving Costs 2025'
@@ -279,6 +285,10 @@ sources:
   kind: html
   url: https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle
   license: Public domain
+  terms_url: https://www.epa.gov/web-policies-and-procedures/epa-disclaimers
+  terms_summary: 'EPA''s disclaimer (checked 2026-09-27, 05 §6a): documents "may be freely distributed and used for
+    non-commercial, scientific and educational purposes"; commercial use "may be protected". Accepted for educational
+    use; the project''s non-commercial guardrail applies (05 §6).'
   store_policy: ttl:180d
   store_policy_reason: 'Public web page cited as fact evidence: snapshots kept 180 days, and pinned while a published fact
     cites them'
@@ -294,6 +304,10 @@ sources:
   kind: pdf
   url: https://www.epa.gov/sites/default/files/2016-04/documents/public_transportations_role_in_responding_to_climate_change.pdf
   license: Public domain; stale (2010)
+  terms_url: https://www.epa.gov/web-policies-and-procedures/epa-disclaimers
+  terms_summary: 'An FTA deck hosted on epa.gov, so EPA''s disclaimer applies (checked 2026-09-27, 05 §6a):
+    non-commercial, scientific and educational use. Accepted for educational use; the non-commercial guardrail applies
+    (05 §6). Stale (2010).'
   store_policy: ttl:180d
   store_policy_reason: 'Public web page cited as fact evidence: snapshots kept 180 days, and pinned while a published fact
     cites them'
@@ -322,6 +336,10 @@ sources:
   kind: html
   url: https://ridecarta.com/fares-passes/
   license: Public web; check robots.txt; cite
+  terms_url: https://www.charleston-sc.gov/site/copyright
+  terms_summary: 'City of Charleston (checked 2026-09-27, 05 §6a): "All content © 2006-2026 Charleston, SC and its
+    representatives. All rights reserved." CARTA''s footer reads "© 2026 CARTA."; no terms page. A human enters single
+    cited values; accepted for educational use (05 §6).'
   store_policy: ttl:180d
   store_policy_reason: 'Public web page cited as fact evidence: snapshots kept 180 days, and pinned while a published fact
     cites them'

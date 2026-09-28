@@ -19,6 +19,7 @@ EXPECTED = {
     "sources": {"list", "validate", "sync"},
     "runs": {"rollback", "list", "show"},
     "gtfs": {"versions", "activate"},
+    "facts": {"load-reference"},
     "review": {"list", "show", "approve", "reject"},
     "api": {"serve", "openapi"},
     "retention": {"run"},

@@ -4,16 +4,22 @@ The feed is a full snapshot of the active alerts, polled every few minutes over 
 http; https works, 05 §6a). Each changed snapshot is one run of ``service_alert`` rows, and
 ``current_service_alert`` is the latest successful snapshot.
 
-- **Canonical body:** the feed header's timestamp changes on every poll, so the raw snapshot is stored with
-  it cleared, entities sorted by id, and deterministic serialization. An unchanged set of alerts then has
-  the same sha256 and is ``not_modified``.
-- **Untrusted text** (02 §7.3): header, description, and url translations are stored as data only.
+- **Canonical body:** the feed header's timestamp changes on every poll, so the stored raw snapshot is the
+  whole message with that timestamp cleared and entities sorted by id (unknown fields and extensions kept),
+  serialized deterministically. An unchanged set of alerts then has the same sha256 and is ``not_modified``.
+  Deterministic means repeatable for the pinned protobuf runtime, not a universal canonical form: an upgrade
+  may change the bytes, which costs one extra load. A body that doesn't decode, or lacks required fields, is
+  stored unchanged, so a failed run keeps the evidence.
+- **Nothing known is dropped:** each row keeps typed columns for querying, plus the complete alert as JSON.
+- **Untrusted text** (02 §7.3): alert text is stored as data only.
 
 Data-quality checks. Any failure marks the run ``failed`` and loads nothing:
-- the body parses as a GTFS-realtime FeedMessage (version 1.0 or 2.0) with a FULL_DATASET header;
-- every entity has a unique id and is an alert, not deleted;
-- each alert has at least one informed entity, and each one selects something;
-- each active period is valid (start <= end when both are set, within the datetime range);
+- the body parses as a GTFS-realtime FeedMessage (version 1.0 or 2.0) with every required field and a
+  FULL_DATASET header;
+- every entity has a unique id and carries an alert and no other payload, and isn't deleted;
+- each alert has at least one informed entity. Each one selects something real: empty IDs and empty trips
+  don't count, and a direction_id needs a route_id. A modified trip is kept;
+- every active, communication, and impact period has a bound, each bound is a valid time, and start <= end;
 - no text contains a NUL character (PostgreSQL can't store one).
 An informed entity naming a route or stop that the active GTFS feed doesn't have is logged
 (``gtfs_rt.unknown_references``), not fatal: an alert can refer to service the schedule doesn't list yet.
@@ -28,7 +34,8 @@ from datetime import UTC, datetime
 from typing import Any
 
 import structlog
-from google.protobuf.message import DecodeError
+from google.protobuf.json_format import MessageToDict
+from google.protobuf.message import DecodeError, EncodeError
 from google.transit import gtfs_realtime_pb2 as rt
 from sqlalchemy import Connection, text
 
@@ -40,23 +47,31 @@ from tda.store.observations import insert_observations
 log = structlog.get_logger(__name__)
 
 VERSIONS = ("1.0", "2.0")
-SELECTORS = ("agency_id", "route_id", "route_type", "direction_id", "stop_id")
-TRIP_FIELDS = ("trip_id", "route_id", "direction_id", "start_time", "start_date")
+PERIODS = ("active_period", "communication_period", "impact_period")
+IDS = ("agency_id", "route_id", "stop_id")
+TRIP_IDS = ("trip_id", "route_id", "start_time", "start_date")
+MODIFIED_TRIP_IDS = ("modifications_id", "affected_trip_id", "start_time", "start_date")
 
 
 def canonical(raw: bytes) -> bytes:
-    """The feed with its header timestamp cleared and entities sorted by id; unchanged if it doesn't parse."""
+    """The whole feed, header timestamp cleared and entities sorted by id; ``raw`` if that can't be done."""
     message = rt.FeedMessage()
     try:
         message.ParseFromString(raw)
     except DecodeError:
         return raw
+    if not message.IsInitialized():
+        return raw
     out = rt.FeedMessage()
-    out.header.CopyFrom(message.header)
+    out.CopyFrom(message)
     out.header.ClearField("timestamp")
+    del out.entity[:]
     for entity in sorted(message.entity, key=lambda e: e.id):
         out.entity.add().CopyFrom(entity)
-    return out.SerializeToString(deterministic=True)
+    try:
+        return out.SerializeToString(deterministic=True)
+    except EncodeError:
+        return raw
 
 
 def parse_alerts(raw: bytes) -> list[dict[str, Any]]:
@@ -66,11 +81,15 @@ def parse_alerts(raw: bytes) -> list[dict[str, Any]]:
         message.ParseFromString(raw)
     except DecodeError:
         raise ValidationFailed("the body is not a GTFS-realtime FeedMessage") from None
+    if not message.IsInitialized():
+        missing = ", ".join(message.FindInitializationErrors()[:5])
+        raise ValidationFailed(f"the feed is missing required fields: {missing}")
     header = message.header
     if header.gtfs_realtime_version not in VERSIONS:
         raise ValidationFailed(f"unsupported gtfs_realtime_version {header.gtfs_realtime_version!r}")
     if header.incrementality != rt.FeedHeader.FULL_DATASET:
         raise ValidationFailed("only FULL_DATASET feeds are supported")
+    payloads = [f.name for f in rt.FeedEntity.DESCRIPTOR.fields if f.message_type is not None]
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
     for entity in message.entity:
@@ -81,46 +100,89 @@ def parse_alerts(raw: bytes) -> list[dict[str, Any]]:
         seen.add(entity.id)
         if entity.is_deleted:
             raise ValidationFailed(f"entity {entity.id!r} is deleted, which a FULL_DATASET feed doesn't use")
-        if not entity.HasField("alert") or entity.HasField("trip_update") or entity.HasField("vehicle"):
-            raise ValidationFailed(f"entity {entity.id!r} is not an alert")
+        if [name for name in payloads if entity.HasField(name)] != ["alert"]:
+            raise ValidationFailed(f"entity {entity.id!r} is not an alert alone")
         rows.append(_alert_row(entity.id, entity.alert))
     return rows
 
 
 def _alert_row(alert_id: str, alert: Any) -> dict[str, Any]:
-    periods = []
-    for period in alert.active_period:
-        start = period.start if period.HasField("start") else None
-        end = period.end if period.HasField("end") else None
-        if start is not None and end is not None and start > end:
-            raise ValidationFailed(f"alert {alert_id!r}: an active period starts after it ends")
-        periods.append({"start": start, "end": end})
+    periods = {field: _periods(alert_id, alert, field) for field in PERIODS}
     if not alert.informed_entity:
         raise ValidationFailed(f"alert {alert_id!r} has no informed_entity")
-    starts, ends = [p["start"] for p in periods], [p["end"] for p in periods]
-    return {
-        "alert_id": _plain(alert_id, alert_id),
+    active = periods["active_period"]
+    starts, ends = [p["start"] for p in active], [p["end"] for p in active]
+    row = {
+        "alert_id": alert_id,
         "cause": _enum(alert, "cause", rt.Alert.Cause),
         "effect": _enum(alert, "effect", rt.Alert.Effect),
         "severity_level": _enum(alert, "severity_level", rt.Alert.SeverityLevel),
-        # Open when there are no periods, or when any period is open on that side.
-        "active_from": _time(alert_id, min(starts)) if periods and None not in starts else None,
-        "active_until": _time(alert_id, max(ends)) if periods and None not in ends else None,
-        "active_periods": _json(alert_id, periods),
-        "informed_entities": _json(alert_id, [_selector(alert_id, s) for s in alert.informed_entity]),
-        "header_text": _json(alert_id, _translations(alert, "header_text")),
-        "description_text": _json(alert_id, _translations(alert, "description_text")),
-        "url": _json(alert_id, _translations(alert, "url")),
+        # The envelope of active_period; open when there are none, or when any is open on that side.
+        "active_from": _time(alert_id, min(starts)) if active and None not in starts else None,
+        "active_until": _time(alert_id, max(ends)) if active and None not in ends else None,
+        "active_periods": active,
+        "communication_periods": periods["communication_period"],
+        "impact_periods": periods["impact_period"],
+        "informed_entities": [_selector(alert_id, s) for s in alert.informed_entity],
+        "header_text": _translations(alert, "header_text"),
+        "description_text": _translations(alert, "description_text"),
+        "url": _translations(alert, "url"),
+        "alert": MessageToDict(alert, preserving_proto_field_name=True),
+    }
+    _no_nul(alert_id, row)
+    return {
+        k: json.dumps(v, sort_keys=True, ensure_ascii=False) if _is_json(k) else v for k, v in row.items()
     }
 
 
+def _is_json(column: str) -> bool:
+    return column not in ("alert_id", "cause", "effect", "severity_level", "active_from", "active_until")
+
+
+def _periods(alert_id: str, alert: Any, field: str) -> list[dict[str, int | None]]:
+    periods = []
+    for n, period in enumerate(getattr(alert, field), start=1):
+        start = period.start if period.HasField("start") else None
+        end = period.end if period.HasField("end") else None
+        if start is None and end is None:
+            raise ValidationFailed(f"alert {alert_id!r}: {field} {n} has neither start nor end")
+        for bound in (start, end):
+            if bound is not None:
+                _time(alert_id, bound)
+        if start is not None and end is not None and start > end:
+            raise ValidationFailed(f"alert {alert_id!r}: {field} {n} starts after it ends")
+        periods.append({"start": start, "end": end})
+    return periods
+
+
 def _selector(alert_id: str, selector: Any) -> dict[str, Any]:
-    chosen: dict[str, Any] = {f: getattr(selector, f) for f in SELECTORS if selector.HasField(f)}
-    if selector.HasField("trip"):
-        chosen["trip"] = {f: getattr(selector.trip, f) for f in TRIP_FIELDS if selector.trip.HasField(f)}
-    if not chosen:
+    chosen: dict[str, Any] = {f: getattr(selector, f) for f in IDS if getattr(selector, f)}
+    for field in ("route_type", "direction_id"):
+        if selector.HasField(field):
+            chosen[field] = getattr(selector, field)
+    trip = _trip(selector.trip) if selector.HasField("trip") else {}
+    if trip.keys() & {"trip_id", "route_id", "modified_trip"}:
+        chosen["trip"] = trip
+    if "direction_id" in chosen and "route_id" not in chosen:
+        raise ValidationFailed(f"alert {alert_id!r}: an informed_entity has a direction_id but no route_id")
+    if not chosen.keys() - {"direction_id"}:
         raise ValidationFailed(f"alert {alert_id!r}: an informed_entity selects nothing")
     return chosen
+
+
+def _trip(trip: Any) -> dict[str, Any]:
+    out: dict[str, Any] = {f: getattr(trip, f) for f in TRIP_IDS if getattr(trip, f)}
+    if trip.HasField("direction_id"):
+        out["direction_id"] = trip.direction_id
+    if trip.HasField("schedule_relationship"):
+        out["schedule_relationship"] = rt.TripDescriptor.ScheduleRelationship.Name(trip.schedule_relationship)
+    if trip.HasField("modified_trip"):
+        modified = {
+            f: getattr(trip.modified_trip, f) for f in MODIFIED_TRIP_IDS if getattr(trip.modified_trip, f)
+        }
+        if modified:
+            out["modified_trip"] = modified
+    return out
 
 
 def _translations(alert: Any, field: str) -> list[dict[str, str | None]]:
@@ -140,18 +202,18 @@ def _time(alert_id: str, seconds: int) -> datetime:
         raise ValidationFailed(f"alert {alert_id!r}: time {seconds} is out of range") from None
 
 
-def _plain(alert_id: str, value: str) -> str:
-    if "\x00" in value:
-        raise ValidationFailed(f"alert {alert_id!r} contains a NUL character")
-    return value
-
-
-def _json(alert_id: str, value: Any) -> str:
-    """Canonical JSON for a jsonb column (sorted keys), refusing NUL, which jsonb can't store."""
-    dumped = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
-    if "\\u0000" in dumped:
-        raise ValidationFailed(f"alert {alert_id!r} contains a NUL character")
-    return dumped
+def _no_nul(alert_id: str, value: Any) -> None:
+    """Refuse a real NUL character anywhere in the alert: PostgreSQL text and jsonb can't store one."""
+    if isinstance(value, str):
+        if "\x00" in value:
+            raise ValidationFailed(f"alert {alert_id!r} contains a NUL character")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            _no_nul(alert_id, key)
+            _no_nul(alert_id, item)
+    elif isinstance(value, list):
+        for item in value:
+            _no_nul(alert_id, item)
 
 
 @register

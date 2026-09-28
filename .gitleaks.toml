@@ -15,3 +15,14 @@ commits = [
   "df00efc4231ed4d0ee8b914d8e58040b45d56ddf", # setup gemini api tests (src/app/api/simple-gemini-test/route.ts)
   "9b129d67893f85241626bf0ecb91168bf78f173e", # assessed baseline (REFACTORING_PLAN.md)
 ]
+
+# False positive (#19): the generic-api-key rule reads the two fact keys that contain a digit as secrets.
+# This allows only lines that are exactly one of those two keys, in the reference facts file, for that one
+# rule. A new key that trips the rule is added here by name, never by pattern.
+[[allowlists]]
+description = "Fact keys in the reference facts file (not secrets)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^data_agent/tda/facts/reference_facts\.yaml$''']
+regexTarget = "line"
+regexes = ['''^\s*- key: (co2\.car_g_per_mile|co2\.bus_g_per_passenger_mile)\s*$''']
