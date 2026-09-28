@@ -14,6 +14,9 @@ Everything comes from ``current_ridership_monthly``, which can mix rows from sev
   check, and the writes are one step, and a slower run can't publish over a newer one.
 - A fact is re-published only when its value, period, or unit changes, so re-loading the same numbers
   doesn't churn versions.
+- **Withdrawn when it can't be produced:** if a correction leaves a mode's key without a valid value (say, a
+  null count now in the year-earlier month), its approved fact moves to ``needs_review``, as a rollback does.
+  The version is kept, and the next complete publication supersedes it.
 """
 
 from __future__ import annotations
@@ -46,6 +49,10 @@ MODE_NAMES = {
 
 def _month_end(month: date) -> date:
     return month.replace(day=calendar.monthrange(month.year, month.month)[1])
+
+
+def _key(agency: str, mode: str) -> str:
+    return f"{agency}.ridership.upt.monthly.{MODE_NAMES.get(mode, mode.lower())}"
 
 
 @dataclass
@@ -84,11 +91,32 @@ def publish(connection: Connection, *, run_id: int, source_id: str, agency: str,
         lock_input_runs(connection, [r for draft in drafts for r in draft.derived_from["input_run_ids"]])
     except LineageError as error:
         raise LineageError(f"NTD facts not published: {error}") from None
+    owned = {key for mode in months for key in (_key(agency, mode), f"{_key(agency, mode)}.yoy_pct")}
+    withdrawn = _withdraw(connection, sorted(owned - {draft.key for draft in drafts}))
+    if withdrawn:
+        log.warning("ntd.facts_withdrawn", run_id=run_id, keys=withdrawn, status="needs_review")
     return [
         write_fact(connection, draft, auto_publish=True)
         for draft in drafts
         if not _unchanged(connection, draft)
     ]
+
+
+def _withdraw(connection: Connection, keys: list[str]) -> list[str]:
+    """Approved facts the rule can no longer produce become ``needs_review``; returns the keys changed."""
+    withdrawn = []
+    for key in keys:
+        key_lock(connection, "fact", key)
+        flagged = connection.execute(
+            text(
+                "UPDATE tda.fact SET status = 'needs_review' "
+                "WHERE key = :k AND status = 'approved' RETURNING id"
+            ),
+            {"k": key},
+        ).first()
+        if flagged is not None:
+            withdrawn.append(key)
+    return withdrawn
 
 
 def _drafts(
@@ -113,7 +141,7 @@ def _drafts(
         "created_by": "connector",
     }
     evidence = {"dataset": DATASET, "ntd_id": ntd_id, "mode": mode, "month": latest.isoformat()}
-    key = f"{agency}.ridership.upt.monthly.{name}"
+    key = _key(agency, mode)
     drafts = [
         FactDraft(
             key=key,

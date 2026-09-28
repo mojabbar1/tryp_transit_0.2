@@ -219,6 +219,9 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
     can't publish over a newer one.
   - A fact gets a new version only when its value, period, or unit changes. Rolling back any cited run flags
     the fact `needs_review`.
+  - A correction that leaves a key without a valid value (for example, a null count now in the year-earlier
+    month) moves its approved fact to `needs_review` in the same step (`ntd.facts_withdrawn`), keeping the
+    version; the next complete publication supersedes it.
 
 ## Read API
 
