@@ -180,35 +180,51 @@ that drive the plan:
 > is causing a bottleneck"*.
 >
 > **What it covers:**
-> - It authorizes **preparing and building** P3 under three conditions: no cost, no privacy concern, and nothing
->   destructive.
+> - It authorizes **preparing** P3 (the re-verification research and these sign-off packets) under three conditions:
+>   no cost, no privacy concern, and nothing destructive.
 > - It is **not** the per-connector sign-off below, as the reviewer ruled on #16. For that, the maintainer must name
 >   the connector rows, accept each terms determination (including any stated uncertainty), and say who runs the
 >   live smoke tests.
-> - The builder asked for this at about 21:00 ET, and the maintainer was not available, so **every row is pending**.
+> - It does **not** meet the P3 prompt's precondition that a connector's row is signed **before** that connector is
+>   built (reviewer, #16 round 3).
+> - The builder asked for the sign-off at about 21:00 ET, and the maintainer was not available, so **every row is
+>   pending**.
 >
-> Until the maintainer signs, the P3 prompt's procedure is unchanged:
-> - The builder builds and tests each connector in its **own open PR**, reviewed as usual. **Nothing merges** until
->   that connector's row is signed.
+> **Built ahead of the gate (a proposed exception, not yet ratified):**
+> - Before that ruling, the builder read the instruction as permission to build, and opened three PRs:
+>   #17 (`gtfs_static`), #18 (`ntd_monthly`) and #19 (`reference_facts`).
+> - They are disabled, unmerged, and now **drafts**. That departs from the P3 precondition, and **only the
+>   maintainer can ratify or decline it**:
+>   - **Ratify:** review and sign-off continue in those PRs, starting with the review findings already posted on
+>     #17 and #18.
+>   - **Decline:** they are closed unmerged, and a connector is built only after its row is signed.
+> - The builder asked again at 21:25 ET. The maintainer was not available, which is **not** approval. The drafts are
+>   left as they are until the maintainer answers.
+>
+> Until the maintainer signs, the P3 prompt's procedure applies unchanged:
+> - The builder only researches and prepares packets. A connector is built and tested only after its row is
+>   signed, in its **own PR**, reviewed as usual. **Nothing merges** before that.
 > - Every source stays `proposed`, so running it only records `skipped_disabled`.
 > - Synthetic data appears only as test fixtures, never as real observations.
 >
-> When a row is signed, that connector's PR gets the `status: approved` flip and the live smoke-test output (two
-> ingestions plus the DB and DQ checks), then merges, as the P3 definition of done requires. Per the P3 prompt, a
-> human runs the smoke tests unless the maintainer explicitly delegates them to the builder.
+> When a row is signed, that connector is built in its own PR (or its draft is finished, if ratified). The PR gets
+> the `status: approved` flip and the live smoke-test output (two ingestions plus the DB and DQ checks), then merges,
+> as the P3 definition of done requires. Per the P3 prompt, a human runs the smoke tests unless the maintainer
+> explicitly delegates them to the builder.
 >
 > **To sign, one reply is enough.** For example: *"approve gtfs_static and gtfs_rt_alerts (accepting the
-> registry-only licence), ntd_monthly, eia_gas (bulk file), and reference_facts (candidates only); you may run the
-> live smoke tests."* Name any subset.
+> registry-only licence), ntd_monthly, eia_gas (bulk file), and reference_facts (candidates only, accepting the §6a
+> terms notes on S-9 and S-12…S-15); ratify drafts #17–#19; you may run the live smoke tests."* Name any subset, or
+> say "decline the drafts" to have them closed.
 
 The builder's assessment is in §6a. "Eligible" means that, in the builder's reading, the source meets the no-cost,
 no-privacy, and non-destructive conditions. It is not a sign-off.
 
 | Connector | Source | Stage | Terms reviewed by / date | `store_policy` | Key provisioned | Approved to enable |
 |-----------|--------|-------|--------------------------|----------------|-----------------|--------------------|
-| `gtfs_static` | S-1 | Pilot | prepared and re-verified by Claude Opus (builder), 2026-09-27; **human terms sign-off pending** | `ttl:180d` raw zip (D-18); normalized rows kept indefinitely; raw cited by a published fact kept regardless of TTL (03 §3.1) | n/a | ☐ pending: eligible, but the **licence is registry-only** (§6a), which the maintainer must accept explicitly or wait on CARTA/Trillium (D-20) |
-| `ntd_monthly` | S-3 | Pilot | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` raw (D-18); normalized rows kept indefinitely | n/a (the optional app token isn't used) | ☐ pending: eligible (public domain) |
-| `reference_facts` | S-9, S-12…S-15 | Pilot | prepared by the builder, 2026-09-27; **human sign-off pending** | n/a: nothing is fetched | n/a | ☐ pending: eligible to load **`candidate`** facts only. Values are entered by a human (P3.5), and each fact still needs `tda review approve`. The cited sources stay `proposed` because nothing fetches them |
+| `gtfs_static` (draft #17) | S-1 | Pilot | prepared and re-verified by Claude Opus (builder), 2026-09-27; **human terms sign-off pending** | `ttl:180d` raw zip (D-18); normalized rows kept indefinitely; raw cited by a published fact kept regardless of TTL (03 §3.1) | n/a | ☐ pending: eligible, but the **licence is registry-only** (§6a), which the maintainer must accept explicitly or wait on CARTA/Trillium (D-20) |
+| `ntd_monthly` (draft #18) | S-3 | Pilot | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` raw (D-18); normalized rows kept indefinitely | n/a (the optional app token isn't used) | ☐ pending: eligible (public domain) |
+| `reference_facts` (draft #19) | S-9, S-12…S-15 | Pilot | prepared and terms re-checked by the builder, 2026-09-27 (§6a); **human sign-off pending** | n/a: nothing is fetched | n/a | ☐ pending: eligible to load **`candidate`** facts only. Values are entered by a human (P3.5), and each fact still needs `tda review approve`. The cited sources stay `proposed` because nothing fetches them. The §6a terms notes need explicit acceptance: EPA's "non-commercial" wording for S-13/S-14, and "All rights reserved" on S-15's City page |
 | `census_acs` | S-10 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27 | `ttl:180d` | ☐ **a key is required** (keyless calls redirect to `missing_key.html`) | ☐ not eligible yet: synthetic fixtures only until the maintainer supplies a free key and signs |
 | `eia_gas` | S-11 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` | n/a if the acquisition change is approved: EIA's official keyless bulk file of the same series (API v2 needs a registered key) | ☐ pending: eligible; the **acquisition change** needs the sign-off |
 | `gtfs_rt_alerts` | S-2 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **human terms sign-off pending** | `ttl:30d` raw (P3 spec); normalized rows kept indefinitely | n/a | ☐ pending: eligible, with the same **registry-only licence** as S-1 (there's no alert-specific grant) |
@@ -224,6 +240,11 @@ Compared with the 03 catalog:
   this, and 03 is corrected.
 - **Confirmations:** S-10 needs a key (03 already listed a free key); S-1 and S-3 are unchanged.
 - **Additions:** S-11 has a keyless bulk file (an acquisition change, needing sign-off), and the S-6a footer.
+- **Qualifications (reference sources, checked 21:18 ET):** 03 listed S-13 and S-14 as "Public domain". Both are
+  hosted on epa.gov, and EPA's site disclaimer says documents "may be freely distributed and used for non-commercial,
+  scientific and educational purposes" and that commercial use "may be protected". S-15's City page says "All rights
+  reserved". 03 is updated. Per P3 ("stop and ask" when terms are unclear), these are for the maintainer to accept or
+  reject; the builder makes no legal determination.
 
 | Source | Reachable today | Terms and licence | Cost / key | Personal data | Verdict |
 |--------|-----------------|-------------------|------------|---------------|---------|
@@ -232,7 +253,11 @@ Compared with the 03 catalog:
 | **S-2** GTFS-RT alerts | **new:** `https://` works (200); `http://` also works. At check time the feed was a 15-byte header, meaning no active alerts | **Registry-only**, and less than S-1: "same publisher as S-1" is not an alert-specific grant. The scope to sign off: raw 30 d; normalized alerts indefinitely; no redistribution of the raw feed | free, no key | none: public service notices, stored as untrusted text (02 §7.3) | eligible; the licence uncertainty needs explicit acceptance |
 | **S-11** EIA weekly gasoline | API v2 without a key: **403 `API_KEY_MISSING`**. **New:** EIA's own download of the same series, `https://www.eia.gov/dnav/pet/hist_xls/EMM_EPMR_PTE_R1Z_DPGw.xls`, returns 200 (120,320 bytes, `Last-Modified: Tue, 22 Sep 2026`) with no key, and `robots.txt` has no rule against `/dnav/` | public domain; [EIA's reuse terms](https://www.eia.gov/about/copyrights_reuse.php) allow use and redistribution with source acknowledgment. The bulk file is linked from EIA's [series page](https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?n=PET&s=EMM_EPMR_PTE_R1Z_DPG&f=W). Prices are dated Mondays and EIA publishes on Tuesdays (released 2026-09-22; next 2026-09-29) | free; the bulk file needs no key | none | eligible via the bulk file (03 §2.1 preference 2); the acquisition change needs sign-off |
 | **S-10** Census ACS | **New:** keyless calls redirect to `https://api.census.gov/data/missing_key.html` | public domain | free, but needs a registered key | none: published aggregates | not eligible yet: synthetic fixtures until a key exists |
-| **S-9, S-12…S-15** reference facts | Not fetched. A human enters each value (P3.5: the agent leaves `value: null`), using the approved §2 values and the §2a evidence | cite with attribution; no bulk reuse | free | none | eligible, to load candidates only |
+| **S-9** TomTom Traffic Index (reference fact) | Page 200 (JavaScript-rendered, so a human reads the figures); `robots.txt` allows it. Not fetched by any connector | The page links TomTom's [terms of use](https://www.tomtom.com/legal/terms-of-use/): all content "is a collective work … and is the proprietary property of TomTom". No clause was found that grants or forbids citing a single figure. "Cite with attribution; no bulk reuse" is **our** policy (03), not TomTom's wording | free | none | eligible for a human-entered, attributed figure; the terms reading needs acceptance |
+| **S-12** AAA fact sheet (reference fact) | PDF 200, `Last-Modified: Tue, 16 Sep 2025`; `robots.txt` allows it | No terms page is linked from `newsroom.aaa.com`; it's a press fact sheet. "Cite with attribution; no bulk reuse" is our policy | free | none | eligible (cite only) |
+| **S-13** EPA typical vehicle (reference fact) | Page 200; `robots.txt` allows it | **Qualified:** a U.S. Government page, but the [EPA disclaimers](https://www.epa.gov/web-policies-and-procedures/epa-disclaimers) linked from it say documents "may be freely distributed and used for non-commercial, scientific and educational purposes", "Commercial use of the documents available from the EPA websites may be protected under the U.S. and Foreign Copyright Laws", and "Individual documents on the EPA website may have different copyright conditions" | free | none | eligible for a cited figure; the non-commercial wording needs acceptance |
+| **S-14** FTA 2010 deck (reference fact) | PDF 200 on epa.gov, `Last-Modified: Fri, 25 Jun 2021`; `robots.txt` allows it | An FTA work hosted on epa.gov, so the same EPA disclaimer applies to the hosted file. **Stale (2010)** | free | none | as S-13 |
+| **S-15** CARTA fares and City parking (reference facts) | Both pages 200; `robots.txt` allows both | CARTA's footer reads "© 2026 CARTA."; no terms page is linked. The City's [copyright notice](https://www.charleston-sc.gov/site/copyright) reads "All content © 2006-2026 Charleston, SC and its representatives. All rights reserved." A human enters one fare and one rate, with attribution (unlike S-6a's bulk data) | free | none | eligible for cited single values; the "All rights reserved" notice needs acceptance |
 | **S-6a/b/c** SCDOT counts | **New:** the traffic-data page footer reads "© 2026 All Rights Reserved. Property of South Carolina Department of Transportation"; no data licence was found | unclear (the footer alone doesn't prove reuse is forbidden) | free | none: aggregate counts | not eligible: terms unclear |
 
 ## G0 — baseline gate (before P0)
