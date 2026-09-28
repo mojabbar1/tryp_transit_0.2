@@ -157,6 +157,8 @@ FEED_VERSION = [
     *(s.format(t="gtfs_feed_version") for s in APPEND_ONLY),
     # Activation is an append-only log, not a mutable flag: "flipping" a feed adds a row. The active feed is the
     # newest activation whose feed version is still valid, so rolling back a feed's run falls back automatically.
+    # Activations are ordered by id, not time: activate() serializes them per source with a transaction-scoped
+    # lock, so id order is commit order (now() would be each transaction's start time).
     """
     CREATE TABLE tda.gtfs_feed_activation (
       id bigserial PRIMARY KEY,
@@ -168,18 +170,19 @@ FEED_VERSION = [
     )
     """,
     *(s.format(t="gtfs_feed_activation") for s in APPEND_ONLY),
+    # Every version whose load run succeeded is current, including an earlier load of the same zip (A, B, then
+    # A again is three versions), so any current version can be activated by its id.
     """
     CREATE VIEW tda.current_gtfs_feed_version AS
       WITH valid AS (
-        SELECT DISTINCT ON (v.source_id, v.feed_sha256) v.*
+        SELECT v.*
         FROM tda.gtfs_feed_version v JOIN tda.fetch_run r ON r.id = v.fetch_run_id
         WHERE r.status = 'success'
-        ORDER BY v.source_id, v.feed_sha256, r.finished_at DESC, r.id DESC
       ),
       active AS (
         SELECT DISTINCT ON (a.source_id) a.source_id, a.feed_version_id, a.activated_at, a.activated_by
         FROM tda.gtfs_feed_activation a JOIN valid ON valid.id = a.feed_version_id
-        ORDER BY a.source_id, a.activated_at DESC, a.id DESC
+        ORDER BY a.source_id, a.id DESC
       )
       SELECT valid.*, active.feed_version_id IS NOT NULL AS is_active,
              active.activated_at, active.activated_by
