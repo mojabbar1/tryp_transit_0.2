@@ -201,6 +201,25 @@ that drive the plan:
 > - The builder asked again at 21:25 ET. The maintainer was not available, which is **not** approval. The drafts are
 >   left as they are until the maintainer answers.
 >
+> **Licence acceptance (maintainer, 2026-09-27 22:37 ET, verbatim):** *"accept license - this app is for educational
+> purposes."*
+> - **What it answers:** the builder's summary just before it presented the reference sources' licence findings, for
+>   acceptance or rejection:
+>   - EPA's "non-commercial, scientific and educational purposes" wording (S-13, S-14);
+>   - "All rights reserved" on the City's page (S-15);
+>   - TomTom's proprietary-content terms (S-9).
+>
+>   So the reply **accepts the §6a terms notes on S-9 and S-12…S-15**, for educational, non-commercial use.
+> - **The stated purpose is a condition.** The S-13/S-14 acceptance rests on the app being educational. If its use
+>   becomes commercial, the acceptance lapses and those terms need a new review.
+> - **It doesn't change these:** D-7/D-14 (the TomTom sampler stays excluded), and the S-6a/b/c "terms unclear" hold,
+>   which wasn't presented as terms to accept.
+> - **What it doesn't do:** name the connector rows to approve, ratify the drafts, or say who runs the smoke tests.
+>   The S-1/S-2 registry-only licence appeared only inside the sign-off template, so it is confirmed as part of that
+>   sign-off (below), not read into this reply.
+> - The builder asked for the rest at about 22:40 ET. The maintainer was not available, which is **not** approval, so
+>   every row is still pending and the drafts are left as they are.
+>
 > Until the maintainer signs, the P3 prompt's procedure applies unchanged:
 > - The builder only researches and prepares packets. A connector is built and tested only after its row is
 >   signed, in its **own PR**, reviewed as usual. **Nothing merges** before that.
@@ -212,10 +231,20 @@ that drive the plan:
 > as the P3 definition of done requires. Per the P3 prompt, a human runs the smoke tests unless the maintainer
 > explicitly delegates them to the builder.
 >
-> **To sign, one reply is enough.** For example: *"approve gtfs_static and gtfs_rt_alerts (accepting the
-> registry-only licence), ntd_monthly, eia_gas (bulk file), and reference_facts (candidates only, accepting the §6a
-> terms notes on S-9 and S-12…S-15); ratify drafts #17–#19; you may run the live smoke tests."* Name any subset, or
-> say "decline the drafts" to have them closed.
+> **To sign, one reply is enough.** To keep it short, a reply of **"approve all"** means exactly this package, listed
+> here in full:
+> - approve `gtfs_static` and `gtfs_rt_alerts`, accepting the registry-only licence (§6a);
+> - approve `ntd_monthly`;
+> - approve `eia_gas`, accepting the acquisition change to EIA's keyless bulk file;
+> - approve `reference_facts`, as `candidate` facts only (its terms were accepted at 22:37 ET);
+> - approve building `census_acs` on synthetic fixtures only. It stays `proposed`, and its PR stays open, until the
+>   maintainer supplies a free Census key and its smoke test passes;
+> - ratify drafts #17–#19 (keep them; review and fixes continue there);
+> - the builder may run the live smoke tests, in an isolated local database.
+>
+> *"approve all, I'll run the smoke tests"* is the same package without the last item. The maintainer can instead
+> name any subset, or say "decline the drafts" to have them closed. `scdot_*`, `tomtom_sampler` and the expansion
+> connectors aren't in the package.
 
 The builder's assessment is in §6a. "Eligible" means that, in the builder's reading, the source meets the no-cost,
 no-privacy, and non-destructive conditions. It is not a sign-off.
@@ -224,7 +253,7 @@ no-privacy, and non-destructive conditions. It is not a sign-off.
 |-----------|--------|-------|--------------------------|----------------|-----------------|--------------------|
 | `gtfs_static` (draft #17) | S-1 | Pilot | prepared and re-verified by Claude Opus (builder), 2026-09-27; **human terms sign-off pending** | `ttl:180d` raw zip (D-18); normalized rows kept indefinitely; raw cited by a published fact kept regardless of TTL (03 §3.1) | n/a | ☐ pending: eligible, but the **licence is registry-only** (§6a), which the maintainer must accept explicitly or wait on CARTA/Trillium (D-20) |
 | `ntd_monthly` (draft #18) | S-3 | Pilot | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` raw (D-18); normalized rows kept indefinitely | n/a (the optional app token isn't used) | ☐ pending: eligible (public domain) |
-| `reference_facts` (draft #19) | S-9, S-12…S-15 | Pilot | prepared and terms re-checked by the builder, 2026-09-27 (§6a); **human sign-off pending** | n/a: nothing is fetched | n/a | ☐ pending: eligible to load **`candidate`** facts only. Values are entered by a human (P3.5), and each fact still needs `tda review approve`. The cited sources stay `proposed` because nothing fetches them. The §6a terms notes need explicit acceptance: EPA's "non-commercial" wording for S-13/S-14, and "All rights reserved" on S-15's City page |
+| `reference_facts` (draft #19) | S-9, S-12…S-15 | Pilot | prepared and terms re-checked by the builder, 2026-09-27 (§6a); **terms accepted by the maintainer, 2026-09-27 22:37 ET (educational use; see above)**; row sign-off pending | n/a: nothing is fetched | n/a | ☐ pending: eligible to load **`candidate`** facts only. Values are entered by a human (P3.5), and each fact still needs `tda review approve`. The cited sources stay `proposed` because nothing fetches them. The §6a terms notes are accepted, on the condition that the app stays educational |
 | `census_acs` | S-10 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27 | `ttl:180d` | ☐ **a key is required** (keyless calls redirect to `missing_key.html`) | ☐ not eligible yet: synthetic fixtures only until the maintainer supplies a free key and signs |
 | `eia_gas` | S-11 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` | n/a if the acquisition change is approved: EIA's official keyless bulk file of the same series (API v2 needs a registered key) | ☐ pending: eligible; the **acquisition change** needs the sign-off |
 | `gtfs_rt_alerts` | S-2 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **human terms sign-off pending** | `ttl:30d` raw (P3 spec); normalized rows kept indefinitely | n/a | ☐ pending: eligible, with the same **registry-only licence** as S-1 (there's no alert-specific grant) |
@@ -244,7 +273,8 @@ Compared with the 03 catalog:
   hosted on epa.gov, and EPA's site disclaimer says documents "may be freely distributed and used for non-commercial,
   scientific and educational purposes" and that commercial use "may be protected". S-15's City page says "All rights
   reserved". 03 is updated. Per P3 ("stop and ask" when terms are unclear), these are for the maintainer to accept or
-  reject; the builder makes no legal determination.
+  reject; the builder makes no legal determination. **The maintainer accepted them at 22:37 ET, for educational use
+  (§6).**
 
 | Source | Reachable today | Terms and licence | Cost / key | Personal data | Verdict |
 |--------|-----------------|-------------------|------------|---------------|---------|
