@@ -209,9 +209,14 @@ that drive the plan:
 >   - "All rights reserved" on the City's page (S-15);
 >   - TomTom's proprietary-content terms (S-9).
 >
->   So the reply **accepts the §6a terms notes on S-9 and S-12…S-15**, for educational, non-commercial use.
-> - **The stated purpose is a condition.** The S-13/S-14 acceptance rests on the app being educational. If its use
->   becomes commercial, the acceptance lapses and those terms need a new review.
+>   So the reply **accepts those three findings, for S-9, S-13, S-14 and S-15**, on its stated basis: the app is for
+>   educational purposes. It doesn't cover S-12 (AAA), whose §6a determination (no terms page is linked; cite-only
+>   use is project policy) wasn't among them. That is accepted with the row sign-off below.
+> - **A project restriction, not the maintainer's statement.** The maintainer stated an educational purpose, not a
+>   commercial status. As a conservative guardrail, the builder records the S-13/S-14 acceptance as covering
+>   non-commercial use only: if the app is used commercially, those terms need a new review. This is not a
+>   determination that educational use satisfies every term. EPA also says individual documents may carry different
+>   copyright conditions (§6a).
 > - **It doesn't change these:** D-7/D-14 (the TomTom sampler stays excluded), and the S-6a/b/c "terms unclear" hold,
 >   which wasn't presented as terms to accept.
 > - **What it doesn't do:** name the connector rows to approve, ratify the drafts, or say who runs the smoke tests.
@@ -232,19 +237,23 @@ that drive the plan:
 > explicitly delegates them to the builder.
 >
 > **To sign, one reply is enough.** To keep it short, a reply of **"approve all"** means exactly this package, listed
-> here in full:
-> - approve `gtfs_static` and `gtfs_rt_alerts`, accepting the registry-only licence (§6a);
-> - approve `ntd_monthly`;
-> - approve `eia_gas`, accepting the acquisition change to EIA's keyless bulk file;
-> - approve `reference_facts`, as `candidate` facts only (its terms were accepted at 22:37 ET);
-> - approve building `census_acs` on synthetic fixtures only. It stays `proposed`, and its PR stays open, until the
->   maintainer supplies a free Census key and its smoke test passes;
+> here in full. Each approval also accepts that connector's §6a terms determination:
+> - approve `gtfs_static` and `gtfs_rt_alerts`, accepting S-1's and S-2's **registry-only licence**;
+> - approve `ntd_monthly`, accepting S-3's public-domain determination;
+> - approve `eia_gas`, accepting S-11's public-domain determination and the **acquisition change** to EIA's keyless
+>   bulk file;
+> - approve `reference_facts`, as `candidate` facts only, accepting the §6a determinations for S-9 and S-12…S-15. This
+>   restates the 22:37 ET acceptance of S-9, S-13, S-14 and S-15, and adds S-12's;
 > - ratify drafts #17–#19 (keep them; review and fixes continue there);
-> - the builder may run the live smoke tests, in an isolated local database.
+> - the builder may run the live smoke tests (two ingestions plus the DB and DQ checks, per connector) in an isolated
+>   local database. If this is given, the PR that records the sign-off also aligns the "human-run" wording in §5 and
+>   in the P3 prompt with it.
 >
 > *"approve all, I'll run the smoke tests"* is the same package without the last item. The maintainer can instead
-> name any subset, or say "decline the drafts" to have them closed. `scdot_*`, `tomtom_sampler` and the expansion
-> connectors aren't in the package.
+> name any subset, or say "decline the drafts" to have them closed. These aren't in the package:
+> - `census_acs`: its P3 precondition includes the key, so it waits until the maintainer supplies a free Census key and
+>   signs its row;
+> - `scdot_*`, `tomtom_sampler`, and the expansion connectors.
 
 The builder's assessment is in §6a. "Eligible" means that, in the builder's reading, the source meets the no-cost,
 no-privacy, and non-destructive conditions. It is not a sign-off.
@@ -253,8 +262,8 @@ no-privacy, and non-destructive conditions. It is not a sign-off.
 |-----------|--------|-------|--------------------------|----------------|-----------------|--------------------|
 | `gtfs_static` (draft #17) | S-1 | Pilot | prepared and re-verified by Claude Opus (builder), 2026-09-27; **human terms sign-off pending** | `ttl:180d` raw zip (D-18); normalized rows kept indefinitely; raw cited by a published fact kept regardless of TTL (03 §3.1) | n/a | ☐ pending: eligible, but the **licence is registry-only** (§6a), which the maintainer must accept explicitly or wait on CARTA/Trillium (D-20) |
 | `ntd_monthly` (draft #18) | S-3 | Pilot | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` raw (D-18); normalized rows kept indefinitely | n/a (the optional app token isn't used) | ☐ pending: eligible (public domain) |
-| `reference_facts` (draft #19) | S-9, S-12…S-15 | Pilot | prepared and terms re-checked by the builder, 2026-09-27 (§6a); **terms accepted by the maintainer, 2026-09-27 22:37 ET (educational use; see above)**; row sign-off pending | n/a: nothing is fetched | n/a | ☐ pending: eligible to load **`candidate`** facts only. Values are entered by a human (P3.5), and each fact still needs `tda review approve`. The cited sources stay `proposed` because nothing fetches them. The §6a terms notes are accepted, on the condition that the app stays educational |
-| `census_acs` | S-10 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27 | `ttl:180d` | ☐ **a key is required** (keyless calls redirect to `missing_key.html`) | ☐ not eligible yet: synthetic fixtures only until the maintainer supplies a free key and signs |
+| `reference_facts` (draft #19) | S-9, S-12…S-15 | Pilot | prepared and terms re-checked by the builder, 2026-09-27 (§6a); **terms accepted by the maintainer for S-9, S-13, S-14 and S-15, 2026-09-27 22:37 ET (stated purpose: educational; see above)**; S-12's determination and the row sign-off pending | n/a: nothing is fetched | n/a | ☐ pending: eligible to load **`candidate`** facts only. Values are entered by a human (P3.5), and each fact still needs `tda review approve`. The cited sources stay `proposed` because nothing fetches them. The S-9, S-13, S-14 and S-15 terms findings are accepted; the builder's non-commercial guardrail for S-13/S-14 applies (see above) |
+| `census_acs` | S-10 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27 | `ttl:180d` | ☐ **a key is required** (keyless calls redirect to `missing_key.html`) | ☐ not eligible yet: waits until the maintainer supplies a free key and signs this row (the P3 precondition includes the key; nothing is built before then) |
 | `eia_gas` | S-11 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` | n/a if the acquisition change is approved: EIA's official keyless bulk file of the same series (API v2 needs a registered key) | ☐ pending: eligible; the **acquisition change** needs the sign-off |
 | `gtfs_rt_alerts` | S-2 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **human terms sign-off pending** | `ttl:30d` raw (P3 spec); normalized rows kept indefinitely | n/a | ☐ pending: eligible, with the same **registry-only licence** as S-1 (there's no alert-specific grant) |
 | `scdot_counts` / `scdot_ccs_inbox` | S-6a/b/c | Expansion | the builder, 2026-09-27: **terms unclear** | | n/a | ⛔ not eligible: the SCDOT site says "All Rights Reserved" and publishes no data licence (which doesn't prove reuse is forbidden); the BCDCOG layer has no `licenseInfo`. Needs a maintainer decision or the D-20 data-sharing ask |
@@ -273,8 +282,8 @@ Compared with the 03 catalog:
   hosted on epa.gov, and EPA's site disclaimer says documents "may be freely distributed and used for non-commercial,
   scientific and educational purposes" and that commercial use "may be protected". S-15's City page says "All rights
   reserved". 03 is updated. Per P3 ("stop and ask" when terms are unclear), these are for the maintainer to accept or
-  reject; the builder makes no legal determination. **The maintainer accepted them at 22:37 ET, for educational use
-  (§6).**
+  reject; the builder makes no legal determination. **The maintainer accepted these S-13, S-14 and S-15 findings, and
+  the S-9 TomTom finding in the table below, at 22:37 ET, stating an educational purpose (§6).**
 
 | Source | Reachable today | Terms and licence | Cost / key | Personal data | Verdict |
 |--------|-----------------|-------------------|------------|---------------|---------|
