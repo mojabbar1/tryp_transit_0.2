@@ -174,53 +174,65 @@ that drive the plan:
 
 ## 6. Connector sign-off (P3)
 
-> **P3 approval (maintainer, 2026-09-27 20:35 ET, verbatim):** *"prep p3. proceed with p3, as long as it does not cost
-> me any money, and does not have privacy concerns, and does not cause anythin destructie in the system."* Follow-up,
-> same evening (verbatim): *"you can also simulated data / use syntehetic data if lack of direct API access is causing
-> a bottleneck"*.
+> **P3 authorization (maintainer, 2026-09-27 20:35 ET, verbatim):** *"prep p3. proceed with p3, as long as it does
+> not cost me any money, and does not have privacy concerns, and does not cause anythin destructie in the system."*
+> Follow-up, same evening (verbatim): *"you can also simulated data / use syntehetic data if lack of direct API access
+> is causing a bottleneck"*.
 >
-> This approval was given **in advance and conditionally**: the maintainer didn't read each packet. The builder
-> (Claude Opus) prepared the terms review in §6a and applies the conditions source by source. A connector is
-> approved to enable only if **all** of these hold:
-> 1. **No cost:** no paid tier, and no key the maintainer would have to register for (registration means handing
->    over an email address).
-> 2. **No privacy concern:** no personal data is collected, stored, or inferred.
-> 3. **Nothing destructive:** loads are append-only, nothing is deleted, and nothing outside the data agent's own
->    tables changes.
-> 4. **Terms re-verified today** permit fetching, private storage of raw snapshots for the stated TTL, and
->    publishing derived facts with attribution.
+> **What it covers:**
+> - It authorizes **preparing and building** P3 under three conditions: no cost, no privacy concern, and nothing
+>   destructive.
+> - It is **not** the per-connector sign-off below, as the reviewer ruled on #16. For that, the maintainer must name
+>   the connector rows, accept each terms determination (including any stated uncertainty), and say who runs the
+>   live smoke tests.
+> - The builder asked for this at about 21:00 ET, and the maintainer was not available, so **every row is pending**.
 >
-> A connector that fails any condition, or whose terms are unclear, is **not** approved and is listed for the
-> maintainer. **Synthetic data is only a test fixture**; it's never loaded as a real observation. The builder runs
-> each live smoke test (the P3 prompt says a human does) and pastes the output into the connector's PR; each run
-> is a few polite GETs of public data from this machine.
+> Until the maintainer signs:
+> - Every source stays `proposed`, so running it only records `skipped_disabled`.
+> - Connector code can still merge, reviewed as usual, because nothing is enabled.
+> - Synthetic data appears only as test fixtures, never as real observations.
+>
+> After the sign-off, **one enabling PR** flips the signed sources to `approved` and carries the live smoke-test
+> output. Per the P3 prompt, a human runs those tests unless the maintainer explicitly delegates them to the
+> builder. This split of the connector PR from its enabling PR is a packaging change; no gate is removed.
+>
+> **To sign, one reply is enough.** For example: *"approve gtfs_static and gtfs_rt_alerts (accepting the
+> registry-only licence), ntd_monthly, eia_gas (bulk file), and reference_facts (candidates only); you may run the
+> live smoke tests."* Name any subset.
+
+The builder's assessment is in §6a. "Eligible" means that, in the builder's reading, the source meets the no-cost,
+no-privacy, and non-destructive conditions. It is not a sign-off.
 
 | Connector | Source | Stage | Terms reviewed by / date | `store_policy` | Key provisioned | Approved to enable |
 |-----------|--------|-------|--------------------------|----------------|-----------------|--------------------|
-| `gtfs_static` | S-1 | Pilot | builder, for mojabbar / 2026-09-27 (§6a) | `ttl:180d` raw zip (D-18); normalized rows kept | n/a | ✅ conditional (§6 box) |
-| `ntd_monthly` | S-3 | Pilot | builder, for mojabbar / 2026-09-27 (§6a) | `ttl:180d` raw (D-18); normalized rows kept | n/a (the optional app token isn't used) | ✅ conditional |
-| `reference_facts` | S-9, S-12…S-15 | Pilot | builder, for mojabbar / 2026-09-27 (§6a) | n/a: nothing is fetched | n/a | ✅ conditional, to **load `candidate` facts only**. Each fact still needs `tda review approve`. The cited sources stay `proposed` because nothing fetches them |
-| `census_acs` | S-10 | Pilot (optional) | builder, for mojabbar / 2026-09-27 (§6a) | `ttl:180d` | ☐ **a key is now required** (keyless calls redirect to `missing_key.html`) | ☐ **not enabled**: built against synthetic fixtures, stays `proposed` until the maintainer supplies a free key |
-| `eia_gas` | S-11 | Pilot (optional) | builder, for mojabbar / 2026-09-27 (§6a) | `ttl:180d` | n/a: uses EIA's official keyless bulk download, because API v2 needs a registered key | ✅ conditional, via the bulk file |
-| `gtfs_rt_alerts` | S-2 | Pilot (optional) | builder, for mojabbar / 2026-09-27 (§6a) | `ttl:30d` (P3 spec) | n/a | ✅ conditional, over `https` |
-| `scdot_counts` / `scdot_ccs_inbox` | S-6a/b/c | Expansion | builder / 2026-09-27: **terms unclear** | | n/a | ⛔ **not approved**: the SCDOT site says "All Rights Reserved" and publishes no data licence; the BCDCOG layer has no `licenseInfo`. Needs a maintainer decision or the D-20 data-sharing ask |
+| `gtfs_static` | S-1 | Pilot | prepared and re-verified by Claude Opus (builder), 2026-09-27; **human terms sign-off pending** | `ttl:180d` raw zip (D-18); normalized rows kept indefinitely; raw cited by a published fact kept regardless of TTL (03 §3.1) | n/a | ☐ pending: eligible, but the **licence is registry-only** (§6a), which the maintainer must accept explicitly or wait on CARTA/Trillium (D-20) |
+| `ntd_monthly` | S-3 | Pilot | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` raw (D-18); normalized rows kept indefinitely | n/a (the optional app token isn't used) | ☐ pending: eligible (public domain) |
+| `reference_facts` | S-9, S-12…S-15 | Pilot | prepared by the builder, 2026-09-27; **human sign-off pending** | n/a: nothing is fetched | n/a | ☐ pending: eligible to load **`candidate`** facts only. Values are entered by a human (P3.5), and each fact still needs `tda review approve`. The cited sources stay `proposed` because nothing fetches them |
+| `census_acs` | S-10 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27 | `ttl:180d` | ☐ **a key is required** (keyless calls redirect to `missing_key.html`) | ☐ not eligible yet: synthetic fixtures only until the maintainer supplies a free key and signs |
+| `eia_gas` | S-11 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **human sign-off pending** | `ttl:180d` | n/a if the acquisition change is approved: EIA's official keyless bulk file of the same series (API v2 needs a registered key) | ☐ pending: eligible; the **acquisition change** needs the sign-off |
+| `gtfs_rt_alerts` | S-2 | Pilot (optional) | prepared and re-verified by the builder, 2026-09-27; **human terms sign-off pending** | `ttl:30d` raw (P3 spec); normalized rows kept indefinitely | n/a | ☐ pending: eligible, with the same **registry-only licence** as S-1 (there's no alert-specific grant) |
+| `scdot_counts` / `scdot_ccs_inbox` | S-6a/b/c | Expansion | the builder, 2026-09-27: **terms unclear** | | n/a | ⛔ not eligible: the SCDOT site says "All Rights Reserved" and publishes no data licence (which doesn't prove reuse is forbidden); the BCDCOG layer has no `licenseInfo`. Needs a maintainer decision or the D-20 data-sharing ask |
 | `tomtom_sampler` | S-7/S-7b | Expansion | **requires D-7 (b) or (c)** | | ☐ | ⛔ excluded: paid and legal (D-7, D-14) |
 | `nws` / `noaa_tides` / `nhtsa_fars` / `documents` | S-16/17/18/5/19/20 | Expansion | | | n/a | ☐ after G1 |
 
 ### 6a. Re-verification packets (P3 step A1, retrieved 2026-09-27 ET)
 
 Every request used the D-18 User-Agent `TrypTransitDataAgent/0.1.0 (+https://github.com/mojabbar1/tryp_transit_0.2)`.
-Nothing contradicted the 03 catalog. The new facts are marked **new**.
+Compared with the 03 catalog:
+- **Contradiction:** S-2 was listed as "`http`, not https", but `https` now works. P3's connector note anticipates
+  this, and 03 is corrected.
+- **Confirmations:** S-10 needs a key (03 already listed a free key); S-1 and S-3 are unchanged.
+- **Additions:** S-11 has a keyless bulk file (an acquisition change, needing sign-off), and the S-6a footer.
 
 | Source | Reachable today | Terms and licence | Cost / key | Personal data | Verdict |
 |--------|-----------------|-------------------|------------|---------------|---------|
-| **S-1** CARTA GTFS | `HEAD` 200: `Content-Length: 2888471`, `Last-Modified: Thu, 20 Aug 2026 17:30:59 GMT`, and an `ETag`, so conditional GETs work. `robots.txt` returns 404 (allowed). The feed has 1,108 stops, 24 routes, 5,050 trips, and 148,842 stop times, valid 20260820–20270527, matching 03 | Transitland today: "Use allowed without attribution: Yes · Creating derived products allowed: Yes". `feed_info.txt` has an empty `feed_license`, so we attribute CARTA/Trillium anyway and don't redistribute the raw feed | free, no key | none: stops, routes, and schedules; the only contacts are the agency's public phone and Trillium's support address | ✅ |
-| **S-3** NTD monthly | `/api/views/8bui-9xvu.json` 200; the date field is `date` (`calendar_date`). The `ntd_id='40110'` query returns rows through 2026-07 (MB/PT UPT 224,397) | "Public Domain U.S. Government" (`USGOV_WORKS`) | free, no key | none: agency-level totals | ✅ |
-| **S-2** GTFS-RT alerts | **new:** `https://` works (200); `http://` also works. At check time the feed was a 15-byte header, meaning no active alerts | same publisher as S-1 | free, no key | none: public service notices, stored as untrusted text (02 §7.3) | ✅ |
-| **S-11** EIA weekly gasoline | API v2 without a key: **403 `API_KEY_MISSING`**. **New:** EIA's own download of the same series, `https://www.eia.gov/dnav/pet/hist_xls/EMM_EPMR_PTE_R1Z_DPGw.xls`, returns 200 (120,320 bytes, `Last-Modified: Tue, 22 Sep 2026`) with no key, and `robots.txt` has no rule against `/dnav/` | public domain | free; the bulk file needs no key | none | ✅ via the bulk file (03 §2.1 preference 2) |
-| **S-10** Census ACS | **New:** keyless calls redirect to `https://api.census.gov/data/missing_key.html` | public domain | free, but needs a registered key | none: published aggregates | ☐ synthetic until a key exists |
-| **S-9, S-12…S-15** reference facts | Not fetched. The values are the maintainer-approved §2 values, with §2a evidence | cite with attribution; no bulk reuse | free | none | ✅ load as candidates |
-| **S-6a/b/c** SCDOT counts | **New:** the traffic-data page footer reads "© 2026 All Rights Reserved. Property of South Carolina Department of Transportation"; no data licence was found | unclear | free | none: aggregate counts | ⛔ terms unclear |
+| **S-1** CARTA GTFS | `HEAD` 200: `Content-Length: 2888471`, `Last-Modified: Thu, 20 Aug 2026 17:30:59 GMT`, and an `ETag`, so conditional GETs work. `robots.txt` returns 404 (allowed). The feed has 1,108 stops, 24 routes, 5,050 trips, and 148,842 stop times, valid 20260820–20270527, matching 03 | **Registry-only:** [Transitland](https://www.transit.land/feeds/f-djz4-carta~sc~us) shows "Use allowed without attribution: Yes · Creating derived products allowed: Yes"; its licence URL, redistribution, and commercial-use fields are empty. `feed_info.txt` has an empty `feed_license`. **No publisher-confirmed licence was found.** The scope to sign off: raw zip 180 d; normalized rows indefinitely; derived facts published with CARTA/Trillium attribution; the raw feed never redistributed | free, no key | none: stops, routes, and schedules; the only contacts are the agency's public phone and Trillium's support address | eligible; the licence uncertainty needs explicit acceptance |
+| **S-3** NTD monthly | `/api/views/8bui-9xvu.json` 200; the date field is `date` (`calendar_date`). The `ntd_id='40110'` query returns rows through 2026-07 (MB/PT UPT 224,397) | "Public Domain U.S. Government" (`USGOV_WORKS`) | free, no key | none: agency-level totals | eligible |
+| **S-2** GTFS-RT alerts | **new:** `https://` works (200); `http://` also works. At check time the feed was a 15-byte header, meaning no active alerts | **Registry-only**, and less than S-1: "same publisher as S-1" is not an alert-specific grant. The scope to sign off: raw 30 d; normalized alerts indefinitely; no redistribution of the raw feed | free, no key | none: public service notices, stored as untrusted text (02 §7.3) | eligible; the licence uncertainty needs explicit acceptance |
+| **S-11** EIA weekly gasoline | API v2 without a key: **403 `API_KEY_MISSING`**. **New:** EIA's own download of the same series, `https://www.eia.gov/dnav/pet/hist_xls/EMM_EPMR_PTE_R1Z_DPGw.xls`, returns 200 (120,320 bytes, `Last-Modified: Tue, 22 Sep 2026`) with no key, and `robots.txt` has no rule against `/dnav/` | public domain; [EIA's reuse terms](https://www.eia.gov/about/copyrights_reuse.php) allow use and redistribution with source acknowledgment. The bulk file is linked from EIA's [series page](https://www.eia.gov/dnav/pet/hist/LeafHandler.ashx?n=PET&s=EMM_EPMR_PTE_R1Z_DPG&f=W). Prices are dated Mondays and EIA publishes on Tuesdays (released 2026-09-22; next 2026-09-29) | free; the bulk file needs no key | none | eligible via the bulk file (03 §2.1 preference 2); the acquisition change needs sign-off |
+| **S-10** Census ACS | **New:** keyless calls redirect to `https://api.census.gov/data/missing_key.html` | public domain | free, but needs a registered key | none: published aggregates | not eligible yet: synthetic fixtures until a key exists |
+| **S-9, S-12…S-15** reference facts | Not fetched. A human enters each value (P3.5: the agent leaves `value: null`), using the approved §2 values and the §2a evidence | cite with attribution; no bulk reuse | free | none | eligible, to load candidates only |
+| **S-6a/b/c** SCDOT counts | **New:** the traffic-data page footer reads "© 2026 All Rights Reserved. Property of South Carolina Department of Transportation"; no data licence was found | unclear (the footer alone doesn't prove reuse is forbidden) | free | none: aggregate counts | not eligible: terms unclear |
 
 ## G0 — baseline gate (before P0)
 

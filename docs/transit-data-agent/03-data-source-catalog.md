@@ -7,8 +7,8 @@
 > A source becomes `approved` in `data_agent/tda/config/sources.yaml` **only via a human-reviewed PR** after the
 > terms review below.
 > **Re-verified 2026-09-27 for P3** (packets in [05 §6a](./05-decisions-and-review.md#6a-re-verification-packets-p3-step-a1-retrieved-2026-09-27-et)):
-> S-1 and S-3 are unchanged; S-2 also works over `https`; S-10 now requires a key; S-11 has a keyless official
-> bulk file; the S-6a page claims "All Rights Reserved".
+> S-1 and S-3 are unchanged; S-2's "http, not https" is corrected (`https` works); S-10's key requirement is
+> confirmed; S-11 has a keyless official bulk file; the S-6a page claims "All Rights Reserved".
 
 ---
 
@@ -43,7 +43,7 @@
 | ID | Source | Access | Auth | Terms: fetch / store / attribution | Cadence | Priority · Phase | Status |
 |----|--------|--------|------|------------------------------------|---------|------------------|--------|
 | **S-10** | **Census ACS**: CBSA **16700** (Charleston–North Charleston MSA); tables **B08301** (mode), **S0801** (commuting, %), **B08303** (travel time); counties 45019, 45015, 45035 | `https://api.census.gov/data/<year>/acs/acs5?get=NAME,B08301_001E,B08301_010E&for=metropolitan%20statistical%20area/micropolitan%20statistical%20area:16700&key=…` | **free key** (checked live) | Public domain | Annual (~Dec) | P1 · P3.3 | ✅ |
-| **S-11** | **EIA API v2**: weekly regular gasoline, Lower Atlantic (PADD 1C), series `EMM_EPMR_PTE_R1Z_DPG` | `https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[series][]=EMM_EPMR_PTE_R1Z_DPG&api_key=…`, or, with **no key**, EIA's official bulk file of the same series: `https://www.eia.gov/dnav/pet/hist_xls/EMM_EPMR_PTE_R1Z_DPGw.xls` (verified 2026-09-27) | **free key** (API v2 only; the bulk file needs none) | Public domain | Weekly (Mon) | P1 · P3.4 | ✅ series · 🟡 exact v2 call |
+| **S-11** | **EIA API v2**: weekly regular gasoline, Lower Atlantic (PADD 1C), series `EMM_EPMR_PTE_R1Z_DPG` | `https://api.eia.gov/v2/petroleum/pri/gnd/data/?frequency=weekly&data[0]=value&facets[series][]=EMM_EPMR_PTE_R1Z_DPG&api_key=…`, or, with **no key**, EIA's official bulk file of the same series: `https://www.eia.gov/dnav/pet/hist_xls/EMM_EPMR_PTE_R1Z_DPGw.xls` (verified 2026-09-27) | **free key** (API v2 only; the bulk file needs none) | Public domain | Weekly: prices dated Mondays, published Tuesdays (released 2026-09-22; next 2026-09-29 per the series page) | P1 · P3.4 | ✅ series · 🟡 exact v2 call |
 | S-12 | **AAA Your Driving Costs 2025** | Fact-sheet PDF: `https://newsroom.aaa.com/wp-content/uploads/2025/09/UPDATE-AAA-Fact-Sheet-Your-Driving-Cost-9.2025-1.pdf` | none | Cite with attribution. No bulk reuse. | Annual (~Aug/Sep) | P1 · P3.5 | 🟡 (a human extracts the figures from the PDF) |
 | S-13 | **EPA**, "GHG Emissions from a Typical Passenger Vehicle" (EPA-420-F-23-014) | `https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle` | none | Public domain | Reviewed periodically | P1 · P3.5 | 🟡 (~400 g CO2/mi is widely cited; a human verifies it) |
 | S-14 | **FTA (2010)**, *Public Transportation's Role in Responding to Climate Change*, national averages: bus transit ≈ 0.64 lb CO2/passenger-mile vs drive-alone ≈ 0.96 (0.45 is the all-mode transit average, which includes rail; 05 §2a) | `https://www.epa.gov/sites/default/files/2016-04/documents/public_transportations_role_in_responding_to_climate_change.pdf` (FTA's 2010 EPA-webinar deck; the chart is on slide 3) | none | Public domain. **Stale (2010).** | Static | P2 · P3.5 | 🟡 |
