@@ -1,0 +1,11 @@
+stop_id,stop_code,stop_name,stop_lat,stop_lon,zone_id,location_type,parent_station,wheelchair_boarding
+FX01,101,Fixture Stop 01,32.7740,-79.9370,,0,,1
+FX02,102,Fixture Stop 02,32.7780,-79.9340,,0,,1
+FX03,103,Fixture Stop 03,32.7820,-79.9310,,0,,1
+FX04,104,Fixture Stop 04,32.7860,-79.9280,,0,,1
+FX05,105,Fixture Stop 05,32.7900,-79.9250,,0,,1
+FX06,106,Fixture Stop 06,32.7940,-79.9220,,0,,1
+FX07,107,Fixture Stop 07,32.7980,-79.9190,,0,,1
+FX08,108,Fixture Stop 08,32.8020,-79.9160,,0,,1
+FX09,109,Fixture Stop 09,32.8060,-79.9130,,0,,1
+FX10,110,Fixture Stop 10,32.8100,-79.9100,,0,,1

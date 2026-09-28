@@ -1,0 +1,3 @@
+service_id,date,exception_type
+WKDY,20260907,2
+SAT,20260907,1

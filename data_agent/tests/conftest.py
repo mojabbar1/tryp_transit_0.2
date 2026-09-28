@@ -22,6 +22,7 @@ from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 
+from tda.metrics.registry import MetricRegistry
 from tda.store.db import sqlalchemy_url
 
 
@@ -49,8 +50,9 @@ class DbUrls:
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Mark every test that needs Postgres: all of tests/db, and any test that uses the database fixtures."""
     for item in items:
-        if DB_TESTS in Path(str(item.fspath)).parents:
+        if DB_TESTS in Path(str(item.fspath)).parents or "db_urls" in getattr(item, "fixturenames", ()):
             item.add_marker(pytest.mark.db)
 
 
@@ -120,3 +122,17 @@ def db(db_urls: DbUrls) -> DbUrls:
         connection.execute(text(f"TRUNCATE {TABLES} RESTART IDENTITY CASCADE"))
     engine.dispose()
     return db_urls
+
+
+@pytest.fixture
+def writer_engine(db: DbUrls) -> Iterator[Engine]:
+    """An engine connected as tda_writer."""
+    engine = db.engine("writer")
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def metrics() -> MetricRegistry:
+    """An empty metric registry for one test."""
+    return MetricRegistry()
