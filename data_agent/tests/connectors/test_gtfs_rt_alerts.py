@@ -184,24 +184,102 @@ def test_the_review_round_1_cases_are_rejected(body: bytes, message: str) -> Non
         parse_alerts(body)
 
 
+def _windows(
+    communication: list[tuple[int, int | None]], impact: tuple[int, int | None]
+) -> Callable[[Any], None]:
+    def build(alert: Any) -> None:
+        detour(alert)
+        for start, end in communication:
+            period = alert.communication_period.add(start=start)
+            if end is not None:
+                period.end = end
+        period = alert.impact_period.add(start=impact[0])
+        if impact[1] is not None:
+            period.end = impact[1]
+
+    return build
+
+
+def _trip_selector(**fields: Any) -> Callable[[Any], None]:
+    modified = fields.pop("modified_trip", None)
+
+    def build(alert: Any) -> None:
+        trip = alert.informed_entity.add().trip
+        for name, value in fields.items():
+            setattr(trip, name, value)
+        if modified is not None:
+            for name, value in modified.items():
+                setattr(trip.modified_trip, name, value)
+
+    return build
+
+
+NOT_WITHIN = "alert 'A1': impact_period 1 is not within a single communication_period"
+NEEDS_BOTH = "alert 'A1': a modified_trip needs modifications_id and affected_trip_id"
+
+
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        (feed({"A1": _windows([(100, 200)], (300, 400))}), NOT_WITHIN),
+        (feed({"A1": _windows([(100, 200), (300, 400)], (150, 350))}), NOT_WITHIN),
+        (feed({"A1": _windows([(100, 300), (200, 400)], (150, 350))}), NOT_WITHIN),
+        (feed({"A1": _windows([(100, 200)], (150, None))}), NOT_WITHIN),
+        (feed({"A1": _trip_selector(modified_trip={"start_date": "20260928"})}), NEEDS_BOTH),
+        (feed({"A1": _trip_selector(modified_trip={"modifications_id": "M1"})}), NEEDS_BOTH),
+        (feed({"A1": _trip_selector(modified_trip={"affected_trip_id": "T1"})}), NEEDS_BOTH),
+        (
+            feed(
+                {
+                    "A1": _trip_selector(
+                        trip_id="T2", modified_trip={"modifications_id": "M1", "affected_trip_id": "T1"}
+                    )
+                }
+            ),
+            "alert 'A1': a trip with a modified_trip also sets trip_id",
+        ),
+        (
+            feed({"A1": _trip_selector(route_id="R1")}),
+            "alert 'A1': a trip selector needs a trip_id, or route_id, direction_id, start_time and start_",
+        ),
+    ],
+)
+def test_the_review_round_2_cases_are_rejected(body: bytes, message: str) -> None:
+    with pytest.raises(ValidationFailed, match=message.replace("(", r"\(").replace(")", r"\)")):
+        parse_alerts(body)
+
+
 def test_every_period_kind_and_selector_is_kept() -> None:
     def rich(alert: Any) -> None:
         period = alert.communication_period.add()
         period.start, period.end = START, END
-        alert.impact_period.add().start = START
+        impact = alert.impact_period.add()
+        impact.start, impact.end = START + 600, END - 600
+        alert.communication_period.add().start = END
+        alert.impact_period.add().start = END + 60
         alert.informed_entity.add(route_type=0)
         modified = alert.informed_entity.add().trip.modified_trip
         modified.modifications_id, modified.affected_trip_id = "M1", "T1"
+        alert.informed_entity.add().trip.CopyFrom(
+            rt.TripDescriptor(route_id="R1", direction_id=0, start_time="07:00:00", start_date="20260928")
+        )
         alert.tts_header_text.translation.add(text="Route one detour", language="en")
         alert.header_text.translation.add(text=r"a literal \u0000 is not a NUL")
 
     (row,) = parse_alerts(feed({"A1": rich}))
     assert (row["active_from"], row["active_until"], json.loads(row["active_periods"])) == (None, None, [])
-    assert json.loads(row["communication_periods"]) == [{"start": START, "end": END}]
-    assert json.loads(row["impact_periods"]) == [{"start": START, "end": None}]
+    assert json.loads(row["communication_periods"]) == [
+        {"start": START, "end": END},
+        {"start": END, "end": None},
+    ]
+    assert json.loads(row["impact_periods"]) == [
+        {"start": START + 600, "end": END - 600},
+        {"start": END + 60, "end": None},
+    ], "each within one communication period (an open end within an open end)"
     assert json.loads(row["informed_entities"]) == [
         {"route_type": 0},
         {"trip": {"modified_trip": {"affected_trip_id": "T1", "modifications_id": "M1"}}},
+        {"trip": {"direction_id": 0, "route_id": "R1", "start_date": "20260928", "start_time": "07:00:00"}},
     ]
     alert = json.loads(row["alert"])
     assert alert["tts_header_text"]["translation"] == [{"text": "Route one detour", "language": "en"}]
@@ -346,9 +424,14 @@ def test_a_bad_snapshot_fails_and_keeps_the_good_one_current(
     connector, router, _ = alerts
     _serve(router, feed())
     connector.run(live=True)
-    _serve(router, feed({"A1": _periods_open_both_ways}))
-    assert connector.run(live=True).status == "failed"
-    assert _current(writer_engine) == ["A1", "A2"], "the previous snapshot is still current"
+    for bad in (
+        feed({"A1": _periods_open_both_ways}),
+        feed({"BAD": _windows([(100, 200)], (300, 400))}),
+        feed({"BAD": _trip_selector(route_id="R1")}),
+    ):
+        _serve(router, bad)
+        assert connector.run(live=True).status == "failed"
+        assert _current(writer_engine) == ["A1", "A2"], "the previous snapshot is still current"
     _serve(router, _without_version())
     outcome = connector.run(live=True)
     assert outcome.status == "failed" and "missing required fields" in (outcome.message or "")

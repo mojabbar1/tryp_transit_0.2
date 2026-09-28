@@ -246,8 +246,10 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
     header;
   - every entity has a unique id and carries an alert and no other payload, and isn't deleted;
   - each alert has an informed entity. Each one selects something real: empty IDs and empty trips don't
-    count, and a direction_id needs a route_id;
-  - every active, communication and impact period has a bound, each bound is a valid time, and start ≤ end;
+    count, a direction_id needs a route_id, and a trip needs a complete identity (a trip_id; or route_id,
+    direction_id, start_time and start_date; or a modified trip with both its IDs and nothing else);
+  - every active, communication and impact period has a bound, each bound is a valid time, and start ≤ end.
+    When communication periods are given, each impact period lies within one of them;
   - no text contains a NUL character.
   Routes and stops that the active GTFS feed doesn't have are logged (`gtfs_rt.unknown_references`), not fatal.
 - Raw snapshots are kept 30 days (`ttl:30d`); normalized alerts are kept.

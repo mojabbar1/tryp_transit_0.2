@@ -18,8 +18,10 @@ Data-quality checks. Any failure marks the run ``failed`` and loads nothing:
   FULL_DATASET header;
 - every entity has a unique id and carries an alert and no other payload, and isn't deleted;
 - each alert has at least one informed entity. Each one selects something real: empty IDs and empty trips
-  don't count, and a direction_id needs a route_id. A modified trip is kept;
+  don't count, a direction_id needs a route_id, and a trip needs a complete identity (a trip_id; or route_id,
+  direction_id, start_time and start_date; or a modified trip with both its IDs and nothing else);
 - every active, communication, and impact period has a bound, each bound is a valid time, and start <= end;
+  when communication periods are given, each impact period lies within one of them;
 - no text contains a NUL character (PostgreSQL can't store one).
 An informed entity naming a route or stop that the active GTFS feed doesn't have is logged
 (``gtfs_rt.unknown_references``), not fatal: an alert can refer to service the schedule doesn't list yet.
@@ -51,6 +53,8 @@ PERIODS = ("active_period", "communication_period", "impact_period")
 IDS = ("agency_id", "route_id", "stop_id")
 TRIP_IDS = ("trip_id", "route_id", "start_time", "start_date")
 MODIFIED_TRIP_IDS = ("modifications_id", "affected_trip_id", "start_time", "start_date")
+# A trip's identity: its trip_id, or else all of the rest.
+IDENTITY = ("trip_id", "route_id", "direction_id", "start_time", "start_date")
 
 
 def canonical(raw: bytes) -> bytes:
@@ -108,6 +112,12 @@ def parse_alerts(raw: bytes) -> list[dict[str, Any]]:
 
 def _alert_row(alert_id: str, alert: Any) -> dict[str, Any]:
     periods = {field: _periods(alert_id, alert, field) for field in PERIODS}
+    communication = periods["communication_period"]
+    for n, impact in enumerate(periods["impact_period"], start=1):
+        if communication and not any(_within(impact, window) for window in communication):
+            raise ValidationFailed(
+                f"alert {alert_id!r}: impact_period {n} is not within a single communication_period"
+            )
     if not alert.informed_entity:
         raise ValidationFailed(f"alert {alert_id!r} has no informed_entity")
     active = periods["active_period"]
@@ -155,13 +165,24 @@ def _periods(alert_id: str, alert: Any, field: str) -> list[dict[str, int | None
     return periods
 
 
+def _within(inner: dict[str, int | None], outer: dict[str, int | None]) -> bool:
+    """Whether ``inner`` lies inside ``outer``; a missing start or end is open (minus or plus infinity)."""
+    low = float("-inf")
+    high = float("inf")
+    inner_start = low if inner["start"] is None else inner["start"]
+    inner_end = high if inner["end"] is None else inner["end"]
+    outer_start = low if outer["start"] is None else outer["start"]
+    outer_end = high if outer["end"] is None else outer["end"]
+    return outer_start <= inner_start and inner_end <= outer_end
+
+
 def _selector(alert_id: str, selector: Any) -> dict[str, Any]:
     chosen: dict[str, Any] = {f: getattr(selector, f) for f in IDS if getattr(selector, f)}
     for field in ("route_type", "direction_id"):
         if selector.HasField(field):
             chosen[field] = getattr(selector, field)
-    trip = _trip(selector.trip) if selector.HasField("trip") else {}
-    if trip.keys() & {"trip_id", "route_id", "modified_trip"}:
+    trip = _trip(alert_id, selector.trip) if selector.HasField("trip") else {}
+    if trip:
         chosen["trip"] = trip
     if "direction_id" in chosen and "route_id" not in chosen:
         raise ValidationFailed(f"alert {alert_id!r}: an informed_entity has a direction_id but no route_id")
@@ -170,7 +191,13 @@ def _selector(alert_id: str, selector: Any) -> dict[str, Any]:
     return chosen
 
 
-def _trip(trip: Any) -> dict[str, Any]:
+def _trip(alert_id: str, trip: Any) -> dict[str, Any]:
+    """A trip selector that names one trip, or ``{}`` if it's empty (then it selects nothing).
+
+    GTFS-RT: a modified trip needs both its modifications_id and affected_trip_id, and then none of the
+    ordinary identity fields. Otherwise the trip needs a trip_id, or route_id, direction_id, start_time and
+    start_date.
+    """
     out: dict[str, Any] = {f: getattr(trip, f) for f in TRIP_IDS if getattr(trip, f)}
     if trip.HasField("direction_id"):
         out["direction_id"] = trip.direction_id
@@ -180,9 +207,22 @@ def _trip(trip: Any) -> dict[str, Any]:
         modified = {
             f: getattr(trip.modified_trip, f) for f in MODIFIED_TRIP_IDS if getattr(trip.modified_trip, f)
         }
-        if modified:
-            out["modified_trip"] = modified
-    return out
+        if not {"modifications_id", "affected_trip_id"} <= modified.keys():
+            raise ValidationFailed(
+                f"alert {alert_id!r}: a modified_trip needs modifications_id and affected_trip_id"
+            )
+        conflicting = sorted(out.keys() & set(IDENTITY))
+        if conflicting:
+            raise ValidationFailed(
+                f"alert {alert_id!r}: a trip with a modified_trip also sets {', '.join(conflicting)}"
+            )
+        return {**out, "modified_trip": modified}
+    if not out or "trip_id" in out or set(IDENTITY[1:]) <= out.keys():
+        return out
+    raise ValidationFailed(
+        f"alert {alert_id!r}: a trip selector needs a trip_id, "
+        "or route_id, direction_id, start_time and start_date"
+    )
 
 
 def _translations(alert: Any, field: str) -> list[dict[str, str | None]]:
