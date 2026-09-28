@@ -187,14 +187,15 @@ that drive the plan:
 >   live smoke tests.
 > - The builder asked for this at about 21:00 ET, and the maintainer was not available, so **every row is pending**.
 >
-> Until the maintainer signs:
+> Until the maintainer signs, the P3 prompt's procedure is unchanged:
+> - The builder builds and tests each connector in its **own open PR**, reviewed as usual. **Nothing merges** until
+>   that connector's row is signed.
 > - Every source stays `proposed`, so running it only records `skipped_disabled`.
-> - Connector code can still merge, reviewed as usual, because nothing is enabled.
 > - Synthetic data appears only as test fixtures, never as real observations.
 >
-> After the sign-off, **one enabling PR** flips the signed sources to `approved` and carries the live smoke-test
-> output. Per the P3 prompt, a human runs those tests unless the maintainer explicitly delegates them to the
-> builder. This split of the connector PR from its enabling PR is a packaging change; no gate is removed.
+> When a row is signed, that connector's PR gets the `status: approved` flip and the live smoke-test output (two
+> ingestions plus the DB and DQ checks), then merges, as the P3 definition of done requires. Per the P3 prompt, a
+> human runs the smoke tests unless the maintainer explicitly delegates them to the builder.
 >
 > **To sign, one reply is enough.** For example: *"approve gtfs_static and gtfs_rt_alerts (accepting the
 > registry-only licence), ntd_monthly, eia_gas (bulk file), and reference_facts (candidates only); you may run the
