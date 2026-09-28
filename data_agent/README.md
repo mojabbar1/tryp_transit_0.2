@@ -206,6 +206,19 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
   - A fact gets a new version only when its value or period changes. Rolling back the run flags its facts
     `needs_review`.
 
+### `reference_facts` (S-9, S-12…S-15, plus the 05 §2 decisions): human-verified reference values
+
+- `tda/facts/reference_facts.yaml` has one entry per 05 §2 assumption key (`headline.congestion` is split into its
+  two numbers). **The agent never fills in a value**: each ships as `value: null` (or `value_text: null`), with
+  a `todo` naming where to verify it.
+- **A human enters each verified value**, together with a verbatim `quote` or a `page`, `retrieved_at`, and
+  `verified_by`. The loader refuses a filled entry that's missing any of them. A cited `source_id` must exist in
+  `sources.yaml`. Nothing is fetched, so the cited sources stay `proposed`.
+- `tda facts load-reference [--check] [--by NAME]` queues every filled, changed entry as a **`candidate`** fact
+  (`created_by: human`) with a pending review item; null entries are skipped. Re-loading unchanged entries,
+  including rejected ones, queues nothing; a changed value becomes a new version.
+- A candidate is never served. It becomes citable at `/v1/facts` only after `tda review approve <item>`.
+
 ## Read API
 
 `tda api serve` runs FastAPI as `tda_reader`, in read-only sessions:
@@ -234,7 +247,7 @@ tda/
   store/        engines, bootstrap, ORM mirror, observations, raw store, retention, source sync, `tda db|retention`
   http/         the polite client
   connectors/   Connector base, rollback, registry, connectors (P3), `tda ingest|runs|gtfs`
-  facts/        fact versions
+  facts/        fact versions, fact rules (P3), reference facts, `tda facts`
   metrics/      metric registry (empty until P4)
   review/       the review queue, `tda review`
   api/          the read API, OpenAPI snapshot, `tda api`
