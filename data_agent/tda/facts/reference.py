@@ -142,19 +142,21 @@ def load_reference(
     """Queue every filled entry that changed as a ``candidate`` fact with a pending review item.
 
     Each key's latest-content check, write, and queue submission happen under its fact lock, so two loads at
-    once can't both queue the same change. All the locks come first, in key order, so they can't deadlock.
+    once can't both queue the same change. Locks are taken in one global order before any entry is written,
+    so concurrent loads can't deadlock: the fact locks in key order, then the cited source rows in id order.
     """
     reference, digest = read_reference(path)
     check_sources(reference, registry)
-    for key in sorted(entry.key for entry in reference.facts if entry.filled):
+    filled = [entry for entry in reference.facts if entry.filled]
+    for key in sorted(entry.key for entry in filled):
         key_lock(connection, "fact", key)
+    for source_id in sorted({entry.source_id for entry in filled if entry.source_id}):
+        upsert_source(connection, registry.get(source_id))
     report = LoadReport()
     for entry in reference.facts:
         if not entry.filled:
             report.skipped.append(entry.key)
             continue
-        if entry.source_id:
-            upsert_source(connection, registry.get(entry.source_id))
         draft = _draft(entry, digest, path)
         if _same_as_latest(connection, draft):
             report.unchanged.append(entry.key)

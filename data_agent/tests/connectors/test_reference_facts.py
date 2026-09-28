@@ -14,7 +14,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
-from sqlalchemy import Engine
+from sqlalchemy import Engine, text
 from typer.testing import CliRunner
 
 from tda.api.app import create_app
@@ -25,6 +25,7 @@ from tda.config.settings import get_settings
 from tda.facts.reference import DEFAULT_FILE, ReferenceFile, check_sources, load_reference, read_reference
 from tda.review import queue
 from tda.store.lineage import key_lock
+from tda.store.sources import upsert_source
 from tests.conftest import DbUrls
 from tests.support.db import rows
 from tests.support.factories import make_source
@@ -271,6 +272,61 @@ def test_concurrent_loads_of_a_changed_value_make_one_version(writer_engine: Eng
         (2, 43),
     ]
     assert rows(writer_engine, "SELECT count(*) FROM tda.review_item WHERE status = 'pending'")[0][0] == 2
+
+
+def _waiting_on_locks(engine: Engine, count: int) -> None:
+    for _ in range(100):
+        if (
+            rows(engine, "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'")[0][0]
+            == count
+        ):
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"expected {count} session(s) waiting on a lock")
+
+
+def test_loads_citing_shared_sources_in_opposite_orders_do_not_deadlock(
+    writer_engine: Engine, tmp_path: Path
+) -> None:
+    registry = SourceRegistry(sources=[make_source(id="src-a"), make_source(id="src-b")])
+    with writer_engine.begin() as connection:
+        for source in registry.sources:
+            upsert_source(connection, source)
+    first, second = tmp_path / "a", tmp_path / "b"
+    first.mkdir(), second.mkdir()
+    file_a = _file(
+        first,
+        {**FILLED, "key": "fixture.k1", "source_id": "src-a"},
+        {**FILLED, "key": "fixture.k2", "source_id": "src-b"},
+    )
+    file_b = _file(
+        second,
+        {**FILLED, "key": "fixture.k3", "source_id": "src-b"},
+        {**FILLED, "key": "fixture.k4", "source_id": "src-a"},
+    )
+    outcomes: list[Any] = []
+
+    def load(path: Path) -> None:
+        try:
+            with writer_engine.begin() as connection:
+                outcomes.append(load_reference(connection, registry, path, requested_by="tester").loaded)
+        except Exception as error:  # a deadlock victim lands here
+            outcomes.append(error)
+
+    with writer_engine.connect() as holder:
+        holder.execute(text("SELECT 1 FROM tda.source WHERE id = 'src-b' FOR UPDATE"))
+        threads = [
+            threading.Thread(target=load, args=(file_b,)),
+            threading.Thread(target=load, args=(file_a,)),
+        ]
+        threads[0].start()
+        _waiting_on_locks(writer_engine, 1)
+        threads[1].start()
+        _waiting_on_locks(writer_engine, 2)
+        holder.rollback()
+    for thread in threads:
+        thread.join(10)
+    assert sorted(map(str, outcomes)) == ["['fixture.k1', 'fixture.k2']", "['fixture.k3', 'fixture.k4']"]
 
 
 # The two fact keys that generic-api-key misreads as secrets (the literal allowlist in .gitleaks.toml).
