@@ -152,9 +152,9 @@ arrive as `candidate` (or `approved` when a reviewed rule auto-publishes) and ar
 
 ## Connectors (P3)
 
-Connector code can merge before a source is enabled: a source runs only once a PR sets `status: approved` after
-the maintainer's per-connector sign-off in [05 §6](../docs/transit-data-agent/05-decisions-and-review.md). Until
-then `tda ingest <id>` records `skipped_disabled`.
+A source runs only after the maintainer signs its row in
+[05 §6](../docs/transit-data-agent/05-decisions-and-review.md) and its connector PR sets `status: approved`, with
+the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disabled`.
 
 ### `gtfs_static` (S-1, `carta-gtfs`): CARTA's GTFS schedule
 
