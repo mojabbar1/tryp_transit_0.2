@@ -208,12 +208,17 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
   Month gaps per mode and type of service are logged (`ntd.month_gaps`). All 790 real CARTA rows
   (2002-01 to 2026-07) pass.
 - **Facts** (`tda/facts/rules/ntd_monthly.py`, auto-published because NTD is public domain):
-  - `carta.ridership.upt.monthly.<mode>` (the latest month; types of service summed) and `….yoy_pct` (versus
-    the same month a year earlier).
+  - `carta.ridership.upt.monthly.<mode>` (the latest **complete** month; types of service summed) and
+    `….yoy_pct` (versus the same month a year earlier, which must also be complete). A month where any type of
+    service has an unknown (null) UPT is logged (`ntd.incomplete_period`) and not published, so a partial sum is
+    never presented as an all-service total.
   - They are published in the load transaction after the run is marked a success (the connector's `publish`
-    hook), so the lineage rule holds.
-  - A fact gets a new version only when its value or period changes. Rolling back the run flags its facts
-    `needs_review`.
+    hook). Each fact cites the runs its rows actually came from (both months for `yoy_pct`, which can differ),
+    and those runs are locked `FOR SHARE` first; a rolled-back input fails the load instead of publishing.
+  - Publication is serialized per source (a transaction-scoped lock taken before reading), so a slower run
+    can't publish over a newer one.
+  - A fact gets a new version only when its value, period, or unit changes. Rolling back any cited run flags
+    the fact `needs_review`.
 
 ## Read API
 
