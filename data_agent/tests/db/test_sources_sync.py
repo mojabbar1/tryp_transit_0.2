@@ -31,9 +31,9 @@ def test_sync_mirrors_the_registry_and_never_deletes(writer_engine: Engine) -> N
     }
 
 
-def test_the_whole_catalog_syncs_and_stays_proposed(writer_engine: Engine) -> None:
+def test_the_whole_catalog_syncs_with_its_statuses(writer_engine: Engine) -> None:
     registry = load_sources()
     report = _sync(writer_engine, registry)
     assert len(report.inserted) == len(registry.sources) > 0
-    statuses = {r[0] for r in rows(writer_engine, "SELECT DISTINCT status FROM tda.source")}
-    assert statuses == {"proposed"}
+    synced = {r.id: r.status for r in rows(writer_engine, "SELECT id, status FROM tda.source")}
+    assert synced == {s.id: s.status for s in registry.sources}

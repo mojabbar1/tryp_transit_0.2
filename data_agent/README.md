@@ -219,6 +219,9 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
     can't publish over a newer one.
   - A fact gets a new version only when its value, period, or unit changes. Rolling back any cited run flags
     the fact `needs_review`.
+  - A correction that leaves a key without a valid value (for example, a null count now in the year-earlier
+    month) moves its approved fact to `needs_review` in the same step (`ntd.facts_withdrawn`), keeping the
+    version; the next complete publication supersedes it.
 
 ### `reference_facts` (S-9, S-12…S-15, plus the 05 §2 decisions): human-verified reference values
 
@@ -232,6 +235,8 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
   (`created_by: human`) with a pending review item; null entries are skipped. Re-loading unchanged entries,
   including rejected ones, queues nothing; a changed value becomes a new version.
 - A candidate is never served. It becomes citable at `/v1/facts` only after `tda review approve <item>`.
+- Blank (whitespace-only) text counts as missing, so it can't stand in for evidence. Loads running at once are
+  serialized per key, so a change is queued once; locks are taken in one order (fact keys, then source ids).
 
 ## Read API
 

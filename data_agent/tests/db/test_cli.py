@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 import respx
@@ -16,6 +17,7 @@ from tda.config.models import SourceRegistry
 from tda.config.settings import get_settings
 from tda.connectors import registry as connector_registry
 from tda.http import polite_client
+from tda.pipelines import scheduler
 from tests.conftest import DbUrls
 from tests.db.conftest import rows
 from tests.support.echo import EchoConnector
@@ -64,13 +66,13 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> Iterator[respx.MockRouter]:
 def test_ingest_of_a_proposed_source_is_skipped_disabled_with_no_network(
     invoke: Invoke, writer_engine: Engine, no_network: respx.MockRouter
 ) -> None:
-    for args in (("ingest", "carta-gtfs"), ("ingest", "carta-gtfs", "--live")):
+    for args in (("ingest", "tricounty-link-gtfs"), ("ingest", "tricounty-link-gtfs", "--live")):
         result = invoke(*args)
         assert result.exit_code == 0, result.output
-        assert "carta-gtfs: skipped_disabled" in result.stdout
+        assert "tricounty-link-gtfs: skipped_disabled" in result.stdout
     assert [tuple(r) for r in rows(writer_engine, "SELECT source_id, status FROM tda.fetch_run")] == [
-        ("carta-gtfs", "skipped_disabled"),
-        ("carta-gtfs", "skipped_disabled"),
+        ("tricounty-link-gtfs", "skipped_disabled"),
+        ("tricounty-link-gtfs", "skipped_disabled"),
     ]
 
 
@@ -121,10 +123,10 @@ def test_ingest_runs_and_rollback_through_the_cli(
 def test_sources_sync_validate_and_list(invoke: Invoke, writer_engine: Engine) -> None:
     assert "25 sources OK" in invoke("sources", "validate").stdout
     listed = invoke("sources", "list").stdout
-    assert "25 sources: 25 proposed" in listed
+    assert "25 sources: 2 approved, 23 proposed" in listed
     synced = invoke("sources", "sync")
     assert synced.exit_code == 0 and "carta-gtfs" in synced.stdout
-    assert rows(writer_engine, "SELECT count(*) FROM tda.source WHERE status = 'proposed'")[0][0] == 25
+    assert rows(writer_engine, "SELECT count(*) FROM tda.source WHERE status = 'proposed'")[0][0] == 23
     assert "inserted: -" in invoke("sources", "sync").stdout, "a second sync changes nothing"
 
 
@@ -154,11 +156,23 @@ def test_db_commands_bootstrap_idempotently_and_guard_downgrade(invoke: Invoke) 
     assert refused.exit_code == 2 and "--confirm" in refused.stderr
 
 
-def test_retention_and_scheduler_once(invoke: Invoke) -> None:
+def test_retention_and_scheduler_once(invoke: Invoke, monkeypatch: pytest.MonkeyPatch) -> None:
     result = invoke("retention", "run", "--dry-run", "--source", "carta-gtfs")
     assert result.exit_code == 0 and "carta-gtfs (ttl:180d): would delete 0" in result.stdout
-    once = invoke("scheduler", "run", "--once")
-    assert once.exit_code == 0 and "scheduler: 0 ingest job(s)" in once.stdout
+    real, ran = scheduler.run_job, []
+
+    def run_job(settings: Any, registry: Any, job: Any, client: Any) -> None:
+        # An approved source's ingest job would fetch live; it's recorded, not run. Retention runs for real.
+        ran.append(job.name)
+        if job.source is None:
+            real(settings, registry, job, client)
+
+    monkeypatch.setattr(scheduler, "run_job", run_job)
+    with respx.mock(assert_all_called=False) as router:
+        once = invoke("scheduler", "run", "--once")
+    assert not router.calls, "no network"
+    assert once.exit_code == 0 and "scheduler: 2 ingest job(s)" in once.stdout
+    assert ran == ["ingest:carta-gtfs", "ingest:ntd-monthly", "retention"]
 
 
 def test_api_openapi_writes_the_snapshot(

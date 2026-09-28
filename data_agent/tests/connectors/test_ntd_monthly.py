@@ -424,6 +424,52 @@ def test_a_year_over_year_change_needs_a_complete_prior_month(ntd: Any, writer_e
     assert any(e["event"] == "ntd.incomplete_period" and e.get("fact") == "yoy_pct" for e in logs)
 
 
+DR_MONTHLY = "carta.ridership.upt.monthly.demand_response"
+DR_YOY = f"{DR_MONTHLY}.yoy_pct"
+
+
+def _statuses(engine: Engine, key: str) -> list[tuple[int, str]]:
+    return [
+        (r.version, r.status)
+        for r in rows(engine, "SELECT version, status FROM tda.fact WHERE key = :k ORDER BY version", k=key)
+    ]
+
+
+def test_a_correction_that_invalidates_a_published_change_withdraws_it(
+    ntd: Any, writer_engine: Engine
+) -> None:
+    make, state = ntd
+    make().run(live=True)
+    assert _statuses(writer_engine, DR_YOY) == [(1, "approved")]
+    state["data"] = _with_upt(sample(), "DR", "TN", "2025-07", None)
+    with structlog.testing.capture_logs() as logs:
+        assert make().run(live=True).status == "success"
+    assert _statuses(writer_engine, DR_YOY) == [(1, "needs_review")], "no longer supported by the data"
+    assert _statuses(writer_engine, DR_MONTHLY) == [(1, "approved")], "July 2026 is still complete"
+    assert _statuses(writer_engine, "carta.ridership.upt.monthly.bus.yoy_pct") == [(1, "approved")]
+    assert any(e["event"] == "ntd.facts_withdrawn" and e["keys"] == [DR_YOY] for e in logs)
+    state["data"] = sample()
+    assert make().run(live=True).status == "success"
+    assert _statuses(writer_engine, DR_YOY) == [(1, "superseded"), (2, "approved")], "restored when complete"
+    assert _facts(writer_engine)[DR_YOY][0] == _yoy(sample(), "DR", "2026-07", "2025-07")
+
+
+def test_a_mode_with_no_known_counts_is_withdrawn_until_complete_again(
+    ntd: Any, writer_engine: Engine
+) -> None:
+    make, state = ntd
+    make().run(live=True)
+    state["data"] = [{**r, "upt": None} if r["mode"] == "DR" else r for r in sample()]
+    assert make().run(live=True).status == "success"
+    assert _statuses(writer_engine, DR_MONTHLY) == [(1, "needs_review")]
+    assert _statuses(writer_engine, DR_YOY) == [(1, "needs_review")]
+    assert _statuses(writer_engine, "carta.ridership.upt.monthly.commuter_bus") == [(1, "approved")]
+    state["data"] = sample()
+    assert make().run(live=True).status == "success"
+    assert _statuses(writer_engine, DR_MONTHLY) == [(1, "superseded"), (2, "approved")]
+    assert _statuses(writer_engine, DR_YOY) == [(1, "superseded"), (2, "approved")]
+
+
 def test_the_reader_sees_the_current_view_only(ntd: Any, db: DbUrls) -> None:
     make, _ = ntd
     make().run(live=True)
