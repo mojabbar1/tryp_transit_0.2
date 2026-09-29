@@ -58,7 +58,8 @@ class TripOption:
 
     @property
     def in_vehicle_min(self) -> float:
-        return (self.arrival - self.departure).total_seconds() / 60
+        # Elapsed time: datetimes in one zone subtract by wall clock, which is wrong across a DST change.
+        return (self.arrival.timestamp() - self.departure.timestamp()) / 60
 
 
 @dataclass(frozen=True)
@@ -128,17 +129,21 @@ def compare(
                     options.append((option, allowed))
     if not options:
         return Comparison(mode, target, None, reason="no_service")
-    # Elapsed time, not wall-clock time: add the buffer in UTC so a DST change can't shift it.
-    earliest = now.astimezone(UTC) + access_buffer
-    boardable = [option for option, allowed in options if allowed and option.departure >= earliest]
+    # Compare instants, never wall-clock times: datetimes in one zone compare by wall clock (fold is
+    # ignored), which is wrong in the hour a DST change repeats. So the buffer is added in UTC too.
+    earliest = (now.astimezone(UTC) + access_buffer).timestamp()
+    deadline = target.timestamp()
+    boardable = [
+        option for option, allowed in options if allowed and option.departure.timestamp() >= earliest
+    ]
     if mode == "arrive_by":
         chosen = sorted(
-            (o for o in boardable if o.arrival <= target),
+            (o for o in boardable if o.arrival.timestamp() <= deadline),
             key=lambda o: (-o.arrival.timestamp(), -o.departure.timestamp(), o.trip_id),
         )
     else:
         chosen = sorted(
-            (o for o in boardable if o.departure >= target),
+            (o for o in boardable if o.departure.timestamp() >= deadline),
             key=lambda o: (o.departure.timestamp(), o.arrival.timestamp(), o.trip_id),
         )
     unique: list[TripOption] = []

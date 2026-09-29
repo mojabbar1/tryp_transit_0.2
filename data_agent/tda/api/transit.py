@@ -195,7 +195,7 @@ def _trip(option: TripOption, result: Comparison, access: timedelta) -> TripOut:
         in_vehicle_min=option.in_vehicle_min,
         # Elapsed time, not wall-clock arithmetic, so a DST change can't shift it.
         leave_by=(option.departure.astimezone(UTC) - access).astimezone(zone) if arrive_by else None,
-        wait_min=None if arrive_by else (option.departure - result.target).total_seconds() / 60,
+        wait_min=None if arrive_by else (option.departure.timestamp() - result.target.timestamp()) / 60,
         interpolated=option.interpolated,
     )
 

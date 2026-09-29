@@ -248,3 +248,24 @@ def test_reasons_instead_of_invented_numbers(
 def test_the_same_stop_twice_is_refused(ask: Callable[..., Ask]) -> None:
     with pytest.raises(ValueError, match="same stop"):
         ask()("FX01", "FX01", WEDNESDAY, "depart_at", "06:00")
+
+
+def test_times_across_the_dst_fall_back_are_elapsed_not_wall_clock(ask: Callable[..., Ask]) -> None:
+    # On 2026-11-01 "noon minus 12h" is 01:00 EDT: GTFS 00:50 is 01:50 EDT, and GTFS 01:05 is 01:05 EST (on
+    # the wall clock's second pass through 01:00-02:00), so the ride takes 15 minutes, not -45.
+    night = (
+        "R1,SUN1101,DST1,Fixture Stop 06,0,B6,",
+        ["DST1,00:50:00,00:50:00,FX01,1,0,0,,1", "DST1,01:05:00,01:05:00,FX06,2,0,0,,1"],
+    )
+    service = ("calendar_dates.txt", "SAT,20260907,1", "SAT,20260907,1\nSUN1101,20261101,1")
+    fall_back = date(2026, 11, 1)
+    run = ask(edited(trips=[night], replace=[service]))
+    result = run("FX01", "FX06", fall_back, "depart_at", "00:30", now=datetime(2026, 10, 31, tzinfo=NY))
+    assert result.best is not None and result.best.in_vehicle_min == 15.0
+    assert result.best.departure.utcoffset() == timedelta(hours=-4) and result.best.arrival.fold == 1
+    # "Arrive by 01:30" means the first 01:30 (EDT, 05:30 UTC). The 01:05 EST arrival (06:05 UTC) is later,
+    # although its wall-clock time looks earlier, so no trip qualifies.
+    late = run("FX01", "FX06", fall_back, "arrive_by", "01:30", now=datetime(2026, 10, 31, tzinfo=NY))
+    assert (late.best, late.reason) == (None, "no_boardable_trip")
+    on_time = run("FX01", "FX06", fall_back, "arrive_by", "02:00", now=datetime(2026, 10, 31, tzinfo=NY))
+    assert on_time.best is not None and on_time.best.trip_id == "DST1"

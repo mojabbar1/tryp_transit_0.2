@@ -124,6 +124,9 @@ def test_nearest_stops(at: Callable[..., TestClient], load_feed: LoadFeed) -> No
     body = client.get("/v1/stops/nearest", params={"lat": 32.7741, "lng": -79.9371, "limit": 2}).json()
     assert [s["id"] for s in body["items"]] == ["FX01", "FX02"]
     assert 10 < body["items"][0]["distance_m"] < 20 < body["items"][1]["distance_m"]
+    # The antipode of a stop must not overflow asin() (floating error can push its argument past 1).
+    far = client.get("/v1/stops/nearest", params={"lat": -32.774, "lng": 100.063, "limit": 1})
+    assert far.status_code == 200 and far.json()["items"][0]["distance_m"] > 20_000_000
     for bad in ({"lat": 91, "lng": 0}, {"lat": 0, "lng": 181}, {"lat": 0, "lng": 0, "limit": 51}, {"lat": 0}):
         assert client.get("/v1/stops/nearest", params=bad).status_code == 422, bad
 

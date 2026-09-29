@@ -174,10 +174,11 @@ def nearest_stops(connection: Connection, feed: ActiveFeed, lat: float, lng: flo
     """The ``limit`` stops nearest to (``lat``, ``lng``), by great-circle distance in meters."""
     rows = connection.execute(
         text(
-            f"SELECT {_STOP_COLUMNS}, {EARTH_RADIUS_M} * 2 * asin(sqrt("  # noqa: S608  (fixed fragments only)
+            # least(1, ...): rounding can push the haversine term past 1 near the antipode, outside asin().
+            f"SELECT {_STOP_COLUMNS}, {EARTH_RADIUS_M} * 2 * asin(least(1.0, sqrt("  # noqa: S608  (fixed fragments)
             "power(sin(radians(stop_lat - :lat) / 2), 2) + "
             "cos(radians(:lat)) * cos(radians(stop_lat)) * power(sin(radians(stop_lon - :lng) / 2), 2)"
-            ")) AS distance_m "
+            "))) AS distance_m "
             f"FROM tda.active_gtfs_stop WHERE feed_version_id = :v AND {_BOARDABLE} "
             "ORDER BY distance_m, stop_id LIMIT :limit"
         ),
