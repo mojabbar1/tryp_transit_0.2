@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -74,7 +75,9 @@ def test_the_output_is_stable(invoke: Any, load_feed: LoadFeed, tmp_path: Path) 
 
 def test_only_ts_and_an_active_feed(invoke: Any, tmp_path: Path) -> None:
     other = invoke("gtfs", "export-stops", "--format", "json", "--out", str(tmp_path / "x"))
-    assert other.exit_code == 2 and "only ts is supported" in other.stderr
+    # Typer may render usage errors in a colored panel (CI does), so compare the plain words only.
+    plain = " ".join(re.sub(r"[│╭╮╰╯─]", " ", re.sub(r"\x1b\[[0-9;]*m", "", other.stderr)).split())
+    assert other.exit_code == 2 and "only ts is supported" in plain
     none = invoke("gtfs", "export-stops", "--out", str(tmp_path / "x.ts"))
     assert none.exit_code == 2 and "error: no active GTFS feed for source carta-gtfs" in none.stderr
     assert not (tmp_path / "x.ts").exists()

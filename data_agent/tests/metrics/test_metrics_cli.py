@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -48,4 +49,6 @@ def test_compute_without_data_writes_nothing(invoke: Any) -> None:
 
 def test_a_bad_date_is_a_clean_error(invoke: Any) -> None:
     result = invoke("metrics", "compute", "--date", "2026-13-01")
-    assert result.exit_code == 2 and "Invalid value for '--date'" in result.stderr
+    # Typer may render usage errors in a colored panel (CI does), so compare the plain words only.
+    plain = " ".join(re.sub(r"[│╭╮╰╯─]", " ", re.sub(r"\x1b\[[0-9;]*m", "", result.stderr)).split())
+    assert result.exit_code == 2 and "Invalid value" in plain and "--date" in plain
