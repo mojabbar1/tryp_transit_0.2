@@ -22,7 +22,7 @@ from sqlalchemy import Connection, text
 EARTH_RADIUS_M = 6_371_008.8
 
 
-class FeedError(Exception):
+class FeedError(LookupError):
     """No GTFS feed can answer: none is active, or the request is ambiguous."""
 
 
@@ -144,8 +144,13 @@ _STOP_COLUMNS = "stop_id, stop_code AS code, stop_name AS name, stop_lat AS lat,
 _BOARDABLE = "coalesce(location_type, 0) = 0"
 
 
-def search_stops(connection: Connection, feed: ActiveFeed, query: str | None, limit: int) -> list[Stop]:
-    """Stops whose name contains ``query`` (case-insensitive) or whose id or code equals it, best first."""
+def search_stops(
+    connection: Connection, feed: ActiveFeed, query: str | None, limit: int | None, *, routes: bool = True
+) -> list[Stop]:
+    """Stops whose name contains ``query`` (case-insensitive) or whose id or code equals it, best first.
+
+    Without ``query``, every stop by name; ``limit`` None means no limit; ``routes=False`` skips route names.
+    """
     params: dict[str, object] = {"v": feed.feed_version_id, "limit": limit}
     if query:
         params |= {"q": query, "like": "%" + _escape_like(query) + "%", "prefix": _escape_like(query) + "%"}
@@ -161,7 +166,8 @@ def search_stops(connection: Connection, feed: ActiveFeed, query: str | None, li
         ),
         params,
     ).mappings()
-    return _with_routes(connection, feed, [Stop(**row) for row in rows])
+    found = [Stop(**row) for row in rows]
+    return _with_routes(connection, feed, found) if routes else found
 
 
 def nearest_stops(connection: Connection, feed: ActiveFeed, lat: float, lng: float, limit: int) -> list[Stop]:

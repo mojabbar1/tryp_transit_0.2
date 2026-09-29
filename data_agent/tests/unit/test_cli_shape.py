@@ -18,7 +18,7 @@ EXPECTED = {
     "db": {"bootstrap", "upgrade", "downgrade"},
     "sources": {"list", "validate", "sync"},
     "runs": {"rollback", "list", "show"},
-    "gtfs": {"versions", "activate"},
+    "gtfs": {"versions", "activate", "export-stops"},
     "facts": {"load-reference"},
     "metrics": {"compute"},
     "review": {"list", "show", "approve", "reject"},
