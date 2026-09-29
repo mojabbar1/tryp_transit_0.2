@@ -1,6 +1,357 @@
 {
   "components": {
     "schemas": {
+      "AlertOut": {
+        "description": "An active service alert. Its text is untrusted third-party data (02 §7.3): show it as plain text only.\n\n``header_text``, ``description_text``, and ``url`` are the English translation (or else the untagged or\nthe first one). ``url`` is dropped unless it is http(s).",
+        "properties": {
+          "active_from": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active From"
+          },
+          "active_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Until"
+          },
+          "alert_id": {
+            "title": "Alert Id",
+            "type": "string"
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
+          "description_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description Text"
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effect"
+          },
+          "header_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Header Text"
+          },
+          "route_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Route Ids",
+            "type": "array"
+          },
+          "severity_level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Severity Level"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "stop_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Stop Ids",
+            "type": "array"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "alert_id",
+          "source_id",
+          "cause",
+          "effect",
+          "severity_level",
+          "header_text",
+          "description_text",
+          "url",
+          "active_from",
+          "active_until",
+          "route_ids",
+          "stop_ids"
+        ],
+        "title": "AlertOut",
+        "type": "object"
+      },
+      "AlertPage": {
+        "properties": {
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AlertOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "citations"
+        ],
+        "title": "AlertPage",
+        "type": "object"
+      },
+      "AssumptionOut": {
+        "description": "An assumption the web cost and CO2 model uses, and the approved fact behind it (its key can differ).",
+        "properties": {
+          "fact": {
+            "$ref": "#/components/schemas/FactOut"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "fact"
+        ],
+        "title": "AssumptionOut",
+        "type": "object"
+      },
+      "AssumptionsOut": {
+        "description": "Approved facts only. ``missing`` lists the assumptions with no approved fact (reported as degraded).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssumptionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "missing": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "missing"
+        ],
+        "title": "AssumptionsOut",
+        "type": "object"
+      },
+      "Citation": {
+        "description": "Where a number comes from: a source (with the attribution to show) and, for a fact, its id and key.",
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution"
+          },
+          "fact_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact Id"
+          },
+          "fact_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fact Key"
+          },
+          "retrieved": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retrieved"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          }
+        },
+        "required": [
+          "source_id",
+          "attribution"
+        ],
+        "title": "Citation",
+        "type": "object"
+      },
+      "CompareOut": {
+        "description": "The best boardable direct trip and up to 3 alternatives, or a ``reason`` and no trip (02 §8.3).\n\n``routing`` says this release looks up direct trips only (D-6 (a)): ``transfer_required`` means no single\ntrip serves both stops, not that no journey exists.",
+        "properties": {
+          "access_buffer_min": {
+            "title": "Access Buffer Min",
+            "type": "number"
+          },
+          "alternatives": {
+            "items": {
+              "$ref": "#/components/schemas/TripOut"
+            },
+            "title": "Alternatives",
+            "type": "array"
+          },
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "feed": {
+            "$ref": "#/components/schemas/FeedOut"
+          },
+          "mode": {
+            "enum": [
+              "arrive_by",
+              "depart_at"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "enum": [
+                  "no_boardable_trip",
+                  "transfer_required",
+                  "no_service",
+                  "unknown_stop"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "routing": {
+            "const": "direct_only",
+            "title": "Routing",
+            "type": "string"
+          },
+          "target": {
+            "format": "date-time",
+            "title": "Target",
+            "type": "string"
+          },
+          "transit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TripOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "transit",
+          "alternatives",
+          "reason",
+          "routing",
+          "mode",
+          "target",
+          "access_buffer_min",
+          "feed",
+          "citations"
+        ],
+        "title": "CompareOut",
+        "type": "object"
+      },
       "FactOut": {
         "description": "A citable fact: the current approved version of its key (02 §6.3).",
         "properties": {
@@ -220,6 +571,72 @@
         "title": "FactSource",
         "type": "object"
       },
+      "FeedOut": {
+        "description": "The active GTFS feed an answer comes from, with the attribution clients must show.",
+        "properties": {
+          "attribution": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attribution"
+          },
+          "feed_end": {
+            "format": "date",
+            "title": "Feed End",
+            "type": "string"
+          },
+          "feed_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feed Label"
+          },
+          "feed_start": {
+            "format": "date",
+            "title": "Feed Start",
+            "type": "string"
+          },
+          "feed_version_id": {
+            "title": "Feed Version Id",
+            "type": "integer"
+          },
+          "loaded_at": {
+            "format": "date-time",
+            "title": "Loaded At",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "feed_version_id",
+          "feed_label",
+          "feed_start",
+          "feed_end",
+          "timezone",
+          "loaded_at",
+          "attribution"
+        ],
+        "title": "FeedOut",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -272,6 +689,87 @@
           "sources"
         ],
         "title": "Health",
+        "type": "object"
+      },
+      "NearbyStopOut": {
+        "description": "A stop and its great-circle distance from the requested point.",
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "distance_m": {
+            "title": "Distance M",
+            "type": "number"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lng": {
+            "title": "Lng",
+            "type": "number"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "route_short_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Route Short Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "lat",
+          "lng",
+          "route_short_names",
+          "distance_m"
+        ],
+        "title": "NearbyStopOut",
+        "type": "object"
+      },
+      "NearbyStopPage": {
+        "properties": {
+          "feed": {
+            "$ref": "#/components/schemas/FeedOut"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NearbyStopOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "feed",
+          "items"
+        ],
+        "title": "NearbyStopPage",
         "type": "object"
       },
       "Period": {
@@ -465,6 +963,292 @@
         "title": "SourceOut",
         "type": "object"
       },
+      "StatOut": {
+        "description": "A headline stat: one approved fact, with its citations.",
+        "properties": {
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "period": {
+            "$ref": "#/components/schemas/Period"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "value_num": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Num"
+          },
+          "value_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Text"
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "value_num",
+          "value_text",
+          "unit",
+          "period",
+          "citations"
+        ],
+        "title": "StatOut",
+        "type": "object"
+      },
+      "StatsOut": {
+        "description": "Curated headline stats from approved facts only; a stat without an approved fact is absent.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StatOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "StatsOut",
+        "type": "object"
+      },
+      "StopOut": {
+        "description": "A boardable stop of the active feed, with the route short names that serve it.",
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lng": {
+            "title": "Lng",
+            "type": "number"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "route_short_names": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Route Short Names",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "name",
+          "lat",
+          "lng",
+          "route_short_names"
+        ],
+        "title": "StopOut",
+        "type": "object"
+      },
+      "StopPage": {
+        "properties": {
+          "feed": {
+            "$ref": "#/components/schemas/FeedOut"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StopOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "feed",
+          "items"
+        ],
+        "title": "StopPage",
+        "type": "object"
+      },
+      "TripOut": {
+        "description": "One boardable direct trip, from the schedule (``basis: scheduled``). Times are local, with an offset.\n\n``leave_by`` (``arrive_by`` requests) is the departure minus the access buffer; ``wait_min``\n(``depart_at`` requests) is the time from the target to the departure. ``interpolated`` marks a blank GTFS\ntime that was interpolated between the trip's timed stops.",
+        "properties": {
+          "arrival": {
+            "format": "date-time",
+            "title": "Arrival",
+            "type": "string"
+          },
+          "basis": {
+            "const": "scheduled",
+            "title": "Basis",
+            "type": "string"
+          },
+          "departure": {
+            "format": "date-time",
+            "title": "Departure",
+            "type": "string"
+          },
+          "direction_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Direction Id"
+          },
+          "headsign": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Headsign"
+          },
+          "in_vehicle_min": {
+            "title": "In Vehicle Min",
+            "type": "number"
+          },
+          "interpolated": {
+            "title": "Interpolated",
+            "type": "boolean"
+          },
+          "leave_by": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Leave By"
+          },
+          "route_id": {
+            "title": "Route Id",
+            "type": "string"
+          },
+          "route_long_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route Long Name"
+          },
+          "route_short_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Route Short Name"
+          },
+          "service_date": {
+            "format": "date",
+            "title": "Service Date",
+            "type": "string"
+          },
+          "trip_id": {
+            "title": "Trip Id",
+            "type": "string"
+          },
+          "wait_min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wait Min"
+          }
+        },
+        "required": [
+          "basis",
+          "trip_id",
+          "route_id",
+          "route_short_name",
+          "route_long_name",
+          "headsign",
+          "direction_id",
+          "service_date",
+          "departure",
+          "arrival",
+          "in_vehicle_min",
+          "leave_by",
+          "wait_min",
+          "interpolated"
+        ],
+        "title": "TripOut",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "ctx": {
@@ -514,6 +1298,209 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/v1/alerts": {
+      "get": {
+        "description": "Alerts active now, from approved sources' latest snapshot. The text is data, never instructions.",
+        "operationId": "alerts_v1_alerts_get",
+        "parameters": [
+          {
+            "description": "Only alerts for this route, plus agency-wide ones.",
+            "in": "query",
+            "name": "route_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only alerts for this route, plus agency-wide ones.",
+              "title": "Route Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AlertPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Alerts",
+        "tags": [
+          "transit"
+        ]
+      }
+    },
+    "/v1/assumptions": {
+      "get": {
+        "description": "The approved facts behind the web cost and CO2 model, with IDs and attribution; missing ones listed.",
+        "operationId": "assumptions_v1_assumptions_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssumptionsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assumptions",
+        "tags": [
+          "facts"
+        ]
+      }
+    },
+    "/v1/compare": {
+      "get": {
+        "description": "The best boardable direct trip and up to 3 alternatives, or a reason (``basis: scheduled``, D-6).",
+        "operationId": "compare_trips_v1_compare_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "origin_stop_id",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "title": "Origin Stop Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dest_stop_id",
+            "required": true,
+            "schema": {
+              "maxLength": 100,
+              "minLength": 1,
+              "title": "Dest Stop Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "The local service date (YYYY-MM-DD).",
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "description": "The local service date (YYYY-MM-DD).",
+              "format": "date",
+              "title": "Date",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Local HH:MM at the destination.",
+            "in": "query",
+            "name": "arrive_by",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local HH:MM at the destination.",
+              "title": "Arrive By"
+            }
+          },
+          {
+            "description": "Local HH:MM at the origin stop.",
+            "in": "query",
+            "name": "depart_at",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Local HH:MM at the origin stop.",
+              "title": "Depart At"
+            }
+          },
+          {
+            "description": "The GTFS source; needed only when several are active.",
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The GTFS source; needed only when several are active.",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompareOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "No active GTFS feed, or no approved transit.access_buffer_min fact."
+          }
+        },
+        "summary": "Compare Trips",
+        "tags": [
+          "transit"
+        ]
+      }
+    },
     "/v1/facts": {
       "get": {
         "description": "Current approved facts only, ordered by id; never candidate, rejected, needs_review, or superseded.",
@@ -655,6 +1642,205 @@
         "summary": "Sources",
         "tags": [
           "sources"
+        ]
+      }
+    },
+    "/v1/stats": {
+      "get": {
+        "description": "Headline stats from approved facts: ridership (NTD, P3.2) and the congestion headline (05 §2).\n\nMode share (Census, P3.3), a traffic-volume headline (P3.6), and an example CO2 per trip (it needs a trip\ndistance, which no approved fact provides) wait for their data, so they're absent.",
+        "operationId": "stats_v1_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Stats",
+        "tags": [
+          "facts"
+        ]
+      }
+    },
+    "/v1/stops": {
+      "get": {
+        "description": "Boardable stops of the active feed, by name (matches on id or code first).",
+        "operationId": "stops_v1_stops_get",
+        "parameters": [
+          {
+            "description": "Part of a name, or an exact id or code.",
+            "in": "query",
+            "name": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Part of a name, or an exact id or code.",
+              "title": "Query"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 2000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The GTFS source; needed only when several are active.",
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The GTFS source; needed only when several are active.",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StopPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "No approved GTFS source has an active feed."
+          }
+        },
+        "summary": "Stops",
+        "tags": [
+          "transit"
+        ]
+      }
+    },
+    "/v1/stops/nearest": {
+      "get": {
+        "description": "The boardable stops nearest to a point, nearest first, with their distance in meters.",
+        "operationId": "nearest_v1_stops_nearest_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "lat",
+            "required": true,
+            "schema": {
+              "maximum": 90,
+              "minimum": -90,
+              "title": "Lat",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lng",
+            "required": true,
+            "schema": {
+              "maximum": 180,
+              "minimum": -180,
+              "title": "Lng",
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "The GTFS source; needed only when several are active.",
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 100,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The GTFS source; needed only when several are active.",
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NearbyStopPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "description": "No approved GTFS source has an active feed."
+          }
+        },
+        "summary": "Nearest",
+        "tags": [
+          "transit"
         ]
       }
     }

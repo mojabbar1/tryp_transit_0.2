@@ -4,18 +4,31 @@ from __future__ import annotations
 
 import base64
 import binascii
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from sqlalchemy import Connection, Engine, text
+from sqlalchemy import Engine, text
 from sqlalchemy.exc import DBAPIError
 
 from tda import __version__
-from tda.api.schemas import FactOut, FactPage, FactSource, Health, Period, SourceFreshness, SourceOut
+from tda.api import citable, transit
+from tda.api.citable import FACT_COLUMNS, fact_outs
+from tda.api.deps import DB
+from tda.api.schemas import (
+    AlertPage,
+    AssumptionsOut,
+    CompareOut,
+    FactPage,
+    Health,
+    NearbyStopPage,
+    SourceFreshness,
+    SourceOut,
+    StatsOut,
+    StopPage,
+)
 from tda.config.settings import Settings, get_settings
 from tda.store.db import reader_engine
 
@@ -44,20 +57,31 @@ def create_app(engine: Engine | None = None, settings: Settings | None = None) -
     app.get("/v1/health", response_model=Health, tags=["health"])(health)
     app.get("/v1/sources", response_model=list[SourceOut], tags=["sources"])(sources)
     app.get("/v1/facts", response_model=FactPage, tags=["facts"])(facts)
+    # P4a: only endpoints whose connector is merged (3.1 GTFS, 3.2 NTD, 3.5 reference facts, 3.7 alerts).
+    # Nothing for 3.3 or 3.6 (mode share, corridors), and no /v1/series/* (P6): those paths are 404, not
+    # empty stubs.
+    no_feed = {503: {"description": "No approved GTFS source has an active feed."}}
+    app.get("/v1/stops", response_model=StopPage, tags=["transit"], responses=no_feed)(transit.stops)
+    app.get("/v1/stops/nearest", response_model=NearbyStopPage, tags=["transit"], responses=no_feed)(
+        transit.nearest
+    )
+    app.get(
+        "/v1/compare",
+        response_model=CompareOut,
+        tags=["transit"],
+        responses={
+            503: {"description": "No active GTFS feed, or no approved transit.access_buffer_min fact."}
+        },
+    )(transit.compare_trips)
+    app.get("/v1/alerts", response_model=AlertPage, tags=["transit"])(transit.alerts)
+    app.get("/v1/assumptions", response_model=AssumptionsOut, tags=["facts"])(citable.assumptions)
+    app.get("/v1/stats", response_model=StatsOut, tags=["facts"])(citable.stats)
     return app
 
 
 def _read_only(engine: Engine) -> Engine:
     """Every session is READ ONLY on top of the reader role's grants (defense in depth)."""
     return engine.execution_options(postgresql_readonly=True)
-
-
-def _connection(request: Request) -> Iterator[Connection]:
-    with request.app.state.engine.connect() as connection:
-        yield connection
-
-
-DB = Annotated[Connection, Depends(_connection)]
 
 
 def health(request: Request) -> Health | JSONResponse:
@@ -103,9 +127,7 @@ def facts(
         prefix = key_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
     rows = connection.execute(
         text(
-            "SELECT f.id, f.key, f.version, f.supersedes_id, f.value_num, f.value_text, f.unit, f.geography, "
-            "f.period_start, f.period_end, f.method, f.source_ids, f.derived_from, f.evidence, f.status, "
-            "f.confidence, f.valid_until FROM tda.fact f "
+            f"SELECT {FACT_COLUMNS} FROM tda.fact f "  # noqa: S608  (fixed columns)
             "WHERE f.status = 'approved' AND f.id > :after "
             "AND NOT EXISTS (SELECT 1 FROM tda.fact n WHERE n.key = f.key AND n.version > f.version "
             "AND n.status = 'approved') "
@@ -116,47 +138,7 @@ def facts(
         {"after": after, "prefix": prefix, "geo": geography, "limit": limit + 1},
     ).all()
     page, more = rows[:limit], len(rows) > limit
-    cited = sorted({source_id for row in page for source_id in row.source_ids})
-    attribution = {
-        row.id: row.attribution_text
-        for row in connection.execute(
-            text("SELECT id, attribution_text FROM tda.source WHERE id = ANY(:ids)"), {"ids": cited}
-        )
-    }
-    retrieved = {
-        (row.fact_id, row.source_id): row.retrieved_at.astimezone(UTC).date()
-        for row in connection.execute(
-            text(
-                "SELECT fact_id, source_id, retrieved_at FROM tda.fact_source_retrieval "
-                "WHERE fact_id = ANY(:ids)"
-            ),
-            {"ids": [row.id for row in page]},
-        )
-    }
-    items = [
-        FactOut(
-            id=row.id,
-            key=row.key,
-            version=row.version,
-            supersedes_id=row.supersedes_id,
-            value_num=row.value_num,
-            value_text=row.value_text,
-            unit=row.unit,
-            geography=row.geography,
-            period=Period(start=row.period_start, end=row.period_end),
-            method=row.method,
-            sources=[
-                FactSource(source_id=s, attribution=attribution.get(s), retrieved=retrieved.get((row.id, s)))
-                for s in row.source_ids
-            ],
-            derived_from=row.derived_from,
-            evidence=row.evidence,
-            status=row.status,
-            confidence=row.confidence,
-            valid_until=row.valid_until,
-        )
-        for row in page
-    ]
+    items = fact_outs(connection, page)
     return FactPage(items=items, next_cursor=_encode_cursor(page[-1].id) if more else None)
 
 
