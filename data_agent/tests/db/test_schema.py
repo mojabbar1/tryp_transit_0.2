@@ -82,6 +82,15 @@ def test_reader_sees_only_api_exposed_objects(writer: Connection, reader: Connec
         "current_metric_value",
         "source_freshness",
         "fact_source_retrieval",
+        # P4a (migration 0006): the read API's schedule and alert views.
+        "active_gtfs_feed",
+        "active_gtfs_stop",
+        "active_gtfs_route",
+        "active_gtfs_trip",
+        "active_gtfs_stop_time",
+        "active_gtfs_calendar",
+        "active_gtfs_calendar_date",
+        "approved_service_alert",
     ):
         reader.execute(text(f"SELECT count(*) FROM tda.{relation}")).scalar_one()
     for relation in ("fetch_run", "review_item", "agent_run", "alembic_version"):

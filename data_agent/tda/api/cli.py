@@ -16,13 +16,21 @@ def serve(
     host: str = typer.Option("127.0.0.1", help="Bind address (use 0.0.0.0 inside a container)."),
     port: int | None = typer.Option(None, help="Default: TDA_API_PORT (8081)."),
 ) -> None:
-    """Serve /v1/* as tda_reader (TDA_READER_DATABASE_URL)."""
+    """Serve /v1/* as tda_reader (TDA_READER_DATABASE_URL), with no access log (see below)."""
     import uvicorn
 
     from tda.api.app import create_app
 
     settings = get_settings()
-    uvicorn.run(create_app(settings=settings), host=host, port=port or settings.api_port, log_level="info")
+    # No access log: request URLs carry a rider's coordinates and stop pairs (/v1/stops/nearest, /v1/compare),
+    # and Uvicorn's access log would keep them next to the client address. The API keeps nothing per request.
+    uvicorn.run(
+        create_app(settings=settings),
+        host=host,
+        port=port or settings.api_port,
+        log_level="info",
+        access_log=False,
+    )
 
 
 @api_app.command()

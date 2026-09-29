@@ -162,7 +162,7 @@ def test_retention_and_scheduler_once(invoke: Invoke, monkeypatch: pytest.Monkey
     real, ran = scheduler.run_job, []
 
     def run_job(settings: Any, registry: Any, job: Any, client: Any) -> None:
-        # An approved source's ingest job would fetch live; it's recorded, not run. Retention runs for real.
+        # An approved source's ingest job would fetch live; it's recorded, not run. Retention and metrics run.
         ran.append(job.name)
         if job.source is None:
             real(settings, registry, job, client)
@@ -178,6 +178,7 @@ def test_retention_and_scheduler_once(invoke: Invoke, monkeypatch: pytest.Monkey
         "ingest:ntd-monthly",
         "ingest:eia-gas",
         "retention",
+        "metrics",
     ]
 
 
