@@ -168,3 +168,73 @@ def test_rolling_back_a_correction_that_withdrew_values_restores_them(writer_eng
         (Decimal(13980), [first]),
         (Decimal("10.91"), [first]),
     ]
+
+
+def _january(engine: Engine) -> list[tuple[Any, list[int]]]:
+    return [_current(engine)[(key, "MB", "2026-01-01")] for key in ridership.KEYS]
+
+
+def _compute(engine: Engine) -> None:
+    with engine.begin() as connection:
+        ridership.record_ridership(connection, NTD)
+
+
+def _rollback(engine: Engine, run: int) -> list[str]:
+    plan = rollback_run(
+        engine,
+        run,
+        owned_tables=("ridership_monthly",),
+        dry_run=False,
+        metrics=METRICS,
+        source_id="ntd-monthly",
+    )
+    return sorted(change.metric_key for change in plan.metrics if change.dims.get("month") == "2026-01-01")
+
+
+INCOMPLETE_JANUARY = [r if (r["tos"], r["month"]) != ("PT", _month(12)) else {**r, "upt": None} for r in MB]
+RESTORED = [(Decimal(1220), "run"), (Decimal(13980), "run"), (Decimal("10.91"), "run")]
+
+
+def test_full_snapshots_refresh_a_withdrawn_values_lineage(writer_engine: Engine) -> None:
+    """Review round 2: a value that stays NULL still cites the run that now keeps it NULL."""
+    with writer_engine.begin() as connection:
+        _load(connection, MB)
+    _compute(writer_engine)
+    with writer_engine.begin() as connection:
+        second = _load(connection, INCOMPLETE_JANUARY)
+    _compute(writer_engine)
+    assert _january(writer_engine) == [(None, [second])] * 3
+    with writer_engine.begin() as connection:
+        third = _load(connection, MB)  # complete again, but no metrics job before the next snapshot
+        fourth = _load(connection, INCOMPLETE_JANUARY)
+    _compute(writer_engine)
+    assert _january(writer_engine) == [(None, [fourth])] * 3, "the NULL now cites the snapshot that causes it"
+    assert _rollback(writer_engine, fourth) == sorted(ridership.KEYS)
+    assert _january(writer_engine) == [(value, [third]) for value, _ in RESTORED]
+
+
+def test_incremental_corrections_keep_a_null_values_lineage_current(writer_engine: Engine) -> None:
+    """Review round 2: PT null, then DO null, then PT back; rolling back the DO-null run restores January."""
+    with writer_engine.begin() as connection:
+        first = _load(connection, MB)
+    _compute(writer_engine)
+    steps = [
+        [_row("MB", "PT", _month(12), None)],
+        [_row("MB", "DO", _month(12), None)],
+        [_row("MB", "PT", _month(12), 100)],
+    ]
+    runs = []
+    for step in steps:
+        with writer_engine.begin() as connection:
+            runs.append(_load(connection, step))
+        _compute(writer_engine)
+    _, do_null, pt_back = runs
+    assert _january(writer_engine)[0] == (None, [do_null, pt_back]), "DO (run 3) and PT (run 4) keep it NULL"
+    assert _rollback(writer_engine, do_null) == sorted(ridership.KEYS)
+    assert _january(writer_engine)[0] == (Decimal(1220), [first, pt_back])
+    assert [value for value, _ in _january(writer_engine)] == [value for value, _ in RESTORED]
+    _compute(writer_engine)
+    with writer_engine.begin() as connection:
+        assert ridership.record_ridership(connection, NTD) == 0, (
+            "an unchanged result, NULL or not, isn't rewritten"
+        )

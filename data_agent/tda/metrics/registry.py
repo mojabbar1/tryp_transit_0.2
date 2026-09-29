@@ -80,3 +80,26 @@ def record_metric(
             "i": sorted(set(result.input_run_ids)),
         },
     ).scalar_one()
+
+
+def record_changes(
+    connection: Connection,
+    desired: Mapping[tuple[str, str], MetricResult],
+    current: Mapping[tuple[str, str], Any],
+    method_version: str,
+) -> int:
+    """Append each desired result whose value, unit, or lineage differs from the current one; count them.
+
+    Keys are (metric key, dims as sorted JSON), and ``current`` holds ``current_metric_value`` rows. The
+    caller gives each current key it no longer computes a NULL (withdrawn) result that cites the runs it now
+    depends on. So an already-withdrawn value's lineage stays current too, and rolling back the run that
+    keeps it uncomputable finds it.
+    """
+    written = 0
+    for (key, dims), result in sorted(desired.items(), key=lambda item: item[0]):
+        row = current.get((key, dims))
+        wanted = (result.value, result.unit, sorted(set(result.input_run_ids)))
+        if row is None or (row.value, row.unit, sorted(row.input_run_ids)) != wanted:
+            record_metric(connection, key, json.loads(dims), result, method_version)
+            written += 1
+    return written

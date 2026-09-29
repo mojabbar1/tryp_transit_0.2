@@ -273,3 +273,40 @@ def test_the_migration_round_trips(db: DbUrls, writer_engine: Engine) -> None:
     assert left == [(0,)]
     upgrade(db.admin)
     assert rows(writer_engine, "SELECT count(*) FROM tda.active_gtfs_feed") == [(0,)]
+
+
+def test_a_headway_that_stays_withdrawn_cites_the_current_feed(
+    load_feed: LoadFeed, writer_engine: Engine
+) -> None:
+    """Review round 2 (as for ridership): a NULL that persists across feeds follows the active feed's run."""
+    feeds = []
+    for contents in (
+        BUSY,  # weekday Mid: 90 minutes
+        edited(trips=[r1_trip("A1", "07:15")]),  # no Mid service: withdrawn
+        edited(trips=[r1_trip("A1", "07:15"), r1_trip("A9", "07:45")]),  # still none
+    ):
+        feeds.append(load_feed(contents))
+        with writer_engine.begin() as connection:
+            service.record_headways(connection, feeds[-1], date(2026, 9, 1))
+    with writer_engine.begin() as connection:
+        assert service.record_headways(connection, feeds[-1], date(2026, 9, 1)) == 0, "idempotent, NULLs too"
+    assert _current(writer_engine)[("route.headway_min.mid.weekday", "R1", 0)] == (
+        None,
+        "minutes",
+        [feeds[-1].fetch_run_id],
+        "headway.v1",
+    )
+
+
+def test_a_feed_that_is_no_longer_active_is_skipped_not_withdrawn(
+    load_feed: LoadFeed, writer_engine: Engine
+) -> None:
+    """If activation moves on between listing and recording, nothing is written for the old feed."""
+    old = load_feed(BUSY)
+    new = load_feed(edited(trips=[r1_trip("A1", "07:15")]))
+    with writer_engine.begin() as connection:
+        service.record_headways(connection, new, date(2026, 9, 1))
+    before = _current(writer_engine)
+    with writer_engine.begin() as connection:
+        assert service.record_headways(connection, old, date(2026, 9, 1)) == 0
+    assert _current(writer_engine) == before

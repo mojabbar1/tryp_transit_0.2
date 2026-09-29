@@ -29,7 +29,7 @@ from typing import Any
 import structlog
 from sqlalchemy import Connection, text
 
-from tda.metrics.registry import MetricDefinition, MetricRegistry, MetricResult, record_metric
+from tda.metrics.registry import MetricDefinition, MetricRegistry, MetricResult, record_changes
 
 log = structlog.get_logger(__name__)
 
@@ -129,22 +129,13 @@ def record_ridership(connection: Connection, ntd_id: str) -> int:
             {"keys": list(KEYS), "n": ntd_id},
         )
     }
-    written = 0
-    for (key, dims), result in sorted(wanted.items()):
-        row = current.get((key, dims))
-        if row is None or (row.value, row.unit, sorted(row.input_run_ids)) != (
-            result.value,
-            result.unit,
-            result.input_run_ids,
-        ):
-            record_metric(connection, key, json.loads(dims), result, METHOD)
-            written += 1
-    for (key, dims), row in sorted(current.items()):
-        if (key, dims) not in wanted and row.value is not None:
-            parsed = json.loads(dims)
-            runs = lineage(series.get(parsed["mode"], {}), key, date.fromisoformat(parsed["month"]))
-            record_metric(connection, key, parsed, MetricResult(None, runs, UNITS[key]), METHOD)
-            written += 1
+    desired = dict(wanted)
+    for key, dims in current.keys() - wanted.keys():
+        # Withdrawn (or still withdrawn): cite the runs it now depends on, even if it was already NULL.
+        parsed = json.loads(dims)
+        runs = lineage(series.get(parsed["mode"], {}), key, date.fromisoformat(parsed["month"]))
+        desired[(key, dims)] = MetricResult(None, runs, UNITS[key])
+    written = record_changes(connection, desired, current, METHOD)
     log.info("metrics.ridership", ntd_id=ntd_id, written=written)
     return written
 

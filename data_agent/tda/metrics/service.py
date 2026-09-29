@@ -31,7 +31,7 @@ import structlog
 from sqlalchemy import Connection, text
 
 from tda.metrics.feeds import ActiveFeed, NoActiveFeed, active_feed, active_service_ids, has_removals
-from tda.metrics.registry import MetricDefinition, MetricRegistry, MetricResult, record_metric
+from tda.metrics.registry import MetricDefinition, MetricRegistry, MetricResult, record_changes, record_metric
 
 log = structlog.get_logger(__name__)
 
@@ -169,7 +169,18 @@ def compute_values(
 
 
 def record_headways(connection: Connection, feed: ActiveFeed, reference: date) -> int:
-    """Record changed headways for ``feed`` and withdraw ones it no longer has; returns rows written."""
+    """Record changed headways for ``feed`` and withdraw ones it no longer has; returns rows written.
+
+    Skipped (0) when ``feed`` is no longer its source's active feed: the views would show none of its trips,
+    and every headway would be withdrawn by mistake.
+    """
+    try:
+        still_active = active_feed(connection, feed.source_id).feed_version_id == feed.feed_version_id
+    except NoActiveFeed:
+        still_active = False
+    if not still_active:
+        log.info("metrics.headways_skipped", source=feed.source_id, feed_version_id=feed.feed_version_id)
+        return 0
     values, used = compute_values(connection, feed, reference)
     current = {
         (row.metric_key, canonical(row.dims)): row
@@ -181,22 +192,11 @@ def record_headways(connection: Connection, feed: ActiveFeed, reference: date) -
             {"prefix": PREFIX + "%", "s": feed.source_id},
         )
     }
-    written = 0
-    for (key, dims_text), result in sorted(values.items()):
-        now = current.get((key, dims_text))
-        if now is None or (now.value, now.unit, sorted(now.input_run_ids)) != (
-            result.value,
-            result.unit,
-            result.input_run_ids,
-        ):
-            record_metric(connection, key, _parse(dims_text), result, METHOD)
-            written += 1
-    for (key, dims_text), row in sorted(current.items()):
-        if (key, dims_text) not in values and row.value is not None:
-            record_metric(
-                connection, key, _parse(dims_text), MetricResult(None, [feed.fetch_run_id], UNIT), METHOD
-            )
-            written += 1
+    desired = dict(values)
+    for missing in current.keys() - values.keys():
+        # Withdrawn (or still withdrawn): cite this feed's run, even if the value was already NULL.
+        desired[missing] = MetricResult(None, [feed.fetch_run_id], UNIT)
+    written = record_changes(connection, desired, current, METHOD)
     log.info(
         "metrics.headways",
         source=feed.source_id,
@@ -264,7 +264,3 @@ def register(registry: MetricRegistry) -> None:
 def canonical(dims: Mapping[str, Any]) -> str:
     """Dims as sorted JSON, the way ``record_metric`` stores them."""
     return json.dumps(dict(dims), sort_keys=True)
-
-
-def _parse(dims_text: str) -> dict[str, Any]:
-    return json.loads(dims_text)
