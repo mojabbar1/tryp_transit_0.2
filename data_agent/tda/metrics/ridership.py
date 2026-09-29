@@ -9,8 +9,10 @@ reported a count (as in the P3.2 rule). Only complete months produce values:
 
 Dims are ``ntd_id``, ``mode`` (the NTD code), and ``month`` (its first day). Each value's lineage is the runs
 its months' rows came from. A value is recorded only when it or its lineage changes, and one that can no
-longer be computed gets NULL (withdrawn). The facts stay with the P3.2 rule (``tda.facts.rules.ntd_monthly``),
-which auto-publishes the latest month and its year-over-year change; this module adds no fact.
+longer be computed gets NULL (withdrawn) **with the lineage of the rows it would need**, so rolling back the
+run that made it uncomputable finds it and recomputes it. The facts stay with the P3.2 rule
+(``tda.facts.rules.ntd_monthly``), which auto-publishes the latest month and its year-over-year change; this
+module adds no fact.
 """
 
 from __future__ import annotations
@@ -92,6 +94,20 @@ def values(by_month: Mapping[date, Month]) -> dict[tuple[str, date], MetricResul
     return result
 
 
+def _window(key: str, month: date) -> list[date]:
+    """The months a key's value for ``month`` is computed from."""
+    if key == ROLLING:
+        return [_shift(month, -k) for k in range(12)]
+    if key == YOY:
+        return [month, _shift(month, -12)]
+    return [month]
+
+
+def lineage(by_month: Mapping[date, Month], key: str, month: date) -> list[int]:
+    """The runs of the current rows a key's value for ``month`` depends on (for a withdrawal's lineage)."""
+    return sorted({run for m in _window(key, month) if m in by_month for run in by_month[m].runs})
+
+
 def _dims(ntd_id: str, mode: str, month: date) -> dict[str, Any]:
     return {"month": month.isoformat(), "mode": mode, "ntd_id": ntd_id}
 
@@ -99,7 +115,8 @@ def _dims(ntd_id: str, mode: str, month: date) -> dict[str, Any]:
 def record_ridership(connection: Connection, ntd_id: str) -> int:
     """Record changed ridership metrics for one agency and withdraw stale ones; returns rows written."""
     wanted: dict[tuple[str, str], MetricResult] = {}
-    for mode, by_month in monthly_series(connection, ntd_id).items():
+    series = monthly_series(connection, ntd_id)
+    for mode, by_month in series.items():
         for (key, month), result in values(by_month).items():
             wanted[(key, json.dumps(_dims(ntd_id, mode, month), sort_keys=True))] = result
     current = {
@@ -124,7 +141,9 @@ def record_ridership(connection: Connection, ntd_id: str) -> int:
             written += 1
     for (key, dims), row in sorted(current.items()):
         if (key, dims) not in wanted and row.value is not None:
-            record_metric(connection, key, json.loads(dims), MetricResult(None, [], UNITS[key]), METHOD)
+            parsed = json.loads(dims)
+            runs = lineage(series.get(parsed["mode"], {}), key, date.fromisoformat(parsed["month"]))
+            record_metric(connection, key, parsed, MetricResult(None, runs, UNITS[key]), METHOD)
             written += 1
     log.info("metrics.ridership", ntd_id=ntd_id, written=written)
     return written
@@ -133,9 +152,8 @@ def record_ridership(connection: Connection, ntd_id: str) -> int:
 def _recompute(key: str, connection: Connection, dims: Mapping[str, Any]) -> MetricResult:
     """Rollback's recompute of one value from the current rows (None when it can't be computed now)."""
     by_month = monthly_series(connection, str(dims["ntd_id"])).get(str(dims["mode"]), {})
-    return values(by_month).get(
-        (key, date.fromisoformat(str(dims["month"]))), MetricResult(None, [], UNITS[key])
-    )
+    month = date.fromisoformat(str(dims["month"]))
+    return values(by_month).get((key, month), MetricResult(None, lineage(by_month, key, month), UNITS[key]))
 
 
 def register(registry: MetricRegistry) -> None:

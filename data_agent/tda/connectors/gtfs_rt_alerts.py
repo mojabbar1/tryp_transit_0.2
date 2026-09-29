@@ -261,6 +261,8 @@ class GtfsRtAlertsConnector(Connector):
     """CARTA's GTFS-realtime service alerts, polled every few minutes."""
 
     source_id = "carta-gtfs-rt-alerts"
+    # The static feed whose route, stop, and trip ids these alerts use (the same publisher, S-1).
+    static_source_id = "carta-gtfs"
     owned_tables = ("service_alert",)
 
     def fetch(self, prior: PriorRun | None, budget: RequestBudget | None) -> FetchResult | NotModified:
@@ -287,7 +289,8 @@ def _warn_unknown_references(connection: Connection, rows: list[Row], run_id: in
     if not routes and not stops:
         return
     active = connection.execute(
-        text("SELECT id FROM tda.current_gtfs_feed_version WHERE is_active AND source_id = 'carta-gtfs'")
+        text("SELECT id FROM tda.current_gtfs_feed_version WHERE is_active AND source_id = :s"),
+        {"s": GtfsRtAlertsConnector.static_source_id},
     ).scalar_one_or_none()
     if active is None:
         log.warning(

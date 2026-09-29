@@ -11,7 +11,7 @@ from tda.config.registry import load_region
 from tda.config.settings import Settings, get_settings
 from tda.metrics.feeds import active_feeds
 from tda.metrics.ridership import record_ridership
-from tda.metrics.service import record_headways
+from tda.metrics.service import record_headways, withdraw_inactive
 from tda.store.db import writer_engine
 
 metrics_app = typer.Typer(help="Metrics: headways (GTFS) and ridership (NTD).", no_args_is_help=True)
@@ -33,6 +33,10 @@ def compute_all(settings: Settings, reference: date | None = None) -> list[str]:
             lines.append(
                 f"headways {feed.source_id} (feed version {feed.feed_version_id}): {written} written"
             )
+        with engine.begin() as connection:
+            withdrawn = withdraw_inactive(connection, {feed.source_id for feed in feeds})
+        if withdrawn:
+            lines.append(f"headways withdrawn for sources without an active approved feed: {withdrawn}")
         for agency in load_region(settings=settings).agencies:
             if agency.ntd_id:
                 with engine.begin() as connection:

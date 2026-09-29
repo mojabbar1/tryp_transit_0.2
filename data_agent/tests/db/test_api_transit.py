@@ -422,3 +422,46 @@ def test_alerts_are_active_route_filtered_plain_text(
 )
 def test_endpoints_without_a_merged_connector_are_404(at: Callable[..., TestClient], path: str) -> None:
     assert at().get(path).status_code == 404
+
+
+def test_a_trip_only_alert_is_found_by_its_route(
+    at: Callable[..., TestClient], load_feed: LoadFeed, writer_engine: Engine
+) -> None:
+    """Review F5: a selector with only a trip_id is resolved to its route in the paired static feed."""
+    load_feed()  # carta-gtfs: T1 runs on R1
+    _alerts(
+        writer_engine,
+        "carta-gtfs-rt-alerts",
+        [
+            _alert("trip-only", [{"trip": {"trip_id": "T1"}}]),
+            _alert("unknown-trip", [{"trip": {"trip_id": "T9"}}]),
+        ],
+    )
+    client = at()
+    by_route = client.get("/v1/alerts", params={"route_id": "R1"}).json()["items"]
+    assert [(a["alert_id"], a["route_ids"]) for a in by_route] == [("trip-only", ["R1"])]
+    everything = client.get("/v1/alerts").json()["items"]
+    assert [(a["alert_id"], a["route_ids"]) for a in everything] == [
+        ("trip-only", ["R1"]),
+        ("unknown-trip", []),
+    ]
+
+
+def test_another_publishers_alerts_never_resolve_against_this_feed(
+    at: Callable[..., TestClient], load_feed: LoadFeed, writer_engine: Engine
+) -> None:
+    """Review F5: trip ids are only looked up in the alert source's own static feed."""
+    load_feed()
+    _alerts(writer_engine, "other-rt", [_alert("elsewhere", [{"trip": {"trip_id": "T1"}}])])
+    items = at().get("/v1/alerts").json()["items"]
+    assert [(a["alert_id"], a["route_ids"]) for a in items] == [("elsewhere", [])]
+    assert at().get("/v1/alerts", params={"route_id": "R1"}).json()["items"] == []
+
+
+def test_an_exact_stop_id_outranks_a_name_match_without_a_code(
+    at: Callable[..., TestClient], load_feed: LoadFeed
+) -> None:
+    """Review F8: a NULL stop_code must not rank a name match above the exact id."""
+    load_feed(edited(replace=[("stops.txt", "FX02,102,Fixture Stop 02", "FX02,,FX01 Avenue")]))
+    items = at().get("/v1/stops", params={"query": "FX01", "limit": 2}).json()["items"]
+    assert [s["id"] for s in items] == ["FX01", "FX02"]

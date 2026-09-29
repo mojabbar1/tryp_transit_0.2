@@ -155,7 +155,11 @@ def search_stops(
     if query:
         params |= {"q": query, "like": "%" + _escape_like(query) + "%", "prefix": _escape_like(query) + "%"}
         where = "AND (stop_name ILIKE :like ESCAPE '\\' OR stop_id = :q OR stop_code = :q)"
-        order = "(stop_id = :q OR stop_code = :q) DESC, (stop_name ILIKE :prefix ESCAPE '\\') DESC, "
+        # coalesce(..., false): a NULL code or name ranks as "no match" (NULL sorts first in DESC).
+        order = (
+            "coalesce(stop_id = :q OR stop_code = :q, false) DESC, "
+            "coalesce(stop_name ILIKE :prefix ESCAPE '\\', false) DESC, "
+        )
     else:
         where, order = "", ""
     rows = connection.execute(

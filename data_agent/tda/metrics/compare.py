@@ -6,7 +6,7 @@ Inputs: an origin and a destination stop, a local date, and a target (``arrive_b
 - **Candidates:** trips that serve the origin before the destination (by ``stop_sequence``) on a service that
   runs on the date, plus the previous service day's trips that depart on the date (times of 24:00:00 or
   later). A trip that passes the origin more than once is boarded at its last pass before the destination
-  (the shortest ride).
+  where pickup is allowed (the shortest ride).
 - **Boardable:** the origin departure is at least ``now + access buffer`` (never a bus that has already left),
   pickup is allowed at the origin, and drop-off at the destination. ``pickup_type``/``drop_off_type`` 1 (none)
   and 2 (phone the agency first) don't allow it; 0, empty, and 3 (tell the driver) do.
@@ -16,16 +16,19 @@ Inputs: an origin and a destination stop, a local date, and a target (``arrive_b
   trip is offered once per service day.
 - **Times:** departure at the origin (its arrival time if the departure is blank) and arrival at the
   destination (or its departure time). A blank non-timepoint time is interpolated between the trip's timed
-  neighbors, by ``shape_dist_traveled`` when all three stops have it and by stop order otherwise (GTFS allows
-  blank non-timepoint times and expects consumers to interpolate); such a trip is marked ``interpolated``.
+  neighbors (GTFS allows blank non-timepoint times and expects consumers to interpolate); such a trip is
+  marked ``interpolated``. It uses ``shape_dist_traveled`` only when the three distances are finite and in
+  order, and stop order otherwise, so the time always falls between its neighbors'. **Fail closed:** when the
+  neighbors' times run backwards, or a trip would arrive before it departs, the trip isn't offered.
 - **No fabrication:** without a boardable direct trip, the result is a reason instead: ``unknown_stop`` (not a
   boardable stop of the active feed), ``transfer_required`` (no trip serves the origin and then the
-  destination), ``no_service`` (none of those trips runs on the date), or ``no_boardable_trip``. This release
-  is direct-route only (D-6 (a)).
+  destination), ``no_service`` (none of those trips runs on the date), or ``no_boardable_trip`` (they run, but
+  none can be boarded or timed for the request). This release is direct-route only (D-6 (a)).
 """
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
@@ -120,15 +123,18 @@ def compare(
     }
     times = _times(connection, feed, trips)
     options: list[tuple[TripOption, bool]] = []
+    runs_today = False
     for trip_id, trip in trips.items():
         for service_day, running in services.items():
             if trip.service_id not in running:
                 continue
+            # A trip of the date's own service runs that day even if it can't be timed (fail closed below).
+            runs_today = runs_today or service_day == day
             for option, allowed in _options(feed, trip_id, trip, service_day, times):
                 if service_day == day or option.departure.date() == day:
                     options.append((option, allowed))
     if not options:
-        return Comparison(mode, target, None, reason="no_service")
+        return Comparison(mode, target, None, reason="no_boardable_trip" if runs_today else "no_service")
     # Compare instants, never wall-clock times: datetimes in one zone compare by wall clock (fold is
     # ignored), which is wrong in the hour a DST change repeats. So the buffer is added in UTC too.
     earliest = (now.astimezone(UTC) + access_buffer).timestamp()
@@ -233,8 +239,10 @@ def _times(
                 continue  # the loader requires times at a trip's first and last stop, so this can't happen
             start = visits[before][2] if visits[before][2] is not None else visits[before][1]
             end = visits[after][1] if visits[after][1] is not None else visits[after][2]
+            if start is None or end is None or end < start:
+                continue  # the neighbors' times run backwards: leave it blank, so the trip isn't offered
             d0, d1 = visits[before][3], visits[after][3]
-            if dist is not None and d0 is not None and d1 is not None and d1 > d0:
+            if _ordered(d0, dist, d1):
                 share = (dist - d0) / (d1 - d0)
             else:
                 share = (i - before) / (after - before)
@@ -252,14 +260,16 @@ def _options(
     """One option per destination visit (boarding at the last origin visit before it), and if it's allowed."""
     result = []
     for d_seq, arrive in sorted(trip.destinations.items()):
-        before = [seq for seq in trip.origins if seq < d_seq]
+        before = sorted(seq for seq in trip.origins if seq < d_seq)
         if not before:
             continue
-        board = trip.origins[max(before)]
+        # The last pass where pickup is allowed; with none, the last pass (reported as not boardable).
+        eligible = [seq for seq in before if trip.origins[seq].pickup_type in BOARDING_ALLOWED]
+        board = trip.origins[(eligible or before)[-1]]
         departure, dep_interpolated = _time(trip_id, board, filled, prefer="departure")
         arrival, arr_interpolated = _time(trip_id, arrive, filled, prefer="arrival")
-        if departure is None or arrival is None:
-            continue
+        if departure is None or arrival is None or arrival < departure:
+            continue  # untimed, or arriving before it departs: never offered
         option = TripOption(
             trip_id=trip_id,
             route_id=trip.route_id,
@@ -295,3 +305,10 @@ def _time(
         return second, False
     seconds, interpolated = filled.get((trip_id, visit.sequence), (None, False))
     return seconds, interpolated
+
+
+def _ordered(low: float | None, value: float | None, high: float | None) -> bool:
+    """Whether the three distances are finite and ``low <= value <= high``, with ``low < high``."""
+    if low is None or value is None or high is None:
+        return False
+    return all(math.isfinite(x) for x in (low, value, high)) and low <= value <= high and low < high

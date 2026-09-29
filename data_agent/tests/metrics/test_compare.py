@@ -269,3 +269,45 @@ def test_times_across_the_dst_fall_back_are_elapsed_not_wall_clock(ask: Callable
     assert (late.best, late.reason) == (None, "no_boardable_trip")
     on_time = run("FX01", "FX06", fall_back, "arrive_by", "02:00", now=datetime(2026, 10, 31, tzinfo=NY))
     assert on_time.best is not None and on_time.best.trip_id == "DST1"
+
+
+def test_a_distance_outside_its_neighbors_never_extrapolates(ask: Callable[..., Ask]) -> None:
+    """Review F2: FX04's distance 10.0 lies outside 0.8..2.4, so stop order is used (17:08), not 17:50."""
+    bad = edited(replace=[("stop_times.txt", "T2,,,FX04,3,0,0,1.6,0", "T2,,,FX04,3,0,0,10.0,0")])
+    run = ask(bad)
+    before = run("FX04", "FX01", WEDNESDAY, "depart_at", "17:00")
+    assert before.best is not None and before.best.departure == _at(WEDNESDAY, "17:08")
+    assert before.best.in_vehicle_min == 12.0
+    # At 17:25 that bus has gone: it must not reappear as a later departure.
+    after = run("FX04", "FX01", WEDNESDAY, "depart_at", "17:30", now=_at(WEDNESDAY, "17:25"))
+    assert (after.best, after.reason) == (None, "no_boardable_trip")
+
+
+def test_backwards_neighbor_times_fail_closed(ask: Callable[..., Ask]) -> None:
+    """Review F2: FX05 at 17:14 and FX03 at 17:12 run backwards, so FX04 gets no time and T2 isn't offered."""
+    backwards = edited(replace=[("stop_times.txt", "T2,17:04:00,17:04:00,FX05", "T2,17:14:00,17:14:00,FX05")])
+    result = ask(backwards)("FX04", "FX01", WEDNESDAY, "depart_at", "17:00")
+    assert (result.best, result.reason) == (None, "no_boardable_trip"), "T2 runs, but can't be timed"
+
+
+def test_a_trip_arriving_before_it_departs_is_never_offered(ask: Callable[..., Ask]) -> None:
+    """Review F2: T2 would reach FX02 at 17:00 after leaving FX03 at 17:12, so it isn't offered."""
+    early = edited(replace=[("stop_times.txt", "T2,17:16:00,17:16:00,FX02", "T2,17:00:00,17:00:00,FX02")])
+    result = ask(early)("FX03", "FX02", WEDNESDAY, "depart_at", "17:00")
+    assert (result.best, result.reason) == (None, "no_boardable_trip")
+
+
+def test_a_loop_boards_at_the_last_pass_that_allows_pickup(ask: Callable[..., Ask]) -> None:
+    """Review F6: the second pass at FX01 refuses pickup, so the trip boards at the first (08:10)."""
+    loop = (
+        "R1,WKDY,L2,Loop,0,B7,",
+        [
+            "L2,08:10:00,08:10:00,FX01,1,0,0,,1",
+            "L2,08:14:00,08:14:00,FX02,2,0,0,,0",
+            "L2,08:18:00,08:18:00,FX01,3,1,0,,0",
+            "L2,08:22:00,08:22:00,FX03,4,0,0,,1",
+        ],
+    )
+    result = ask(edited(trips=[loop]))("FX01", "FX03", WEDNESDAY, "depart_at", "08:00")
+    assert result.best is not None and result.best.trip_id == "L2"
+    assert (result.best.departure, result.best.in_vehicle_min) == (_at(WEDNESDAY, "08:10"), 12.0)

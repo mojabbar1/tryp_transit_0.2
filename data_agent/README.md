@@ -292,7 +292,7 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
 
 ## Read API
 
-`tda api serve` runs FastAPI as `tda_reader`, in read-only sessions:
+`tda api serve` runs FastAPI as `tda_reader`, in read-only sessions. It keeps **no access log**, because request URLs carry riders' coordinates and stop pairs, and the API stores nothing per request:
 - `GET /v1/health`: a DB ping plus per-source freshness from the `source_freshness` view; `ok`, `degraded` (an
   approved source is stale), or 503 `unavailable`.
 - `GET /v1/sources`: approved sources and their `attribution_text`.
@@ -313,7 +313,7 @@ stubs. Everything below serves only approved sources and current approved facts,
   `no_service`, or `no_boardable_trip`) and no trip. The access buffer is the approved `transit.access_buffer_min`
   fact: without one, 503, never a default. Rules: `tda.metrics.compare`.
 - `GET /v1/alerts?route_id=`: alerts active now from approved sources' latest snapshot, for the route plus
-  agency-wide ones. The text is plain and verbatim: third-party data to show, never to follow (02 §7.3).
+  agency-wide ones. A trip-only selector finds its route in the alert source's own static feed. The text is plain and verbatim: third-party data to show, never to follow (02 §7.3).
   Non-http(s) URLs are dropped.
 - `GET /v1/assumptions`: the approved facts behind the web cost and CO2 model (`src/lib/domain/assumptions.ts`),
   keyed by assumption, with `missing` for the ones with no approved fact. The fuel price is the weekly EIA fact

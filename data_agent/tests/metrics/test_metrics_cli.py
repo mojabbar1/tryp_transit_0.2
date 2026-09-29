@@ -7,11 +7,13 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from sqlalchemy import text
 from typer.testing import CliRunner
 
 from tda.cli import app
 from tda.config.settings import get_settings
 from tests.conftest import DbUrls
+from tests.support.db import rows
 from tests.support.feeds import LoadFeed, edited, r1_trip
 
 
@@ -52,3 +54,21 @@ def test_a_bad_date_is_a_clean_error(invoke: Any) -> None:
     # Typer may render usage errors in a colored panel (CI does), so compare the plain words only.
     plain = " ".join(re.sub(r"[│╭╮╰╯─]", " ", re.sub(r"\x1b\[[0-9;]*m", "", result.stderr)).split())
     assert result.exit_code == 2 and "Invalid value" in plain and "--date" in plain
+
+
+def test_compute_withdraws_headways_of_a_disabled_source(
+    invoke: Any, load_feed: LoadFeed, db: DbUrls
+) -> None:
+    """Review F7: once a source has no active approved feed, its headways are withdrawn, not left current."""
+    load_feed(edited(trips=[r1_trip("A1", "07:15"), r1_trip("A2", "07:30")]))
+    invoke("metrics", "compute", "--date", "2026-09-01")
+    engine = db.engine("writer")
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE tda.source SET status = 'disabled' WHERE id = 'carta-gtfs'"))
+    result = invoke("metrics", "compute", "--date", "2026-09-01")
+    assert "headways withdrawn for sources without an active approved feed: 1" in result.stdout
+    values = rows(
+        engine, "SELECT value FROM tda.current_metric_value WHERE metric_key LIKE 'route.headway_min.%'"
+    )
+    engine.dispose()
+    assert values == [(None,)]

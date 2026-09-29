@@ -7,6 +7,7 @@ boardable direct trip, ``/v1/compare`` returns a reason and no trip.
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from datetime import UTC, date, time, timedelta
 from typing import Annotated, Any
 
@@ -27,6 +28,7 @@ from tda.api.schemas import (
     StopPage,
     TripOut,
 )
+from tda.connectors.gtfs_rt_alerts import GtfsRtAlertsConnector
 from tda.metrics.compare import Comparison, TripOption, compare
 from tda.metrics.feeds import (
     ActiveFeed,
@@ -43,6 +45,9 @@ MAX_NEAREST = 50
 HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"
 ACCESS_BUFFER_KEY = "transit.access_buffer_min"
 SAFE_URL = re.compile(r"^https?://", re.IGNORECASE)
+# Each alerts source and the static feed its ids refer to. A trip-only selector is resolved there, never
+# against another publisher's feed, whose trip ids could collide.
+STATIC_FEED = {GtfsRtAlertsConnector.source_id: GtfsRtAlertsConnector.static_source_id}
 
 SourceId = Annotated[
     str | None, Query(max_length=100, description="The GTFS source; needed only when several are active.")
@@ -216,11 +221,13 @@ def alerts(
         )
     ).all()
     at = now.timestamp()
+    trip_routes = _trip_routes(connection, rows)
     items = []
     for row in rows:
         selectors = row.informed_entities
+        routes = _routes(selectors, trip_routes.get(row.source_id, {}))
         if not _active(row.active_periods, at) or (
-            route_id is not None and not _applies(selectors, route_id)
+            route_id is not None and not _applies(selectors, routes, route_id)
         ):
             continue
         link = _plain(row.url)
@@ -236,7 +243,7 @@ def alerts(
                 url=link if link and SAFE_URL.match(link) else None,
                 active_from=row.active_from,
                 active_until=row.active_until,
-                route_ids=sorted(_routes(selectors)),
+                route_ids=sorted(routes),
                 stop_ids=sorted({s["stop_id"] for s in selectors if "stop_id" in s}),
             )
         )
@@ -255,15 +262,43 @@ def _active(periods: list[dict[str, int | None]], at: float) -> bool:
     )
 
 
-def _routes(selectors: list[dict[str, Any]]) -> set[str]:
-    return {s["route_id"] for s in selectors if "route_id" in s} | {
-        s["trip"]["route_id"] for s in selectors if "route_id" in s.get("trip", {})
-    }
+def _trip_routes(connection: Connection, rows: list[Any]) -> dict[str, dict[str, str]]:
+    """source_id -> trip_id -> route_id for the trip-only selectors, from each source's static feed."""
+    wanted: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        for selector in row.informed_entities:
+            trip = selector.get("trip", {})
+            if "trip_id" in trip and "route_id" not in trip and row.source_id in STATIC_FEED:
+                wanted[row.source_id].add(trip["trip_id"])
+    found: dict[str, dict[str, str]] = {}
+    for source_id, trip_ids in wanted.items():
+        found[source_id] = dict(
+            connection.execute(
+                text(
+                    "SELECT trip_id, route_id FROM tda.active_gtfs_trip "
+                    "WHERE source_id = :s AND trip_id = ANY(:t)"
+                ),
+                {"s": STATIC_FEED[source_id], "t": sorted(trip_ids)},
+            ).all()
+        )
+    return found
 
 
-def _applies(selectors: list[dict[str, Any]], route_id: str) -> bool:
-    """The alert names the route (directly or by a trip), or is agency-wide (no route, trip, or stop)."""
-    if route_id in _routes(selectors):
+def _routes(selectors: list[dict[str, Any]], trip_routes: dict[str, str]) -> set[str]:
+    """The routes the selectors name: directly, by a trip's route_id, or by a trip_id in the static feed."""
+    routes = {s["route_id"] for s in selectors if "route_id" in s}
+    for selector in selectors:
+        trip = selector.get("trip", {})
+        if "route_id" in trip:
+            routes.add(trip["route_id"])
+        elif trip.get("trip_id") in trip_routes:
+            routes.add(trip_routes[trip["trip_id"]])
+    return routes
+
+
+def _applies(selectors: list[dict[str, Any]], routes: set[str], route_id: str) -> bool:
+    """The alert names the route (directly or through a trip), or is agency-wide (no route, trip, or stop)."""
+    if route_id in routes:
         return True
     return any(not ({"route_id", "trip", "stop_id"} & set(s)) for s in selectors)
 

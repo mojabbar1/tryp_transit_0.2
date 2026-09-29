@@ -112,7 +112,8 @@ def test_a_correction_rewrites_what_changed_and_withdraws_what_it_breaks(writer_
     assert got[("ridership.upt.monthly", "MB", "2026-01-01")] == (Decimal(1270), [first, second])
     assert got[("ridership.upt.rolling_12m", "MB", "2026-01-01")] == (Decimal(14030), [first, second])
     assert got[("ridership.upt.yoy_pct", "MB", "2026-01-01")] == (Decimal("15.45"), [first, second])
-    assert got[("ridership.upt.monthly", "DR", "2025-12-01")] == (None, [])
+    # Withdrawn, but still citing the run that made it uncomputable, so rolling that run back finds it (F3).
+    assert got[("ridership.upt.monthly", "DR", "2025-12-01")] == (None, [second])
     assert got[("ridership.upt.monthly", "MB", "2025-12-01")] == (Decimal(1210), [first]), "untouched"
 
 
@@ -141,3 +142,29 @@ def test_rolling_back_the_correction_recomputes_from_the_earlier_rows(writer_eng
 
 def test_the_ridership_definitions_are_registered() -> None:
     assert set(ridership.KEYS) <= set(METRICS.definitions)
+
+
+def test_rolling_back_a_correction_that_withdrew_values_restores_them(writer_engine: Engine) -> None:
+    """Review F3: a withdrawal keeps its causal lineage, so rollback recomputes it at once."""
+    with writer_engine.begin() as connection:
+        first = _load(connection, MB)
+        ridership.record_ridership(connection, NTD)
+    with writer_engine.begin() as connection:
+        second = _load(connection, [_row("MB", "PT", _month(12), None)])  # January 2026 becomes incomplete
+        ridership.record_ridership(connection, NTD)
+    january = [(key, "MB", "2026-01-01") for key in ridership.KEYS]
+    assert [_current(writer_engine)[k] for k in january] == [(None, [first, second])] * 3
+    plan = rollback_run(
+        writer_engine,
+        second,
+        owned_tables=("ridership_monthly",),
+        dry_run=False,
+        metrics=METRICS,
+        source_id="ntd-monthly",
+    )
+    assert sorted(change.metric_key for change in plan.metrics) == sorted(ridership.KEYS)
+    assert [_current(writer_engine)[k] for k in january] == [
+        (Decimal(1220), [first]),
+        (Decimal(13980), [first]),
+        (Decimal("10.91"), [first]),
+    ]

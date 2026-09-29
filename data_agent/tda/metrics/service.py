@@ -11,7 +11,8 @@
   separate, so there's no gap across the day.
 - **Metrics:** ``route.headway_min.<band>.<daytype>`` with dims ``source_id``, ``route_id``, and
   ``direction_id`` (minutes, 1 decimal place). The lineage is the feed's load run. A value is recorded only
-  when it or its lineage changes, and a route or band that no longer has a value gets NULL (withdrawn).
+  when it or its lineage changes, and a route or band that no longer has a value gets NULL (withdrawn), as do
+  all of a source's headways once it has no active approved feed (:func:`withdraw_inactive`).
 """
 
 from __future__ import annotations
@@ -204,6 +205,28 @@ def record_headways(connection: Connection, feed: ActiveFeed, reference: date) -
         written=written,
     )
     return written
+
+
+def withdraw_inactive(connection: Connection, active_source_ids: set[str]) -> int:
+    """Withdraw (NULL) the headways of sources with no active approved feed (disabled, or feed gone)."""
+    stale = connection.execute(
+        text(
+            "SELECT metric_key, dims, unit FROM tda.current_metric_value "
+            "WHERE metric_key LIKE :prefix AND value IS NOT NULL "
+            "AND NOT (dims ->> 'source_id' = ANY(:active)) "
+            "ORDER BY metric_key, dims::text"
+        ),
+        {"prefix": PREFIX + "%", "active": sorted(active_source_ids)},
+    ).all()
+    for row in stale:
+        record_metric(connection, row.metric_key, row.dims, MetricResult(None, [], row.unit), METHOD)
+    if stale:
+        log.info(
+            "metrics.headways_withdrawn",
+            sources=sorted({r.dims["source_id"] for r in stale}),
+            rows=len(stale),
+        )
+    return len(stale)
 
 
 def reference_date(feed: ActiveFeed) -> date:
