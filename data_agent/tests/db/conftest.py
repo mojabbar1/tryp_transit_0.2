@@ -17,6 +17,7 @@ from tests.conftest import DbUrls
 from tests.support.db import as_owner, rows  # noqa: F401  (re-exported for the tests here)
 from tests.support.echo import ECHO_COLUMNS, ECHO_TABLE, EchoConnector
 from tests.support.factories import APPROVAL, make_source
+from tests.support.feeds import load_feed  # noqa: F401  (a fixture for the P4a API tests)
 
 
 @pytest.fixture
