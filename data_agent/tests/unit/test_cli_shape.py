@@ -20,6 +20,7 @@ EXPECTED = {
     "runs": {"rollback", "list", "show"},
     "gtfs": {"versions", "activate"},
     "facts": {"load-reference"},
+    "metrics": {"compute"},
     "review": {"list", "show", "approve", "reject"},
     "api": {"serve", "openapi"},
     "retention": {"run"},
