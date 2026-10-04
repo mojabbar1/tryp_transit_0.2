@@ -28,6 +28,8 @@ jobs:
 
       - run: npm run lockfile:check
       - run: npm ci
+      # Contract test (P4b): the committed data-agent types must match contracts/data-agent.openapi.json.
+      - run: npm run check:data-agent-types
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test -- --ci
