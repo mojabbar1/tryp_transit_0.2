@@ -150,7 +150,8 @@ export async function buildTransitInsights(
     log.warn('narration_fallback', { requestId, reason: outcome.fallbackReason, provider: outcome.narration.provider });
   }
 
-  const sources = [...(costSources ?? []), ...(schedule?.citations ?? [])];
+  // Cite only what the response shows: cost facts only when a cost was computed.
+  const sources = [...(cost ? costSources ?? [] : []), ...(schedule?.citations ?? [])];
   const citations = [...new Set([...(cost ? cost.assumptionKeys : []), ...sources.map((source) => source.ref)])];
   const body: TransitInsightResponse = {
     travelTime: schedule?.travelTime ?? null,

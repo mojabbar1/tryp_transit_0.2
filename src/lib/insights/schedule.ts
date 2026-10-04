@@ -118,7 +118,7 @@ const tripKey = (trip: AgentTrip) => `${trip.trip_id}|${trip.service_date}`;
 const CONTROL = /[\p{Cc}\p{Cf}]/gu;
 export function plainAlertText(value: string | null, max: number): string | undefined {
   if (!value) return undefined;
-  const text = value.replace(CONTROL, ' ').replace(/[{}<>]/g, '').replace(/\s+/g, ' ').trim();
+  const text = value.replace(CONTROL, ' ').replace(/<[^>]*>/g, ' ').replace(/[{}<>]/g, '').replace(/\s+/g, ' ').trim();
   if (!text) return undefined;
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }

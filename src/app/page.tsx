@@ -574,7 +574,7 @@ export default function TransitInsightsPage() {
                         <div>
                           {ride.departureTime && (
                             <span className="text-blue-600 font-semibold mr-4">
-                              🕐 {ride.departureTime}
+                              🕐 {formatClock(ride.departureTime)}
                             </span>
                           )}
                           <span className="text-gray-700">

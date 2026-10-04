@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const cacheControl = searching
       ? 'private, no-store'
       : catalog.source === 'data_agent'
-        ? 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=3600'
+        ? 'public, max-age=300, s-maxage=86400, stale-while-revalidate=3600'
         : 'public, max-age=60';
     return NextResponse.json({ ...catalog, stops }, { headers: { 'cache-control': cacheControl } });
   } catch (error) {
