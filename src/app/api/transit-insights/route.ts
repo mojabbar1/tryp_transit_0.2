@@ -21,7 +21,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const result = await buildTransitInsights(input, { requestId });
-    return NextResponse.json(result.body, { status: result.status });
+    // The answer is personalized (a rider's points and stops) and time-sensitive (the next bus): never cache it.
+    return NextResponse.json(result.body, { status: result.status, headers: { 'cache-control': 'private, no-store' } });
   } catch (error) {
     // Axios errors carry request URLs with keys, so only their name is logged.
     const message = error instanceof Error && !axios.isAxiosError(error) ? error.message : undefined;

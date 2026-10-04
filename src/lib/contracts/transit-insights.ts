@@ -14,6 +14,8 @@
 import { z } from 'zod';
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+// GTFS stop ids are opaque strings; this bounds them and keeps control characters out of logs and URLs.
+const STOP_ID = /^[\x21-\x7E]{1,100}$/;
 // Degraded reasons are machine codes. Free text could carry upstream error details into the response.
 const REASON_CODE = /^[a-z][a-z0-9_]*$/;
 
@@ -38,10 +40,15 @@ export const LatLngSchema = z.object({
   lng: finite().min(-180).max(180),
 });
 
+export const StopIdSchema = z.string().regex(STOP_ID, 'Expected a GTFS stop id');
+
 export const TransitInsightRequestSchema = z.object({
   departure: LatLngSchema,
   destination: LatLngSchema,
   timeToDestination: z.string().regex(HHMM, 'Expected HH:MM (24-hour)'),
+  // P4b: optional GTFS stop ids from the stop picker. Without them the lat/lng map to the nearest stop.
+  departureStopId: StopIdSchema.optional(),
+  destinationStopId: StopIdSchema.optional(),
 });
 
 export const IncentiveDetailsSchema = z.object({
@@ -53,7 +60,10 @@ export const IncentiveDetailsSchema = z.object({
 export const AdditionalRideSchema = z.object({
   departureTime: z.string().regex(HHMM, 'Expected HH:MM (24-hour)').optional(),
   travelTime: finite().nonnegative(),
-  trafficDensity: TrafficDensitySchema,
+  // Optional since P4b: a scheduled departure later in the day has no measured traffic, so none is invented.
+  trafficDensity: TrafficDensitySchema.optional(),
+  arrivalTime: z.string().regex(HHMM, 'Expected HH:MM (24-hour)').optional(),
+  routeShortName: z.string().min(1).optional(),
 });
 
 export const SourceRefSchema = z.object({
@@ -63,6 +73,25 @@ export const SourceRefSchema = z.object({
 });
 
 export const TransitBasisSchema = z.enum(['unavailable', 'scheduled', 'realtime']);
+/** Why a schedule lookup found no direct boardable trip (02 §8.3); shown as text, never as a number. */
+export const TransitReasonSchema = z.enum(['no_boardable_trip', 'transfer_required', 'no_service', 'unknown_stop']);
+
+/** An active service alert, as plain text. It is data for the rider, never instructions for the app. */
+export const TransitAlertSchema = z.object({
+  header: z.string().min(1).max(300),
+  description: z.string().min(1).max(600).optional(),
+  url: httpUrl.optional(),
+});
+
+/** One structured citation: the fact or source behind a number, with the source's attribution text. */
+export const CitationRefSchema = z.object({
+  ref: z.string().min(1),
+  sourceId: z.string().min(1).optional(),
+  attribution: z.string().min(1).optional(),
+  retrieved: z.string().date().optional(),
+  factId: z.number().int().optional(),
+  url: httpUrl.optional(),
+});
 
 const DriveLegSchema = z.object({
   minutes: finite().nonnegative(),
@@ -76,8 +105,20 @@ const TransitLegSchema = z
     basis: TransitBasisSchema,
     nextDepartures: z.array(z.string().min(1)),
     source: SourceRefSchema,
+    // P4b additions, all optional: the scheduled trip's details, or the reason none was found.
+    leaveBy: z.string().regex(HHMM, 'Expected HH:MM (24-hour)').optional(),
+    routeShortName: z.string().min(1).optional(),
+    routing: z.literal('direct_only').optional(),
+    reason: TransitReasonSchema.optional(),
+    alerts: z.array(TransitAlertSchema).max(3).optional(),
   })
   .superRefine((leg, ctx) => {
+    if (leg.basis !== 'unavailable' && leg.reason !== undefined) {
+      ctx.addIssue({ code: 'custom', path: ['reason'], message: 'a reason explains a missing trip, so it needs basis "unavailable"' });
+    }
+    if (leg.basis === 'unavailable' && leg.leaveBy !== undefined) {
+      ctx.addIssue({ code: 'custom', path: ['leaveBy'], message: 'leaveBy needs a scheduled trip' });
+    }
     if (leg.basis === 'unavailable') {
       if (leg.minutes !== null) {
         ctx.addIssue({ code: 'custom', path: ['minutes'], message: 'minutes must be null when basis is "unavailable" (D-21)' });
@@ -156,6 +197,8 @@ export const MetaSchema = z.object({
   citations: z.array(z.string().min(1)),
   // Live flow data describes current conditions only, so the density is labeled as such.
   trafficDensityLabel: z.literal('Traffic now').optional(),
+  // P4b: structured citations (fact ids and attribution) behind `citations`.
+  sources: z.array(CitationRefSchema).optional(),
 });
 
 export const TransitInsightResponseSchema = z
@@ -190,6 +233,9 @@ export type IncentiveDetails = z.infer<typeof IncentiveDetailsSchema>;
 export type AdditionalRide = z.infer<typeof AdditionalRideSchema>;
 export type SourceRef = z.infer<typeof SourceRefSchema>;
 export type TransitBasis = z.infer<typeof TransitBasisSchema>;
+export type TransitReason = z.infer<typeof TransitReasonSchema>;
+export type TransitAlert = z.infer<typeof TransitAlertSchema>;
+export type CitationRef = z.infer<typeof CitationRefSchema>;
 export type Comparison = z.infer<typeof ComparisonSchema>;
 export type Narration = z.infer<typeof NarrationSchema>;
 export type Meta = z.infer<typeof MetaSchema>;

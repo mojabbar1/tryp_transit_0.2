@@ -45,14 +45,21 @@ interface LegacyRequestBody {
   destination: { lat: number; lng: number };
   timeToDestination: string;
 }
+// P4b additions are optional only: the stop ids on the request, and a scheduled ride's arrival and route. A
+// scheduled ride has no measured traffic, so `trafficDensity` became optional rather than invented (P4b).
+type P4bRideAdditions = 'arrivalTime' | 'routeShortName';
+type LegacyRideP4b = Omit<LegacyAdditionalRide, 'trafficDensity'> & { trafficDensity?: LegacyAdditionalRide['trafficDensity'] };
 const legacyTypesUnchanged: [
   Same<IncentiveDetails, LegacyIncentiveDetails>,
-  Same<AdditionalRide, LegacyAdditionalRide>,
-  Same<Omit<TransitInsightResponse, 'comparison' | 'meta'>, LegacyResponse>,
-  Same<RequestBody, LegacyRequestBody>,
+  Same<Omit<AdditionalRide, P4bRideAdditions>, LegacyRideP4b>,
+  Same<Omit<TransitInsightResponse, 'comparison' | 'meta' | 'additionalRides'>, Omit<LegacyResponse, 'additionalRides'>>,
+  Same<Omit<RequestBody, 'departureStopId' | 'destinationStopId'>, LegacyRequestBody>,
   Same<RequestBody, TransitInsightRequest>,
   Same<LocationInterface, { lat: number; lng: number }>,
 ] = [true, true, true, true, true, true];
+// Every legacy value is still accepted: an old request and an old ride type-check against the new contract.
+const legacyAssignable: [LegacyRequestBody extends RequestBody ? true : false, LegacyAdditionalRide extends AdditionalRide ? true : false] = [true, true];
+void legacyAssignable;
 
 const request = {
   departure: { lat: 32.7813, lng: -79.9306 },
