@@ -28,8 +28,12 @@ export interface ServerEnv {
   readonly llmTimeoutMs: number;
   readonly tomtomApiKey?: string;
   readonly regionTimezone: string;
-  /** Unused until P4. */
   readonly dataAgentBaseUrl?: string;
+  /**
+   * P4b: the read API is called only when DATA_AGENT_ENABLED=true **and** a base URL is set. Default off until the
+   * data gates (approved facts, a loaded real feed, the 05 §2b mapping) are met.
+   */
+  readonly dataAgentEnabled: boolean;
 }
 
 /** Trims strings and treats a blank value as unset, so `KEY=` in an env file means "use the default". */
@@ -69,6 +73,7 @@ const RawEnvSchema = z.object({
   NEXT_PUBLIC_TOMTOM_API_KEY: optional(z.string()),
   REGION_TIMEZONE: optional(z.string().refine(isTimeZone)),
   DATA_AGENT_BASE_URL: optional(z.string().refine(isHttpUrl)),
+  DATA_AGENT_ENABLED: optional(z.enum(['true', 'false'])),
 });
 
 /** Secrets are non-enumerable, so `JSON.stringify` and `console.log` of the env object never print them. */
@@ -99,6 +104,7 @@ export function parseEnv(source: Record<string, string | undefined>): ServerEnv 
     llmTimeoutMs: raw.LLM_TIMEOUT_MS ?? DEFAULT_LLM_TIMEOUT_MS,
     regionTimezone: raw.REGION_TIMEZONE ?? DEFAULT_REGION_TIMEZONE,
     dataAgentBaseUrl: raw.DATA_AGENT_BASE_URL,
+    dataAgentEnabled: raw.DATA_AGENT_ENABLED === 'true' && raw.DATA_AGENT_BASE_URL !== undefined,
   };
   defineSecret(env, 'geminiApiKey', raw.GEMINI_API_KEY);
   defineSecret(env, 'openaiApiKey', raw.OPENAI_API_KEY);
