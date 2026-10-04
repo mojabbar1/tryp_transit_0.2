@@ -37,7 +37,7 @@ describe('routes page', () => {
     const text = visibleText(renderToString(<RoutesPage />));
     expect(text).toContain("Bus timing isn't available yet");
     expect(text).toContain('Traffic now Unavailable');
-    expect(text).toContain('Travel Time Unavailable');
+    expect(text).toContain('Bus time Unavailable');
     expect(text).not.toContain('Incentive');
     expect(text).not.toContain('DID YOU KNOW');
     expect(shouldLeaveRoutesPage(allUnavailable)).toBe(false);
@@ -61,5 +61,36 @@ describe('routes page', () => {
     expect(text).toContain('Incentive Demo');
     expect(text).toContain('$2.00');
     expect(visibleIncentive({ incentiveDetails: reward, offerActive: false })).toBeNull();
+  });
+
+  it('a scheduled trip shows the leave-by time and route, its alerts as text, and its sources (P4b)', () => {
+    mockTrip = {
+      ...allUnavailable,
+      travelTime: 18,
+      transitBasis: 'scheduled',
+      leaveBy: '08:05',
+      routeShortName: '10',
+      alerts: [{ header: 'Detour on <b>Meeting</b> St', url: 'https://example.test/a' }],
+      sources: [{ ref: 'gtfs.schedule', sourceId: 'synthetic-gtfs', attribution: 'Synthetic test feed' }],
+      citations: ['transit.base_fare_usd'],
+    };
+    const html = renderToString(<RoutesPage />);
+    const text = visibleText(html);
+    expect(text).toContain('Leave for the stop by 8:05 AM to catch route 10 (scheduled)');
+    expect(text).toContain('Bus time (scheduled) 18 minutes');
+    expect(text).toContain('CARTA service alerts');
+    // Alert text is escaped, never rendered as markup.
+    expect(html).not.toContain('<b>Meeting</b>');
+    expect(text).toContain('Sources');
+    expect(text).toContain('Bus schedule : Synthetic test feed');
+    expect(text).toContain('CARTA base fare');
+  });
+
+  it('no direct trip: the reason is text and no bus number is shown (P4b)', () => {
+    mockTrip = { ...allUnavailable, transitBasis: 'unavailable', transitReason: 'transfer_required' };
+    const text = visibleText(renderToString(<RoutesPage />));
+    expect(text).toContain('this trip needs a transfer');
+    expect(text).toContain('Bus time Unavailable');
+    expect(text).not.toMatch(/Leave for the stop/);
   });
 });

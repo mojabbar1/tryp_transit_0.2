@@ -6,6 +6,7 @@ import { GeolocationProvider } from '@/contexts/geolocation-context-provider';
 import { AuthProvider } from '@/contexts/auth-context-provider';
 import { TravelProvider } from '@/contexts/travel-context';
 import Footer from '@/components/footer';
+import { DemoBanner } from '@/components/demo-badge';
 
 const poppins = Poppins({ subsets: ['latin'], weight: ['500', '900'] });
 
@@ -26,6 +27,7 @@ export default function RootLayout({
           <GeolocationProvider>
             <TravelProvider>
               <Navbar />
+              <DemoBanner />
               {children}
               <Footer />
             </TravelProvider>

@@ -208,7 +208,8 @@ async function getJson<T>(env: AgentEnv, path: string, query: Query, schema: z.Z
     if (!response.ok) return fail('http_error', response.status);
     body = await response.text();
   } catch (error) {
-    const name = error instanceof Error ? error.name : '';
+    // AbortSignal.timeout rejects with a DOMException, which isn't always `instanceof Error` across realms.
+    const name = typeof error === 'object' && error !== null && 'name' in error ? String(error.name) : '';
     return fail(name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'unreachable');
   }
   if (body.length > MAX_BODY_CHARS) return fail('malformed', response.status);

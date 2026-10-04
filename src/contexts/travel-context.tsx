@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import type { AdditionalRide, IncentiveDetails } from '@/lib/contracts/transit-insights';
+import type { AdditionalRide, CitationRef, IncentiveDetails, TransitAlert, TransitBasis, TransitReason } from '@/lib/contracts/transit-insights';
 
 /** One trip result as the routes page shows it; every measurement may be null (unavailable) on a successful trip. */
 export interface TripSummary {
@@ -12,6 +12,15 @@ export interface TripSummary {
   incentiveDetails: IncentiveDetails | null;
   offerActive: boolean;
   isDemo: boolean;
+  // P4b, optional so a P1-shaped summary still renders.
+  transitBasis?: TransitBasis;
+  leaveBy?: string;
+  routeShortName?: string;
+  nextDepartures?: string[];
+  transitReason?: TransitReason;
+  alerts?: TransitAlert[];
+  sources?: CitationRef[];
+  citations?: string[];
 }
 
 interface TravelContextProps extends TripSummary {
