@@ -514,6 +514,115 @@ describe('explicit stop ids must match the active feed and their points (review 
   });
 });
 
+describe('stops are checked on the very feed the schedule comes from (review R2-2)', () => {
+  // P4a feed versions are immutable; a source id plus a feed version id names one exact schedule.
+  const feedV2 = { ...feed, feed_version_id: 2, feed_label: 'synthetic-2', loaded_at: '2026-10-04T00:00:00Z' };
+  /** The agent's stop list on `listFeed` (SYN-A at `originAt`, SYN-B at the destination), and a compare from `compareFeed`. */
+  function agentOn(listFeed: typeof feed, compareFeed: typeof feed = listFeed, originAt = body.departure) {
+    routes['/v1/stops'] = () => ({ status: 200, json: { feed: listFeed, items: [listedStop('SYN-A', originAt), listedStop('SYN-B', body.destination)] } });
+    // The payload always carries a trip and an alternative, so a leak would show.
+    routes['/v1/compare'] = () => ({ status: 200, json: compareOk({ feed: compareFeed }) });
+  }
+  const expectNoTrip = (json: Awaited<ReturnType<typeof run>>) => {
+    expect(TransitInsightResponseSchema.safeParse(json).success).toBe(true);
+    expect(json.comparison?.transit).toMatchObject({ basis: 'unavailable', minutes: null, nextDepartures: [] });
+    expect(json.comparison?.transit.reason).toBeUndefined();
+    expect(json.travelTime).toBeNull();
+    // No phantom trips: neither the payload's best trip nor its alternative escapes.
+    expect(json.additionalRides).toEqual([]);
+    expect(json.comparison?.transit).not.toHaveProperty('departureAt');
+    expect(json.nudgeMessage).toContain("bus timing isn't available yet, so check CARTA's schedule.");
+    expect(json.nudgeMessage).not.toMatch(/route 10|leave by/);
+  };
+
+  it('the review repro: the catalog cached from feed 1, then SYN-A moves 2,000 m in the active feed 2: no trip, and the catalog is read again', async () => {
+    agentOn(feed);
+    const warm = await run(withStops);
+    // Positive control: one feed throughout schedules the trip from a single catalog read.
+    expect(warm.comparison?.transit).toMatchObject({ basis: 'scheduled', minutes: 18 });
+    expect(calls('/v1/stops')).toHaveLength(1);
+
+    agentOn(feedV2, feedV2, northOf(body.departure, 2000));
+    const json = await run(withStops);
+    expectNoTrip(json);
+    // Checked again on feed 2, the picked stop is 2,000 m from the point the drive starts from.
+    expect(json.meta?.degraded).toContain('stop_mapping_mismatch');
+    // Not the stale copy again: the catalog was read once more (bounded), and the schedule was not asked twice.
+    expect(calls('/v1/stops')).toHaveLength(2);
+    expect(calls('/v1/compare')).toHaveLength(2);
+
+    // The fresh catalog is the shared one now: the next request reads no list and asks for no schedule.
+    const next = await run(withStops);
+    expectNoTrip(next);
+    expect(next.meta?.degraded).toContain('stop_mapping_mismatch');
+    expect(calls('/v1/stops')).toHaveLength(2);
+    expect(calls('/v1/compare')).toHaveLength(2);
+  });
+
+  it('positive control: the feed changed but the stops did not move, so the trip is scheduled from feed 2 after one re-read', async () => {
+    agentOn(feed);
+    await run(withStops);
+    agentOn(feedV2);
+    const json = await run(withStops);
+    expect(TransitInsightResponseSchema.safeParse(json).success).toBe(true);
+    expect(json.comparison?.transit).toMatchObject({ basis: 'scheduled', minutes: 18, leaveBy: '08:05', nextDepartures: ['08:10', '08:20'] });
+    expect(json.comparison?.transit.source.name).toBe('Synthetic test feed GTFS schedule (feed synthetic-2)');
+    expect(json.additionalRides).toHaveLength(1);
+    expect(json.meta?.degraded?.filter((code) => code.startsWith('stop_mapping_'))).toEqual([]);
+    expect(calls('/v1/stops')).toHaveLength(2);
+    expect(calls('/v1/compare')).toHaveLength(2);
+  });
+
+  it('the same version number from another source is another feed: matching stop ids alone are not enough', async () => {
+    agentOn(feed, { ...feed, source_id: 'other-gtfs', attribution: 'Other feed' });
+    const json = await run(withStops);
+    expectNoTrip(json);
+    expect(json.meta?.degraded).toContain('stop_mapping_feed_changed');
+    // The ids sent are the ids picked; the feed is what differs, and a fresh catalog still disagrees.
+    expect(Object.fromEntries(calls('/v1/compare')[0].searchParams)).toMatchObject({ origin_stop_id: 'SYN-A', dest_stop_id: 'SYN-B' });
+    expect(calls('/v1/stops')).toHaveLength(2);
+    expect(calls('/v1/compare')).toHaveLength(1);
+  });
+
+  it('a nearest-stop mapping is held to the compare feed too: re-checked once, and no trip while it still differs', async () => {
+    routes['/v1/stops/nearest'] = (url) => ({ status: 200, json: nearest(url.searchParams.get('lat') === '32.7813' ? 'SYN-O' : 'SYN-D', 150) });
+    routes['/v1/compare'] = () => ({ status: 200, json: compareOk({ feed: feedV2 }) });
+    const json = await run(body);
+    expectNoTrip(json);
+    expect(json.meta?.degraded).toContain('stop_mapping_feed_changed');
+    expect(calls('/v1/stops/nearest')).toHaveLength(4);
+    expect(calls('/v1/stops')).toHaveLength(0);
+    expect(calls('/v1/compare')).toHaveLength(1);
+  });
+
+  it('a nearest-stop mapping that catches up with the compare feed on the re-check keeps its trip', async () => {
+    let lookups = 0;
+    routes['/v1/stops/nearest'] = (url) => {
+      lookups += 1;
+      const page = nearest(url.searchParams.get('lat') === '32.7813' ? 'SYN-O' : 'SYN-D', 150);
+      return { status: 200, json: { ...page, feed: lookups <= 2 ? feed : feedV2 } };
+    };
+    routes['/v1/compare'] = () => ({ status: 200, json: compareOk({ feed: feedV2 }) });
+    const json = await run(body);
+    expect(json.comparison?.transit).toMatchObject({ basis: 'scheduled', minutes: 18 });
+    expect(calls('/v1/stops/nearest')).toHaveLength(4);
+  });
+
+  it('the fresh catalog cannot be read: no trip, flagged, and the stale copy is not served again', async () => {
+    agentOn(feed);
+    await run(withStops);
+    routes['/v1/stops'] = () => ({ status: 503, json: {} });
+    routes['/v1/compare'] = () => ({ status: 200, json: compareOk({ feed: feedV2 }) });
+    const json = await run(withStops);
+    expectNoTrip(json);
+    expect(json.meta?.degraded).toContain('data_agent_unavailable');
+    const next = await run(withStops);
+    expectNoTrip(next);
+    expect(calls('/v1/stops')).toHaveLength(3);
+    expect(calls('/v1/compare')).toHaveLength(2);
+  });
+});
+
 describe('"transit is faster" compares elapsed trip time with the drive, never in-vehicle time alone (review F1)', () => {
   const drive = (minutes: number) => ({ route: { minutes, delayMinutes: 0, distanceMiles: 5, freeFlowMinutes: minutes }, degraded: [] });
   const fasterClaim = { nudge: 'Transit is faster; {{bus_minutes}}.', slots: ['bus_minutes'] };

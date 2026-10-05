@@ -10,6 +10,7 @@ import {
   listStops,
   MAX_BODY_BYTES,
   nearestStops,
+  reloadStops,
 } from '@/lib/api/data-agent';
 
 const env = { dataAgentEnabled: true, dataAgentBaseUrl: 'http://data-agent.test/prefix' };
@@ -128,6 +129,23 @@ describe('data-agent client', () => {
     expect((await listStops(env)).ok).toBe(true);
     expect((await listStops(env)).ok).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reloadStops replaces the shared stop list with one fresh read, and a failed read leaves no stale copy (review R2-2)', async () => {
+    const page = (version: number) => new Response(JSON.stringify({ feed: { ...feed, feed_version_id: version }, items: [] }));
+    fetchMock.mockResolvedValueOnce(page(1)).mockResolvedValueOnce(page(2)).mockResolvedValueOnce(new Response('{}', { status: 503 })).mockResolvedValueOnce(page(3));
+    const version = async (read: Promise<Awaited<ReturnType<typeof listStops>>>) => {
+      const result = await read;
+      return result.ok ? result.data.feed.feed_version_id : result.reason;
+    };
+    expect(await version(listStops(env))).toBe(1);
+    expect(await version(listStops(env))).toBe(1);
+    expect(await version(reloadStops(env))).toBe(2);
+    expect(await version(listStops(env))).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(await version(reloadStops(env))).toBe('unavailable');
+    expect(await version(listStops(env))).toBe(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it('never caches a personalized lookup', async () => {

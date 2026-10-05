@@ -315,6 +315,15 @@ export function listStops(env: AgentEnv): Promise<DataAgentResult<AgentStopPage>
   return cached(caches.stops, () => getJson(env, '/v1/stops', { limit: STOP_LIST_LIMIT }, StopPageSchema));
 }
 
+/**
+ * The stop list read once more, replacing the shared copy: for when an answer comes from another feed than the copy
+ * (the active feed changed within the day it is kept). One read, never a retry; a failure leaves no copy behind.
+ */
+export function reloadStops(env: AgentEnv): Promise<DataAgentResult<AgentStopPage>> {
+  caches.stops.clear();
+  return listStops(env);
+}
+
 /** A name or id search; not cached (the text is a rider's input). */
 export function searchStops(env: AgentEnv, query: string, limit: number): Promise<DataAgentResult<AgentStopPage>> {
   return getJson(env, '/v1/stops', { query, limit }, StopPageSchema);

@@ -9,12 +9,14 @@ import type {
 } from '@/lib/contracts/transit-insights';
 import {
   type AgentCompare,
+  type AgentFeed,
   type AgentTrip,
   compareTrip,
   type DataAgentResult,
   getAlerts,
   listStops,
   nearestStops,
+  reloadStops,
   searchStops,
   STOP_LIST_LIMIT,
 } from '@/lib/api/data-agent';
@@ -23,9 +25,10 @@ import { citationFromAgent } from '@/lib/facts/approved';
 
 /**
  * P4b: scheduled transit from the data agent (`/v1/compare`, D-6 direct-route lookup), or an honest
- * `unavailable` leg naming why. The only numbers computed here are the in-vehicle + wait minutes, the elapsed minutes
- * from leave-by to arrival (for a like-for-like comparison with the drive, only when both points are at their stops),
- * and a picked stop's distance from its point.
+ * `unavailable` leg naming why. Both stops are checked on the very feed (source and immutable version) the schedule
+ * comes from. The only numbers computed here are the in-vehicle + wait minutes, the elapsed minutes from leave-by to
+ * arrival (for a like-for-like comparison with the drive, only when both points are at their stops), and a picked
+ * stop's distance from its point.
  */
 
 /**
@@ -181,22 +184,35 @@ export function greatCircleMeters(a: LatLng, b: LatLng): number {
 type StopList = () => ReturnType<typeof listStops>;
 
 /**
- * A stop of the active feed by exact id, or null when the feed has none: the shared stop list first (cached for a day,
- * no rider data; the pickers offer from it), then an exact id search only if that list may have been cut at its limit.
+ * The feed an answer was read from. P4a feed versions are immutable and belong to one source, so the pair names one
+ * exact schedule; a stop checked on one feed says nothing about a schedule from another (the same id can move).
  */
-async function findStop(env: AgentEnv, stopList: StopList, id: string): Promise<DataAgentResult<LatLng | null>> {
+type FeedIdentity = { sourceId: string; feedVersionId: number };
+const feedIdentity = (feed: AgentFeed): FeedIdentity => ({ sourceId: feed.source_id, feedVersionId: feed.feed_version_id });
+const sameFeed = (a: FeedIdentity, b: FeedIdentity) => a.sourceId === b.sourceId && a.feedVersionId === b.feedVersionId;
+
+/**
+ * A stop of the active feed by exact id, with the feed it was read from, or null when that feed has none: the shared
+ * stop list first (cached for a day, no rider data; the pickers offer from it), then an exact id search only if that
+ * list may have been cut at its limit.
+ */
+async function findStop(env: AgentEnv, stopList: StopList, id: string): Promise<DataAgentResult<{ point: LatLng; feed: FeedIdentity } | null>> {
   const list = await stopList();
   if (!list.ok) return list;
   const listed = list.data.items.find((stop) => stop.id === id);
-  if (listed || list.data.items.length < STOP_LIST_LIMIT) return { ok: true, data: listed ?? null };
+  if (listed) return { ok: true, data: { point: listed, feed: feedIdentity(list.data.feed) } };
+  if (list.data.items.length < STOP_LIST_LIMIT) return { ok: true, data: null };
   const search = await searchStops(env, id, STOP_ID_SEARCH_LIMIT);
   if (!search.ok) return search;
-  return { ok: true, data: search.data.items.find((stop) => stop.id === id) ?? null };
+  const found = search.data.items.find((stop) => stop.id === id);
+  return { ok: true, data: found ? { point: found, feed: feedIdentity(search.data.feed) } : null };
 }
 
 type StopMappingProblem = 'stop_mapping_unavailable' | 'stop_mapping_unknown_stop' | 'stop_mapping_mismatch';
-/** A mapped stop and how far it is from the rider's point (meters, to 0.1 m), or why there is none. */
-type StopMapping = { stopId: string; distanceM: number } | { problem: StopMappingProblem };
+/** A mapped stop, how far it is from the rider's point (meters, to 0.1 m), and the feed both were read from. */
+type MappedStop = { stopId: string; distanceM: number; feed: FeedIdentity };
+/** A mapped stop, or why there is none. */
+type StopMapping = MappedStop | { problem: StopMappingProblem };
 
 /**
  * The stop for one end of the trip. A stop id sent with the point is never trusted on its own: it must be a stop of the
@@ -213,16 +229,49 @@ async function resolveStop(
     const stop = await findStop(env, stopList, explicit);
     if (!stop.ok) return stop;
     if (!stop.data) return { ok: true, data: { problem: 'stop_mapping_unknown_stop' } };
-    const distanceM = greatCircleMeters(point, stop.data);
-    return { ok: true, data: distanceM <= MAX_STOP_DISTANCE_M ? { stopId: explicit, distanceM } : { problem: 'stop_mapping_mismatch' } };
+    const distanceM = greatCircleMeters(point, stop.data.point);
+    return {
+      ok: true,
+      data: distanceM <= MAX_STOP_DISTANCE_M ? { stopId: explicit, distanceM, feed: stop.data.feed } : { problem: 'stop_mapping_mismatch' },
+    };
   }
   const nearest = await nearestStops(env, point, 1);
   if (!nearest.ok) return nearest;
   const stop = nearest.data.items[0];
   return {
     ok: true,
-    data: stop && stop.distance_m <= MAX_STOP_DISTANCE_M ? { stopId: stop.id, distanceM: stop.distance_m } : { problem: 'stop_mapping_unavailable' },
+    data: stop && stop.distance_m <= MAX_STOP_DISTANCE_M
+      ? { stopId: stop.id, distanceM: stop.distance_m, feed: feedIdentity(nearest.data.feed) }
+      : { problem: 'stop_mapping_unavailable' },
   };
+}
+
+/** The two ends of a trip as the rider sent them: always the points, and the picked stop ids when there are any. */
+type TripEnds = { departure: LatLng; destination: LatLng; departureStopId?: string; destinationStopId?: string };
+
+/**
+ * Both ends of the trip mapped to distinct stops, or the unavailable outcome that says why not. The two ends share one
+ * read of the stop list, even on a cold cache.
+ */
+async function resolveEnds(
+  env: AgentEnv,
+  stopList: StopList,
+  input: TripEnds,
+): Promise<{ ok: true; origin: MappedStop; dest: MappedStop } | { ok: false; outcome: ScheduleOutcome }> {
+  let stops: ReturnType<StopList> | undefined;
+  const shared: StopList = () => (stops ??= stopList());
+  const [origin, dest] = await Promise.all([
+    resolveStop(env, shared, input.departure, input.departureStopId),
+    resolveStop(env, shared, input.destination, input.destinationStopId),
+  ]);
+  if (!origin.ok || !dest.ok) return { ok: false, outcome: unavailable(['data_agent_unavailable']) };
+  if (!('stopId' in origin.data) || !('stopId' in dest.data)) {
+    const problems = [...new Set([origin.data, dest.data].flatMap((mapping) => ('problem' in mapping ? [mapping.problem] : [])))];
+    // An id the active feed doesn't have gets the same rider-facing reason the schedule lookup would give.
+    return { ok: false, outcome: unavailable(problems, problems.includes('stop_mapping_unknown_stop') ? { reason: 'unknown_stop' } : {}) };
+  }
+  if (origin.data.stopId === dest.data.stopId) return { ok: false, outcome: unavailable(['stop_mapping_same_stop']) };
+  return { ok: true, origin: origin.data, dest: dest.data };
 }
 
 /**
@@ -281,36 +330,17 @@ function scheduledLeg(compare: AgentCompare, best: AgentTrip, alternatives: Agen
  */
 export async function getScheduledTransit(
   env: AgentEnv & Pick<ServerEnv, 'regionTimezone'>,
-  input: {
-    departure: LatLng;
-    destination: LatLng;
-    departureStopId?: string;
-    destinationStopId?: string;
-    arriveBy: string;
-    arrivalUtc: string;
-    now: Date;
-  },
+  input: TripEnds & { arriveBy: string; arrivalUtc: string; now: Date },
 ): Promise<ScheduleOutcome> {
   if (!env.dataAgentEnabled) return unavailable(['data_agent_unavailable']);
 
-  // Both ends share one read of the stop list (itself cached for a day), even on a cold cache.
-  let stops: ReturnType<StopList> | undefined;
-  const stopList: StopList = () => (stops ??= listStops(env));
-  const [origin, dest] = await Promise.all([
-    resolveStop(env, stopList, input.departure, input.departureStopId),
-    resolveStop(env, stopList, input.destination, input.destinationStopId),
-  ]);
-  if (!origin.ok || !dest.ok) return unavailable(['data_agent_unavailable']);
-  if (!('stopId' in origin.data) || !('stopId' in dest.data)) {
-    const problems = [...new Set([origin.data, dest.data].flatMap((mapping) => ('problem' in mapping ? [mapping.problem] : [])))];
-    // An id the active feed doesn't have gets the same rider-facing reason the schedule lookup would give.
-    return unavailable(problems, problems.includes('stop_mapping_unknown_stop') ? { reason: 'unknown_stop' } : {});
-  }
-  if (origin.data.stopId === dest.data.stopId) return unavailable(['stop_mapping_same_stop']);
+  const ends = await resolveEnds(env, () => listStops(env), input);
+  if (!ends.ok) return ends.outcome;
+  let { origin, dest } = ends;
 
   const result = await compareTrip(env, {
-    originStopId: origin.data.stopId,
-    destStopId: dest.data.stopId,
+    originStopId: origin.stopId,
+    destStopId: dest.stopId,
     date: localDate(new Date(input.arrivalUtc), env.regionTimezone),
     arriveBy: input.arriveBy,
   });
@@ -318,6 +348,21 @@ export async function getScheduledTransit(
     return unavailable([result.reason === 'unavailable' || result.reason === 'rejected' ? 'transit_schedule_unavailable' : 'data_agent_unavailable']);
   }
   const compare = result.data;
+
+  // The answer must come from the very feed both stops were checked on. The shared stop list is kept for a day and the
+  // active feed can change under it (the same stop id may then stand elsewhere), so on any difference both ends are
+  // checked once more on a fresh read: the answer is used only if they map to the same stops on the compare's feed.
+  // Bounded: one re-read, and the schedule is never asked for again; otherwise no trip, and no alternatives.
+  const compareFeed = feedIdentity(compare.feed);
+  if (!sameFeed(origin.feed, compareFeed) || !sameFeed(dest.feed, compareFeed)) {
+    const recheck = await resolveEnds(env, () => reloadStops(env), input);
+    if (!recheck.ok) return recheck.outcome;
+    const holds = recheck.origin.stopId === origin.stopId && recheck.dest.stopId === dest.stopId
+      && sameFeed(recheck.origin.feed, compareFeed) && sameFeed(recheck.dest.feed, compareFeed);
+    if (!holds) return unavailable(['stop_mapping_feed_changed']);
+    ({ origin, dest } = recheck);
+  }
+
   const citations = compare.citations.map((citation) => citationFromAgent(citation, citation.fact_key ?? 'gtfs.schedule'));
   if (!compare.transit) {
     // No trip means no alternatives either, whatever else the payload carries (no phantom trips).
@@ -347,7 +392,7 @@ export async function getScheduledTransit(
     serviceDate: trip.service_date,
   }));
   const leaveBy = best.leave_by ? localHhmm(best.leave_by) ?? undefined : undefined;
-  const elapsed = elapsedMinutes(best, origin.data.distanceM, dest.data.distanceM);
+  const elapsed = elapsedMinutes(best, origin.distanceM, dest.distanceM);
   return {
     transit: scheduledLeg(compare, best, alternatives, minutes, alerts.alerts),
     travelTime: minutes,
