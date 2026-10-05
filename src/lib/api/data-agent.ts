@@ -11,14 +11,16 @@ import type { components } from './data-agent.types';
  *   `disabled` and the caller degrades honestly.
  * - Every request has a 3 s deadline and is never cached by fetch (`no-store`), so a personalized query (a stop
  *   pair, a rider's coordinates) never lands in a shared cache and a next-bus answer is never stale.
- * - Every response is checked at runtime; anything that doesn't match the contract is `malformed`, not data.
+ * - Every response is checked at runtime; anything that doesn't match the contract is `malformed`, not data. A body
+ *   over `MAX_BODY_BYTES` is `malformed` too, and its stream is cancelled as soon as it passes the cap.
  * - Logs carry the endpoint template, a reason code and the HTTP status only: never a query string, a coordinate,
  *   a stop id, or the base URL.
  */
 
 export const DATA_AGENT_TIMEOUT_MS = 3000;
-// The largest legitimate body is the full stop list (≤ 2,000 stops); anything far bigger is not trusted.
-const MAX_BODY_CHARS = 2_000_000;
+// The largest legitimate body is the full stop list (≤ 2,000 stops); anything far bigger is not trusted. Counted in
+// bytes as they arrive, so an oversized body is cancelled rather than buffered.
+export const MAX_BODY_BYTES = 2_000_000;
 
 type Schemas = components['schemas'];
 
@@ -186,6 +188,46 @@ function endpointUrl(base: string, path: string, query: Query): URL {
   return url;
 }
 
+/** Releases a body that won't be read (the cancel settles on its own; a failure to cancel changes nothing). */
+function discardBody(stream: ReadableStream<Uint8Array> | ReadableStreamDefaultReader<Uint8Array> | null) {
+  void stream?.cancel().catch(() => undefined);
+}
+
+/**
+ * The body's bytes, or null when it is larger than `maxBytes`. A declared Content-Length over the limit is refused
+ * before any read; otherwise bytes are counted as they arrive (the header may be absent or wrong, and fetch may have
+ * decompressed the body), and the stream is cancelled the moment the count passes the limit. A read error or the
+ * request's deadline rejects, like fetch itself.
+ */
+async function readBodyCapped(response: Response, maxBytes: number): Promise<Uint8Array | null> {
+  const declared = response.headers.get('content-length')?.trim();
+  if (declared && /^\d+$/.test(declared) && Number(declared) > maxBytes) {
+    discardBody(response.body);
+    return null;
+  }
+  if (!response.body) return new Uint8Array(0);
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      discardBody(reader);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 async function getJson<T>(env: AgentEnv, path: string, query: Query, schema: z.ZodType<T>): Promise<DataAgentResult<T>> {
   const fail = (reason: DataAgentFailure, status?: number): DataAgentResult<T> => {
     if (reason !== 'disabled') log.warn('data_agent_request_failed', { endpoint: path, reason, status });
@@ -194,28 +236,31 @@ async function getJson<T>(env: AgentEnv, path: string, query: Query, schema: z.Z
   if (!env.dataAgentEnabled || !env.dataAgentBaseUrl) return fail('disabled');
 
   let response: Response;
-  let body: string;
+  let bytes: Uint8Array | null;
   try {
     response = await fetch(endpointUrl(env.dataAgentBaseUrl, path, query), {
       method: 'GET',
       headers: { accept: 'application/json' },
       cache: 'no-store',
       redirect: 'error',
+      // One deadline for the headers and the body: fetch errors a body still streaming when it fires.
       signal: AbortSignal.timeout(DATA_AGENT_TIMEOUT_MS),
     });
+    if (!response.ok) discardBody(response.body);
     if (response.status === 503) return fail('unavailable', 503);
     if (response.status === 404 || response.status === 422) return fail('rejected', response.status);
     if (!response.ok) return fail('http_error', response.status);
-    body = await response.text();
+    bytes = await readBodyCapped(response, MAX_BODY_BYTES);
   } catch (error) {
     // AbortSignal.timeout rejects with a DOMException, which isn't always `instanceof Error` across realms.
     const name = typeof error === 'object' && error !== null && 'name' in error ? String(error.name) : '';
     return fail(name === 'TimeoutError' || name === 'AbortError' ? 'timeout' : 'unreachable');
   }
-  if (body.length > MAX_BODY_CHARS) return fail('malformed', response.status);
+  if (bytes === null) return fail('malformed', response.status);
   let json: unknown;
   try {
-    json = JSON.parse(body);
+    // JSON is UTF-8 (RFC 8259): bytes that aren't valid UTF-8 are malformed, never replacement characters.
+    json = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
   } catch {
     return fail('malformed', response.status);
   }

@@ -8,6 +8,7 @@ import {
   DATA_AGENT_TIMEOUT_MS,
   getAssumptions,
   listStops,
+  MAX_BODY_BYTES,
   nearestStops,
 } from '@/lib/api/data-agent';
 
@@ -16,7 +17,59 @@ const feed = {
   source_id: 's', feed_version_id: 1, feed_label: null, feed_start: '2026-01-01', feed_end: '2026-12-31',
   timezone: 'America/New_York', loaded_at: '2026-10-01T00:00:00Z', attribution: null,
 };
+const point = { lat: 32.78, lng: -79.93 };
 const fetchMock = jest.fn();
+
+const CHUNK = 64 * 1024;
+const REVIEW_BODY_BYTES = 8_388_608;
+/**
+ * A pull-only body (high-water mark 0): nothing is produced until the client reads, so `served` is exactly what it
+ * consumed, and `cancelled` records whether it gave the stream up.
+ */
+function meteredBody(total: number, chunk = CHUNK) {
+  const meter = { served: 0, cancelled: false };
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        if (meter.served >= total) {
+          controller.close();
+          return;
+        }
+        const size = Math.min(chunk, total - meter.served);
+        meter.served += size;
+        controller.enqueue(new Uint8Array(size).fill(0x20));
+      },
+      cancel() {
+        meter.cancelled = true;
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  return { stream, meter };
+}
+/** The given bytes, `size` bytes per chunk, so multibyte characters can straddle chunk boundaries. */
+function chunkedBody(bytes: Uint8Array, size: number) {
+  const meter = { served: 0, cancelled: false };
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        if (meter.served >= bytes.byteLength) {
+          controller.close();
+          return;
+        }
+        const chunk = bytes.slice(meter.served, meter.served + size);
+        meter.served += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        meter.cancelled = true;
+      },
+    },
+    { highWaterMark: 0 },
+  );
+  return { stream, meter };
+}
+const encode = (text: string) => new TextEncoder().encode(text);
 
 beforeEach(() => {
   clearDataAgentCaches();
@@ -81,5 +134,136 @@ describe('data-agent client', () => {
     await nearestStops(env, { lat: 32.78, lng: -79.93 });
     await nearestStops(env, { lat: 32.78, lng: -79.93 });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('data-agent client: byte-bounded body (review F5)', () => {
+  const malformed = { ok: false, reason: 'malformed', status: 200 };
+
+  it('cancels an 8 MiB streamed body just past the cap instead of buffering it', async () => {
+    const { stream, meter } = meteredBody(REVIEW_BODY_BYTES);
+    fetchMock.mockResolvedValue(new Response(stream, { status: 200 }));
+    expect(await nearestStops(env, point)).toEqual(malformed);
+    expect(meter.cancelled).toBe(true);
+    // Read up to the first chunk past the cap, then stopped: never the whole body.
+    expect(meter.served).toBe(Math.ceil((MAX_BODY_BYTES + 1) / CHUNK) * CHUNK);
+    expect(meter.served).toBeLessThan(REVIEW_BODY_BYTES);
+  });
+
+  it('refuses a declared Content-Length over the cap before reading a byte', async () => {
+    const { stream, meter } = meteredBody(REVIEW_BODY_BYTES);
+    fetchMock.mockResolvedValue(new Response(stream, { status: 200, headers: { 'content-length': String(REVIEW_BODY_BYTES) } }));
+    expect(await nearestStops(env, point)).toEqual(malformed);
+    expect(meter.served).toBe(0);
+    expect(meter.cancelled).toBe(true);
+  });
+
+  it.each([
+    ['understates the body', '64'],
+    ['is not a number', 'lots'],
+  ])('a Content-Length that %s is not trusted: the byte count still stops the stream', async (_label, header) => {
+    const { stream, meter } = meteredBody(REVIEW_BODY_BYTES);
+    fetchMock.mockResolvedValue(new Response(stream, { status: 200, headers: { 'content-length': header } }));
+    expect(await nearestStops(env, point)).toEqual(malformed);
+    expect(meter.cancelled).toBe(true);
+    expect(meter.served).toBeLessThanOrEqual(MAX_BODY_BYTES + CHUNK);
+  });
+
+  it('accepts a body of exactly the cap, with or without its Content-Length', async () => {
+    const json = JSON.stringify({ feed, items: [] });
+    const exact = json + ' '.repeat(MAX_BODY_BYTES - encode(json).byteLength);
+    expect(encode(exact).byteLength).toBe(MAX_BODY_BYTES);
+    fetchMock.mockImplementation(async () => new Response(exact, { status: 200 }));
+    expect(await nearestStops(env, point)).toMatchObject({ ok: true, data: { items: [] } });
+    fetchMock.mockImplementation(async () => new Response(exact, { status: 200, headers: { 'content-length': String(MAX_BODY_BYTES) } }));
+    expect(await nearestStops(env, point)).toMatchObject({ ok: true });
+    fetchMock.mockImplementation(async () => new Response(`${exact} `, { status: 200 }));
+    expect(await nearestStops(env, point)).toEqual(malformed);
+  });
+
+  it('counts bytes, not characters: multibyte text under the cap in characters is still over it in bytes', async () => {
+    // 700,000 three-byte characters: 2.1 MB on the wire, though the string is well under 2,000,000 characters long.
+    const text = JSON.stringify({ feed, items: [], note: '€'.repeat(700_000) });
+    expect(text.length).toBeLessThan(MAX_BODY_BYTES);
+    const bytes = encode(text);
+    expect(bytes.byteLength).toBeGreaterThan(MAX_BODY_BYTES);
+    const { stream, meter } = chunkedBody(bytes, CHUNK);
+    fetchMock.mockResolvedValue(new Response(stream, { status: 200 }));
+    expect(await nearestStops(env, point)).toEqual(malformed);
+    expect(meter.cancelled).toBe(true);
+    expect(meter.served).toBeLessThan(bytes.byteLength);
+  });
+
+  it('decodes a multibyte character split across chunks intact', async () => {
+    const name = 'Café ☕ 🚌 Ñandú';
+    const bytes = encode(JSON.stringify({
+      feed,
+      items: [{ id: 'S1', code: null, name, lat: 32.78, lng: -79.93, route_short_names: ['10'], distance_m: 12.5 }],
+    }));
+    for (const size of [1, 2, 3, 5]) {
+      fetchMock.mockResolvedValueOnce(new Response(chunkedBody(bytes, size).stream, { status: 200 }));
+      const result = await nearestStops(env, point);
+      expect(result).toMatchObject({ ok: true });
+      expect(result.ok && result.data.items[0].name).toBe(name);
+    }
+  });
+
+  it('treats bytes that are not UTF-8 as malformed, not as replacement text', async () => {
+    const head = encode(`{"feed":${JSON.stringify(feed)},"items":[],"note":"`);
+    const bytes = new Uint8Array([...head, 0xff, 0xfe, ...encode('"}')]);
+    fetchMock.mockResolvedValue(new Response(bytes, { status: 200 }));
+    expect(await nearestStops(env, point)).toEqual(malformed);
+  });
+
+  it('a body stream that fails mid-read is unreachable, never partial data', async () => {
+    let pulls = 0;
+    const failing = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) controller.enqueue(encode('{"feed":'));
+          else controller.error(new TypeError('terminated'));
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    fetchMock.mockResolvedValue(new Response(failing, { status: 200 }));
+    expect(await nearestStops(env, point)).toEqual({ ok: false, reason: 'unreachable' });
+  });
+
+  it('the 3 s deadline also covers the body: a stall mid-body is a timeout', async () => {
+    const deadline = new AbortController();
+    const timeout = jest.spyOn(AbortSignal, 'timeout').mockReturnValue(deadline.signal);
+    fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+      const signal = init.signal as AbortSignal;
+      // Like fetch: once the request's signal aborts, the body stream errors with the signal's reason.
+      const stalled = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            return new Promise<void>((resolve) => {
+              signal.addEventListener('abort', () => {
+                controller.error(signal.reason);
+                resolve();
+              });
+            });
+          },
+        },
+        { highWaterMark: 0 },
+      );
+      return new Response(stalled, { status: 200 });
+    });
+    const pending = nearestStops(env, point);
+    await new Promise((resolve) => setImmediate(resolve));
+    deadline.abort(new DOMException('The operation timed out.', 'TimeoutError'));
+    expect(await pending).toEqual({ ok: false, reason: 'timeout' });
+    expect(timeout).toHaveBeenCalledWith(DATA_AGENT_TIMEOUT_MS);
+  });
+
+  it.each([503, 404, 502])('releases the body of a %s without reading it', async (status) => {
+    const { stream, meter } = meteredBody(REVIEW_BODY_BYTES);
+    fetchMock.mockResolvedValue(new Response(stream, { status }));
+    expect(await nearestStops(env, point)).toMatchObject({ ok: false, status });
+    expect(meter.served).toBe(0);
+    expect(meter.cancelled).toBe(true);
   });
 });
