@@ -559,3 +559,74 @@ describe('"transit is faster" compares elapsed trip time with the drive, never i
     expect(transitIsFaster(null, route, 'scheduled')).toBe(false);
   });
 });
+
+describe('a narrated fare cites its own source, with or without a driving cost (review F4)', () => {
+  const DRIVE_COST_KEYS = ['cost.basis', 'drive.fuel_price_usd_per_gal', 'drive.mpg', 'drive.maintenance_usd_per_mile'];
+  const fareSource = { ref: 'transit.base_fare_usd', sourceId: 'synthetic-src', attribution: 'Synthetic attribution', retrieved: '2026-10-01', factId: 5 };
+  const narrating = (nudge: string, slots: string[]) => mockGetProvider.mockReturnValue(provider(async () => ({ nudge, slots })));
+  const refs = (json: Awaited<ReturnType<typeof run>>) => (json.meta?.sources ?? []).map((source) => source.ref);
+
+  it('the review repro, end to end through the route: TomTom down, the approved $2.50 fare narrated, and only its source cited', async () => {
+    mockGetDriveRoute.mockRejectedValue(new Error('down'));
+    narrating('Bus fare: {{bus_fare}}', ['bus_fare']);
+    const request = new NextRequest('http://localhost/api/transit-insights', { method: 'POST', body: JSON.stringify(withStops), headers: { 'content-type': 'application/json' } });
+    const response = await POST(request);
+    expect(response.status).toBe(200);
+    const json = (await response.json()) as Awaited<ReturnType<typeof run>>;
+    expect(TransitInsightResponseSchema.safeParse(json).success).toBe(true);
+    expect(json.comparison?.costUsd).toBeUndefined();
+    expect(json.meta?.degraded).toContain('cost_unavailable');
+    expect(json.meta?.narration).toMatchObject({ source: 'llm', validated: true });
+    expect(json.nudgeMessage).toBe('Bus fare: a $2.50 base fare');
+    expect(json.meta?.citations).toContain('transit.base_fare_usd');
+    expect(json.meta?.sources).toContainEqual(fareSource);
+    // The drive-cost inputs back no figure in this response, so they are not cited; the schedule still is.
+    for (const key of DRIVE_COST_KEYS) {
+      expect(json.meta?.citations).not.toContain(key);
+      expect(refs(json)).not.toContain(key);
+    }
+    expect(json.meta?.citations).toContain('gtfs.schedule');
+  });
+
+  it('with the store down, the fare narrated is the approved 05 §2 value, cited to its own source', async () => {
+    mockGetDriveRoute.mockRejectedValue(new Error('down'));
+    routes['/v1/assumptions'] = () => ({ status: 503, json: {} });
+    narrating('Bus fare: {{bus_fare}}', ['bus_fare']);
+    const json = await run(withStops);
+    expect(json.nudgeMessage).toBe('Bus fare: a $2.00 base fare');
+    expect(json.meta?.degraded).toContain('assumptions_local_fallback');
+    expect(json.meta?.sources).toContainEqual(expect.objectContaining({ ref: 'transit.base_fare_usd', attribution: 'CARTA Fares & Passes' }));
+    expect(json.meta?.sources).not.toContainEqual(expect.objectContaining({ factId: 5 }));
+    expect(json.meta?.citations?.filter((ref) => DRIVE_COST_KEYS.includes(ref))).toEqual([]);
+  });
+
+  it('a narration that falls back to the template quotes no fare, so none is cited without a cost', async () => {
+    mockGetDriveRoute.mockRejectedValue(new Error('down'));
+    // "cheaper" needs a computed cost, so this fails closed to the template.
+    narrating('Bus fare: {{bus_fare}}; transit is cheaper.', ['bus_fare']);
+    const json = await run(withStops);
+    expect(json.meta?.narration).toMatchObject({ source: 'template', validated: false });
+    expect(json.nudgeMessage).not.toContain('$');
+    expect(json.meta?.citations).not.toContain('transit.base_fare_usd');
+    expect(refs(json)).not.toContain('transit.base_fare_usd');
+  });
+
+  it('a narration that does not quote the fare cites no fare source', async () => {
+    mockGetDriveRoute.mockRejectedValue(new Error('down'));
+    narrating('Scheduled bus: {{bus_minutes}}. Check the next bus.', ['bus_minutes']);
+    const json = await run(withStops);
+    expect(json.meta?.narration).toMatchObject({ source: 'llm', validated: true });
+    expect(json.meta?.citations).not.toContain('transit.base_fare_usd');
+    expect(refs(json)).not.toContain('transit.base_fare_usd');
+  });
+
+  it('with a cost, every cost input is cited once, however the narration quotes the fare', async () => {
+    narrating('Bus fare: {{bus_fare}}. Consider transit.', ['bus_fare']);
+    const json = await run(withStops);
+    expect(json.comparison?.costUsd).toBeDefined();
+    for (const key of [...DRIVE_COST_KEYS, 'transit.base_fare_usd']) {
+      expect(json.meta?.citations?.filter((ref) => ref === key)).toEqual([key]);
+      expect(refs(json).filter((ref) => ref === key)).toEqual([key]);
+    }
+  });
+});

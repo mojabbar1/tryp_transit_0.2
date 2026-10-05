@@ -2,11 +2,21 @@ import 'server-only';
 import type { Comparison, TrafficDensity, TransitAlert } from '@/lib/contracts/transit-insights';
 import type { DriveRoute, TrafficIncident } from '@/lib/api/tomtom';
 import type { TripCost } from '@/lib/domain/cost';
+import { COST_FACT_KEYS } from '@/lib/facts/approved';
 import { formatClock } from '@/lib/format';
 import type { NarrationFact, NarrationFlags } from '@/lib/llm/validate-claims';
 import type { ScheduledTrip } from './schedule';
 
 const money = (cents: number) => `$${(Math.abs(cents) / 100).toFixed(2)}`;
+
+/**
+ * The approved fact keys behind each narration fact that quotes them, so a narrated figure cites its own source
+ * whether or not the response shows a cost: the fare needs no drive, so it can be narrated without one.
+ */
+export const NARRATION_FACT_KEYS: Readonly<Record<string, readonly string[]>> = {
+  bus_fare: ['transit.base_fare_usd'],
+  cost_difference_per_trip: COST_FACT_KEYS,
+};
 
 /** Signed cost phrase: drive − transit, so positive means the bus base fare is cheaper than driving. */
 export function costPhrase(differenceCents: number): string {

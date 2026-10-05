@@ -34,6 +34,7 @@ describe('narrate', () => {
     expect(outcome).toEqual({
       nudge: 'Traffic now; Drive time: about 21 min by car. Consider transit.',
       narration: { source: 'llm', provider: 'gemini', model: 'gemini-3.8-flash', validated: true },
+      factIds: ['drive_minutes'],
     });
   });
 

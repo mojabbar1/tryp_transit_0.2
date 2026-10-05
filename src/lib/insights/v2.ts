@@ -1,5 +1,6 @@
 import 'server-only';
 import {
+  type CitationRef,
   type TransitInsightResponse,
   TransitInsightRequestSchema,
   TransitInsightResponseSchema,
@@ -18,7 +19,7 @@ import { narrate } from '@/lib/llm/narrate';
 import { getProvider } from '@/lib/llm/provider';
 import { renderTemplate } from '@/lib/llm/template';
 import { log } from '@/lib/log';
-import { buildFacts, costPhrase, onRoute } from './facts';
+import { buildFacts, costPhrase, NARRATION_FACT_KEYS, onRoute } from './facts';
 import { getScheduledTransit, type ScheduleOutcome } from './schedule';
 
 export type InsightsResult =
@@ -97,13 +98,14 @@ export async function buildTransitInsights(
 
   // Cost inputs: the approved facts from the data agent, else the approved 05 §2 values (a flagged fallback).
   let costValues = LOCAL_COST_VALUES;
-  let costSources = undefined as NonNullable<TransitInsightResponse['meta']>['sources'];
+  // The structured sources of the cost inputs in use; the local fallback's are cited by key only.
+  let costSources: Partial<Record<string, CitationRef[]>> = {};
   if (approved) {
     approved.degraded.forEach((code) => degraded.add(code));
     const fromFacts = costValuesFrom(approved.facts);
     if (fromFacts) {
       costValues = fromFacts;
-      costSources = COST_FACT_KEYS.flatMap((key) => approved.facts[key]?.citations ?? []);
+      costSources = Object.fromEntries(COST_FACT_KEYS.map((key) => [key, approved.facts[key]?.citations ?? []]));
     } else {
       degraded.add('assumptions_local_fallback');
     }
@@ -150,9 +152,12 @@ export async function buildTransitInsights(
     log.warn('narration_fallback', { requestId, reason: outcome.fallbackReason, provider: outcome.narration.provider });
   }
 
-  // Cite only what the response shows: cost facts only when a cost was computed.
-  const sources = [...(cost ? costSources ?? [] : []), ...(schedule?.citations ?? [])];
-  const citations = [...new Set([...(cost ? cost.assumptionKeys : []), ...sources.map((source) => source.ref)])];
+  // Cite only what the response shows: every cost input when a cost was computed, and otherwise the approved facts
+  // behind any figure the served narration quotes (the fare alone needs no drive). The template quotes no fare.
+  const narratedKeys = new Set((outcome.factIds ?? []).flatMap((id) => NARRATION_FACT_KEYS[id] ?? []));
+  const citedCostKeys = COST_FACT_KEYS.filter((key) => cost !== null || narratedKeys.has(key));
+  const sources = [...citedCostKeys.flatMap((key) => costSources[key] ?? []), ...(schedule?.citations ?? [])];
+  const citations = [...new Set([...citedCostKeys, ...sources.map((source) => source.ref)])];
   const body: TransitInsightResponse = {
     travelTime: schedule?.travelTime ?? null,
     trafficDensity: density,
