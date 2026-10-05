@@ -22,6 +22,8 @@ import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/transit-insights/route';
 import { clearDataAgentCaches, STOP_LIST_LIMIT } from '@/lib/api/data-agent';
 import { TransitInsightResponseSchema } from '@/lib/contracts/transit-insights';
+import { assumptions, type AssumptionKey } from '@/lib/domain/assumptions';
+import * as approvedFacts from '@/lib/facts/approved';
 import { transitIsFaster } from '@/lib/insights/facts';
 import { greatCircleMeters, type ScheduledTrip } from '@/lib/insights/schedule';
 import { buildTransitInsights } from '@/lib/insights/v2';
@@ -830,6 +832,126 @@ describe('a narrated fare cites its own source, with or without a driving cost (
       expect(json.meta?.citations?.filter((ref) => ref === key)).toEqual([key]);
       expect(refs(json).filter((ref) => ref === key)).toEqual([key]);
     }
+  });
+});
+
+describe('a whole-model cost fallback cites the local values it uses, never the store facts it discarded (review R2-3)', () => {
+  const COST_KEYS = ['cost.basis', 'drive.fuel_price_usd_per_gal', 'drive.mpg', 'drive.maintenance_usd_per_mile', 'transit.base_fare_usd'] as const;
+  const DRIVE_COST_KEYS = COST_KEYS.slice(0, 4);
+  /** The approved 05 §2 entry behind a local value, as the response's Sources carry it. */
+  const localSource = (key: AssumptionKey) => {
+    const { name, url, retrieved } = assumptions[key].source;
+    return { ref: key, attribution: name, url, retrieved };
+  };
+  const LOCAL_FARE_SOURCE = { ref: 'transit.base_fare_usd', attribution: 'CARTA Fares & Passes', url: 'https://ridecarta.com/fares-passes/', retrieved: '2026-09-25' };
+  /** The store's facts (a $2.50 fare, fact 5) with another cost.basis fact. */
+  const withBasis = (basis: ReturnType<typeof fact>) => ({
+    ...assumptionsAll(),
+    items: assumptionsAll().items.map((item) => (item.key === 'cost.basis' ? { ...item, fact: basis } : item)),
+  });
+  const REJECTED_MODELS = [
+    ['a non-marginal basis', withBasis(fact(1, 'cost.basis', null, 'total cost of ownership'))],
+    ['a malformed basis (a number, no text)', withBasis(fact(1, 'cost.basis', 1))],
+  ] as const;
+  const narrating = (nudge: string, slots: string[]) => mockGetProvider.mockReturnValue(provider(async () => ({ nudge, slots })));
+  const refs = (json: Awaited<ReturnType<typeof run>>) => (json.meta?.sources ?? []).map((source) => source.ref);
+  const storeSourced = (json: Awaited<ReturnType<typeof run>>) => (json.meta?.sources ?? []).filter((source) => source.attribution === 'Synthetic attribution');
+
+  it.each(REJECTED_MODELS)('the review repro: TomTom down, %s beside a $2.50 store fare: the local $2.00 fare is narrated and cited to its own source', async (_label, payload) => {
+    mockGetDriveRoute.mockRejectedValue(new Error('down'));
+    routes['/v1/assumptions'] = () => ({ status: 200, json: payload });
+    narrating('Bus fare: {{bus_fare}}', ['bus_fare']);
+    const json = await run(withStops);
+    expect(TransitInsightResponseSchema.safeParse(json).success).toBe(true);
+    expect(json.comparison?.costUsd).toBeUndefined();
+    expect(json.meta?.narration).toMatchObject({ source: 'llm', validated: true });
+    expect(json.nudgeMessage).toBe('Bus fare: a $2.00 base fare');
+    expect(json.meta?.degraded).toEqual(expect.arrayContaining(['assumptions_local_fallback', 'cost_unavailable']));
+    expect(json.meta?.sources?.[0]).toEqual(LOCAL_FARE_SOURCE);
+    expect(json.meta?.sources?.filter((source) => source.ref === 'transit.base_fare_usd')).toEqual([LOCAL_FARE_SOURCE]);
+    // Never the store's discarded facts (its $2.50 fare is fact 5), and no drive-cost input for a fare-only nudge.
+    expect(storeSourced(json)).toEqual([]);
+    for (const key of DRIVE_COST_KEYS) {
+      expect(json.meta?.citations).not.toContain(key);
+      expect(refs(json)).not.toContain(key);
+    }
+    expect(json.meta?.citations).toEqual(expect.arrayContaining(['transit.base_fare_usd', 'gtfs.schedule', 'transit.access_buffer_min']));
+  });
+
+  it.each(REJECTED_MODELS)('with a cost and %s: each input of the local model is cited once, to its own 05 §2 source', async (_label, payload) => {
+    routes['/v1/assumptions'] = () => ({ status: 200, json: payload });
+    const json = await run(withStops);
+    // 5 mi x (4.163 / 22.2 + 0.1104) = 149 cents against the local 200-cent fare.
+    expect(json.comparison?.costUsd).toMatchObject({ drive: 1.49, transit: 2, difference: -0.51 });
+    expect(json.meta?.degraded).toContain('assumptions_local_fallback');
+    expect(json.meta?.sources?.slice(0, 5)).toEqual(COST_KEYS.map(localSource));
+    expect(json.meta?.sources?.[4]).toEqual(LOCAL_FARE_SOURCE);
+    expect(storeSourced(json)).toEqual([]);
+    for (const key of COST_KEYS) {
+      expect(json.meta?.citations?.filter((ref) => ref === key)).toEqual([key]);
+      expect(refs(json).filter((ref) => ref === key)).toEqual([key]);
+    }
+  });
+
+  it('the facts lookup itself failing: the same local model, with the same sources', async () => {
+    jest.spyOn(approvedFacts, 'getApprovedFacts').mockRejectedValue(new Error('unexpected'));
+    const json = await run(withStops);
+    expect(json.comparison?.costUsd).toMatchObject({ drive: 1.49, transit: 2, difference: -0.51 });
+    expect(json.meta?.degraded).toContain('assumptions_local_fallback');
+    expect(json.meta?.sources?.slice(0, 5)).toEqual(COST_KEYS.map(localSource));
+  });
+
+  it('control, the store missing only the fare: its other facts keep their own sources, and the local fare its own', async () => {
+    routes['/v1/assumptions'] = () => ({
+      status: 200,
+      json: { items: assumptionsAll().items.filter((item) => item.key !== 'transit.base_fare_usd'), missing: ['transit.base_fare_usd'] },
+    });
+    const json = await run(withStops);
+    // 5 mi x (4.0 / 20 + 0.1) = 150 cents from the store's inputs, against the local 200-cent fare.
+    expect(json.comparison?.costUsd).toMatchObject({ drive: 1.5, transit: 2, difference: -0.5 });
+    expect(json.meta?.degraded).toContain('assumptions_local_fallback');
+    expect(json.meta?.sources?.slice(0, 5)).toEqual([
+      ...DRIVE_COST_KEYS.map((key, index) => ({ ref: key, sourceId: 'synthetic-src', attribution: 'Synthetic attribution', retrieved: '2026-10-01', factId: index + 1 })),
+      LOCAL_FARE_SOURCE,
+    ]);
+  });
+
+  it('costModelFrom pairs every value with its own sources, whichever model it returns', () => {
+    const local = approvedFacts.costModelFrom(null);
+    expect(local).toEqual({
+      values: { fuelPriceUsdPerGal: 4.163, mpg: 22.2, maintenanceUsdPerMile: 0.1104, baseFareUsd: 2 },
+      sources: Object.fromEntries(COST_KEYS.map((key) => [key, [localSource(key)]])),
+      localFallback: true,
+    });
+    // Each local value is the 05 §2 entry its source names.
+    expect(local.values).toEqual({
+      fuelPriceUsdPerGal: assumptions['drive.fuel_price_usd_per_gal'].value,
+      mpg: assumptions['drive.mpg'].value,
+      maintenanceUsdPerMile: assumptions['drive.maintenance_usd_per_mile'].value,
+      baseFareUsd: assumptions['transit.base_fare_usd'].value,
+    });
+
+    const storeFact = (key: string, valueNum: number | null, valueText: string | null, id: number): approvedFacts.ApprovedFact => ({
+      key, valueNum, valueText, unit: null, origin: 'data_agent', citations: [{ ref: key, factId: id }],
+    });
+    const store = (basis: string): approvedFacts.ApprovedFacts => ({
+      facts: {
+        'cost.basis': storeFact('cost.basis', null, basis, 1),
+        'drive.fuel_price_usd_per_gal': storeFact('drive.fuel_price_usd_per_gal', 4, null, 2),
+        'drive.mpg': storeFact('drive.mpg', 20, null, 3),
+        'drive.maintenance_usd_per_mile': storeFact('drive.maintenance_usd_per_mile', 0.1, null, 4),
+        'transit.base_fare_usd': storeFact('transit.base_fare_usd', 2.5, null, 5),
+      },
+      missing: [],
+      degraded: [],
+    });
+    // A rejected store model is replaced as a whole, sources included.
+    expect(approvedFacts.costModelFrom(store('total cost of ownership'))).toEqual(local);
+    expect(approvedFacts.costModelFrom(store('marginal'))).toEqual({
+      values: { fuelPriceUsdPerGal: 4, mpg: 20, maintenanceUsdPerMile: 0.1, baseFareUsd: 2.5 },
+      sources: Object.fromEntries(COST_KEYS.map((key, index) => [key, [{ ref: key, factId: index + 1 }]])),
+      localFallback: false,
+    });
   });
 });
 

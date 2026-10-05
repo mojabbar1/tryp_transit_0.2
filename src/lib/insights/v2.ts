@@ -1,19 +1,18 @@
 import 'server-only';
 import {
-  type CitationRef,
   type TransitInsightResponse,
   TransitInsightRequestSchema,
   TransitInsightResponseSchema,
 } from '@/lib/contracts/transit-insights';
 import type { ApiErrorResponse } from '@/types/interfaces';
 import { type DriveRoute, getDriveRoute, getTrafficData, type TrafficData } from '@/lib/api/tomtom';
-import { calculateCost, LOCAL_COST_VALUES } from '@/lib/domain/cost';
+import { calculateCost } from '@/lib/domain/cost';
 import { evaluateIncentivePolicy } from '@/lib/domain/incentive-policy';
 import { resolveArrival } from '@/lib/domain/time';
 import { densityFromFlows } from '@/lib/domain/traffic';
 import { getTransitResult } from '@/lib/domain/transit-result';
 import { getEnv } from '@/lib/env';
-import { COST_FACT_KEYS, costValuesFrom, getApprovedFacts } from '@/lib/facts/approved';
+import { COST_FACT_KEYS, costModelFrom, getApprovedFacts } from '@/lib/facts/approved';
 import { transitReasonText } from '@/lib/format';
 import { narrate } from '@/lib/llm/narrate';
 import { getProvider } from '@/lib/llm/provider';
@@ -96,23 +95,12 @@ export async function buildTransitInsights(
   const density = traffic ? densityFromFlows(traffic.flows) : null;
   if (traffic && density === null) degraded.add('traffic_flow_unavailable');
 
-  // Cost inputs: the approved facts from the data agent, else the approved 05 §2 values (a flagged fallback).
-  let costValues = LOCAL_COST_VALUES;
-  // The structured sources of the cost inputs in use; the local fallback's are cited by key only.
-  let costSources: Partial<Record<string, CitationRef[]>> = {};
-  if (approved) {
-    approved.degraded.forEach((code) => degraded.add(code));
-    const fromFacts = costValuesFrom(approved.facts);
-    if (fromFacts) {
-      costValues = fromFacts;
-      costSources = Object.fromEntries(COST_FACT_KEYS.map((key) => [key, approved.facts[key]?.citations ?? []]));
-    } else {
-      degraded.add('assumptions_local_fallback');
-    }
-  } else {
-    degraded.add('assumptions_local_fallback');
-  }
-  const cost = route ? calculateCost(route.distanceMiles, costValues) : null;
+  // Cost inputs: the approved facts from the data agent, else the approved 05 §2 values as a whole (a flagged
+  // fallback). Either way each value comes with the sources of where it came from, never another's.
+  approved?.degraded.forEach((code) => degraded.add(code));
+  const costModel = costModelFrom(approved);
+  if (costModel.localFallback) degraded.add('assumptions_local_fallback');
+  const cost = route ? calculateCost(route.distanceMiles, costModel.values) : null;
   cost?.degraded.forEach((code) => degraded.add(code));
   if (!cost) degraded.add('cost_unavailable');
   // CO2 needs a bus distance; the schedule gives minutes, not miles, and the drive distance is not an approved proxy.
@@ -133,7 +121,7 @@ export async function buildTransitInsights(
     incidents: traffic?.incidents ?? null,
     transit,
     offerActive: incentive.offerActive,
-    fareUsd: costValues.baseFareUsd,
+    fareUsd: costModel.values.baseFareUsd,
     trip,
     alert: schedule?.alerts[0] ?? null,
     timeZone: env.regionTimezone,
@@ -158,7 +146,7 @@ export async function buildTransitInsights(
   // behind any figure the served narration quotes (the fare alone needs no drive). The template quotes no fare.
   const narratedKeys = new Set((outcome.factIds ?? []).flatMap((id) => NARRATION_FACT_KEYS[id] ?? []));
   const citedCostKeys = COST_FACT_KEYS.filter((key) => cost !== null || narratedKeys.has(key));
-  const sources = [...citedCostKeys.flatMap((key) => costSources[key] ?? []), ...(schedule?.citations ?? [])];
+  const sources = [...citedCostKeys.flatMap((key) => costModel.sources[key] ?? []), ...(schedule?.citations ?? [])];
   const citations = [...new Set([...citedCostKeys, ...sources.map((source) => source.ref)])];
   const body: TransitInsightResponse = {
     travelTime: schedule?.travelTime ?? null,

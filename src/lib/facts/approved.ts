@@ -2,7 +2,7 @@ import 'server-only';
 import type { CitationRef } from '@/lib/contracts/transit-insights';
 import { type AgentCitation, type AgentFact, getAssumptions } from '@/lib/api/data-agent';
 import { assumptions } from '@/lib/domain/assumptions';
-import type { CostValues } from '@/lib/domain/cost';
+import { type CostValues, LOCAL_COST_VALUES } from '@/lib/domain/cost';
 import type { ServerEnv } from '@/lib/env';
 
 /**
@@ -134,4 +134,32 @@ export function costValuesFrom(facts: ApprovedFacts['facts']): CostValues | null
   if (!basis || !/marginal/i.test(basis.valueText ?? '')) return null;
   if (fuelPriceUsdPerGal === null || mpg === null || maintenanceUsdPerMile === null || baseFareUsd === null) return null;
   return { fuelPriceUsdPerGal, mpg, maintenanceUsdPerMile, baseFareUsd };
+}
+
+/** The cost model a response uses: its values, and for each input key the sources of the value actually used. */
+export interface CostModel {
+  values: CostValues;
+  sources: Partial<Record<string, CitationRef[]>>;
+  /** The approved 05 §2 values stand in for the whole model (the caller flags `assumptions_local_fallback`). */
+  localFallback: boolean;
+}
+
+const costSourcesOf = (facts: ApprovedFacts['facts']): CostModel['sources'] =>
+  Object.fromEntries(COST_FACT_KEYS.map((key) => [key, facts[key]?.citations ?? []]));
+
+/**
+ * The cost model for a request, every value paired with its own sources. The approved facts' values when they form a
+ * usable marginal-cost model, each cited to the fact it came from (the store's, or that key's flagged 05 §2 fallback);
+ * otherwise the approved 05 §2 values as a whole, each cited to its own 05 §2 source. A store fact discarded with its
+ * model (a basis that isn't marginal or is malformed, or no facts at all) is never cited for a value it didn't supply.
+ */
+export function costModelFrom(approved: ApprovedFacts | null): CostModel {
+  const values = approved ? costValuesFrom(approved.facts) : null;
+  if (approved && values) return { values, sources: costSourcesOf(approved.facts), localFallback: false };
+  const local: ApprovedFacts['facts'] = {};
+  for (const key of COST_FACT_KEYS) {
+    const fact = fromLocal(key);
+    if (fact) local[key] = fact;
+  }
+  return { values: LOCAL_COST_VALUES, sources: costSourcesOf(local), localFallback: true };
 }
