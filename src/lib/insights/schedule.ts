@@ -24,7 +24,8 @@ import { citationFromAgent } from '@/lib/facts/approved';
 /**
  * P4b: scheduled transit from the data agent (`/v1/compare`, D-6 direct-route lookup), or an honest
  * `unavailable` leg naming why. The only numbers computed here are the in-vehicle + wait minutes, the elapsed minutes
- * from leave-by to arrival (for a like-for-like comparison with the drive), and a picked stop's distance from its point.
+ * from leave-by to arrival (for a like-for-like comparison with the drive, only when both points are at their stops),
+ * and a picked stop's distance from its point.
  */
 
 /**
@@ -33,6 +34,13 @@ import { citationFromAgent } from '@/lib/facts/approved';
  * bound applies to a stop id sent with the point, so the schedule and the drive always describe the same journey.
  */
 export const MAX_STOP_DISTANCE_M = 400;
+/**
+ * The farthest a point may be from its stop and still count as the stop itself (engineering default): coordinate
+ * rounding only, since a stop's coordinates rounded to five decimal places stay within 0.8 m of it. One bound for
+ * both ends and both mappings (a picked stop's distance and the agent's nearest-stop distance, each to 0.1 m). No walk
+ * is measured, so a point any farther, even one inside `MAX_STOP_DISTANCE_M`, leaves the door-to-door time unknown.
+ */
+export const AT_STOP_TOLERANCE_M = 1;
 export const MAX_ALERTS = 3;
 const ALERT_HEADER_MAX = 200;
 const ALERT_DESCRIPTION_MAX = 500;
@@ -49,8 +57,9 @@ export interface ScheduledTrip {
   /**
    * Elapsed minutes from leaving (the leave-by time: the departure minus the approved walk-to-stop buffer) to the
    * scheduled arrival, which is the span a drive covers too. Only set when that holds like for like: with a leave-by,
-   * and with the destination point at the destination stop itself (as when picked from the list). A walk from the stop
-   * to another point isn't measured, so it is never guessed.
+   * and with both points at their stops (within `AT_STOP_TOLERANCE_M`, as when picked from the list). The buffer is a
+   * fixed allowance, not a measured walk from an arbitrary point to the origin stop, and no walk from the destination
+   * stop is measured either, so neither is ever guessed.
    */
   elapsedMinutes?: number;
   leaveBy?: string;
@@ -218,11 +227,12 @@ async function resolveStop(
 
 /**
  * Minutes from leaving to arriving, comparable with a drive between the same points, or undefined when that can't be
- * established: it needs a leave-by (which already holds the approved walk-to-stop buffer) and a destination point at
- * the destination stop itself, since no walk from the stop is measured.
+ * established. It needs a leave-by (the departure minus the approved access buffer) and both points at their stops,
+ * within `AT_STOP_TOLERANCE_M`: the buffer is a fixed allowance, not a measured walk from an arbitrary point to the
+ * origin stop, and no walk from the destination stop to another point is measured either.
  */
-function elapsedMinutes(trip: AgentTrip, destinationDistanceM: number): number | undefined {
-  if (trip.leave_by === null || destinationDistanceM !== 0) return undefined;
+function elapsedMinutes(trip: AgentTrip, originDistanceM: number, destinationDistanceM: number): number | undefined {
+  if (trip.leave_by === null || originDistanceM > AT_STOP_TOLERANCE_M || destinationDistanceM > AT_STOP_TOLERANCE_M) return undefined;
   return Math.round((Date.parse(trip.arrival) - Date.parse(trip.leave_by)) / 60_000);
 }
 
@@ -337,7 +347,7 @@ export async function getScheduledTransit(
     serviceDate: trip.service_date,
   }));
   const leaveBy = best.leave_by ? localHhmm(best.leave_by) ?? undefined : undefined;
-  const elapsed = elapsedMinutes(best, dest.data.distanceM);
+  const elapsed = elapsedMinutes(best, origin.data.distanceM, dest.data.distanceM);
   return {
     transit: scheduledLeg(compare, best, alternatives, minutes, alerts.alerts),
     travelTime: minutes,

@@ -577,6 +577,82 @@ describe('"transit is faster" compares elapsed trip time with the drive, never i
   });
 });
 
+describe('"transit is faster" needs both points at their stops: the access buffer is not a measured walk (review R2-1)', () => {
+  const drive = (minutes: number) => ({ route: { minutes, delayMinutes: 0, distanceMiles: 5, freeFlowMinutes: minutes }, degraded: [] });
+  const fasterClaim = { nudge: 'Transit is faster; {{bus_minutes}}.', slots: ['bus_minutes'] };
+  /**
+   * 10 min on the bus (08:10 to 08:20) after the approved 5-min buffer (leave by 08:05): 15 elapsed minutes against a
+   * 20-min drive. Returns the response and the `transitFaster` flag the engine computed.
+   */
+  async function fasterFor(input: unknown) {
+    mockGetDriveRoute.mockResolvedValue(drive(20));
+    routes['/v1/compare'] = () => ({ status: 200, json: compareOk({ transit: trip('T1', '08:10', '08:20', 10, '08:05'), alternatives: [] }) });
+    const { llm, flags } = recordingProvider(fasterClaim);
+    mockGetProvider.mockReturnValue(llm);
+    const json = await run(input);
+    expect(TransitInsightResponseSchema.safeParse(json).success).toBe(true);
+    // Every stop here is within the 400 m mapping bound, so the schedule shows with its in-vehicle minutes either way.
+    expect(json.comparison?.transit).toMatchObject({ basis: 'scheduled', minutes: 10, leaveBy: '08:05' });
+    expect(json.travelTime).toBe(10);
+    const { transitServiceKnown, transitFaster } = flags();
+    expect(transitServiceKnown).toBe(true);
+    return { json, faster: transitFaster };
+  }
+
+  it('the review repro: an origin point 399.9 m from its picked stop, the destination at its stop, 15 vs 20 min: not faster', async () => {
+    const departure = northOf(body.departure, 399.9);
+    expect(greatCircleMeters(departure, body.departure)).toBe(399.9);
+    const { json, faster } = await fasterFor({ ...withStops, departure });
+    expect(faster).toBe(false);
+    expect(json.meta?.narration).toMatchObject({ source: 'template', validated: false });
+    expect(json.meta?.degraded).toContain('narration_fallback');
+    expect(json.nudgeMessage).not.toMatch(/faster/i);
+  });
+
+  it.each([
+    // [origin m, destination m, faster]: within 1 m is the stop itself (coordinate rounding); beyond is an unmeasured walk.
+    [0, 0, true],
+    [1, 0, true],
+    [0, 1, true],
+    [1, 1, true],
+    [1.1, 0, false],
+    [0, 1.1, false],
+    [50, 0, false],
+    [0, 50, false],
+    [399.9, 0, false],
+    [0, 399.9, false],
+  ])('picked stops, the origin point %s m and the destination point %s m from them: faster is %s', async (originM, destinationM, expected) => {
+    const departure = northOf(body.departure, originM);
+    const destination = northOf(body.destination, destinationM);
+    expect([greatCircleMeters(departure, body.departure), greatCircleMeters(destination, body.destination)]).toEqual([originM, destinationM]);
+    const { json, faster } = await fasterFor({ ...withStops, departure, destination });
+    expect(faster).toBe(expected);
+    if (expected) {
+      expect(json.meta?.narration).toMatchObject({ source: 'llm', validated: true });
+      expect(json.nudgeMessage).toBe('Transit is faster; about 10 min by bus on route 10.');
+    } else {
+      expect(json.meta?.narration).toMatchObject({ source: 'template', validated: false });
+      expect(json.nudgeMessage).not.toMatch(/faster/i);
+    }
+  });
+
+  it.each([
+    [0, 0, true],
+    [1, 1, true],
+    [1.1, 0, false],
+    [0, 1.1, false],
+    [399.9, 0, false],
+    [0, 399.9, false],
+  ])('nearest-stop mapping, the same tolerance: the origin %s m and the destination %s m from their stops: faster is %s', async (originM, destinationM, expected) => {
+    routes['/v1/stops/nearest'] = (url) => ({
+      status: 200,
+      json: url.searchParams.get('lat') === '32.7813' ? nearest('SYN-O', originM) : nearest('SYN-D', destinationM),
+    });
+    const { faster } = await fasterFor(body);
+    expect(faster).toBe(expected);
+  });
+});
+
 describe('a narrated fare cites its own source, with or without a driving cost (review F4)', () => {
   const DRIVE_COST_KEYS = ['cost.basis', 'drive.fuel_price_usd_per_gal', 'drive.mpg', 'drive.maintenance_usd_per_mile'];
   const fareSource = { ref: 'transit.base_fare_usd', sourceId: 'synthetic-src', attribution: 'Synthetic attribution', retrieved: '2026-10-01', factId: 5 };

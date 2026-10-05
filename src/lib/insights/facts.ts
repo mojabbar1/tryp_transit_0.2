@@ -102,8 +102,9 @@ export function buildFacts({ route, density, cost, incidents, transit, offerActi
 /**
  * "Transit is faster" only on a like-for-like comparison: the bus trip's elapsed minutes (leave-by, which includes the
  * approved walk-to-stop buffer, to arrival) against the drive's minutes. The in-vehicle minutes alone leave out the
- * walk and the wait, so with no elapsed duration (see `ScheduledTrip.elapsedMinutes`) the claim stays off. Both
- * sides are rounded minutes; rounding never reorders values, so a strict "less" holds for the exact times too.
+ * walk and the wait, and a point away from its stop adds a walk nobody measured, so with no elapsed duration (see
+ * `ScheduledTrip.elapsedMinutes`: set only with both points at their stops) the claim stays off. Both sides are
+ * rounded minutes; rounding never reorders values, so a strict "less" holds for the exact times too.
  */
 export function transitIsFaster(trip: ScheduledTrip | null | undefined, route: DriveRoute | null, basis: Comparison['transit']['basis']): boolean {
   if (!trip || !route || basis === 'unavailable' || trip.elapsedMinutes === undefined) return false;
