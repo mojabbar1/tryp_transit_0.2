@@ -20,8 +20,9 @@ jest.mock('@/lib/env', () => {
 
 import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/transit-insights/route';
-import { clearDataAgentCaches } from '@/lib/api/data-agent';
+import { clearDataAgentCaches, STOP_LIST_LIMIT } from '@/lib/api/data-agent';
 import { TransitInsightResponseSchema } from '@/lib/contracts/transit-insights';
+import { greatCircleMeters } from '@/lib/insights/schedule';
 import { buildTransitInsights } from '@/lib/insights/v2';
 import type { LlmProvider } from '@/lib/llm/provider';
 
@@ -108,6 +109,16 @@ const nearest = (id: string, distance: number) => ({
   feed,
   items: [{ id, code: null, name: `Stop ${id}`, lat: 32.78, lng: -79.93, route_short_names: ['10'], distance_m: distance }],
 });
+// The active feed's stop list (`/v1/stops`): the picked ids sit exactly at the request's points.
+const listedStop = (id: string, point: { lat: number; lng: number }) => ({
+  id, code: null as string | null, name: `Stop ${id}`, lat: point.lat, lng: point.lng, route_short_names: ['10'],
+});
+const stopList = (items = [listedStop('SYN-A', body.departure), listedStop('SYN-B', body.destination)]) => ({ feed, items });
+/** A point `meters` due north of `point`, on the data agent's sphere (a pure latitude step is exactly R·Δφ). */
+const northOf = (point: { lat: number; lng: number }, meters: number) => ({
+  lat: point.lat + (meters / 6_371_008.8) * (180 / Math.PI),
+  lng: point.lng,
+});
 
 type Reply = { status: number; json?: unknown; text?: string };
 type Handler = (url: URL) => Reply;
@@ -140,6 +151,7 @@ beforeEach(() => {
     '/v1/assumptions': () => ({ status: 200, json: assumptionsAll() }),
     '/v1/alerts': () => ({ status: 200, json: { items: [], citations: [] } }),
     '/v1/stops/nearest': () => ({ status: 200, json: nearest('SYN-N', 120) }),
+    '/v1/stops': () => ({ status: 200, json: stopList() }),
   };
   fetchMock.mockReset().mockImplementation(serve);
   global.fetch = fetchMock as unknown as typeof fetch;
@@ -165,8 +177,10 @@ describe('v2 engine with the data agent (P4b)', () => {
     ]));
     expect(json.meta?.degraded).not.toContain('data_agent_unavailable');
     expect(json.nudgeMessage).toContain('the scheduled bus takes about 18 min on route 10, so leave by 8:05 AM.');
-    // Explicit stop ids skip the nearest-stop lookup, and the query carries the local service date and target.
+    // Explicit stop ids skip the nearest-stop lookup (each is checked against the shared stop list instead), and the
+    // query carries the local service date and target.
     expect(calls('/v1/stops/nearest')).toHaveLength(0);
+    expect(calls('/v1/stops').map((url) => url.searchParams.get('limit'))).toEqual(['2000']);
     const [compare] = calls('/v1/compare');
     expect(Object.fromEntries(compare.searchParams)).toEqual({ origin_stop_id: 'SYN-A', dest_stop_id: 'SYN-B', date: '2026-10-05', arrive_by: '08:30' });
   });
@@ -207,6 +221,7 @@ describe('v2 engine with the data agent (P4b)', () => {
     const json = await run(body);
     expect(json.comparison?.transit.basis).toBe('scheduled');
     expect(calls('/v1/stops/nearest').map((url) => url.searchParams.get('limit'))).toEqual(['1', '1']);
+    expect(calls('/v1/stops')).toHaveLength(0);
     const [compare] = calls('/v1/compare');
     expect([compare.searchParams.get('origin_stop_id'), compare.searchParams.get('dest_stop_id')]).toEqual(['SYN-O', 'SYN-D']);
   });
@@ -373,5 +388,100 @@ describe('v2 engine with the data agent (P4b)', () => {
   it('rejects malformed stop ids', async () => {
     const result = await buildTransitInsights({ ...body, departureStopId: 'bad id\n' }, { now: NOW });
     expect(result.status).toBe(400);
+  });
+});
+
+describe('explicit stop ids must match the active feed and their points (review F2)', () => {
+  const expectNoSchedule = (json: Awaited<ReturnType<typeof run>>) => {
+    expect(TransitInsightResponseSchema.safeParse(json).success).toBe(true);
+    expect(json.comparison?.transit).toMatchObject({ basis: 'unavailable', minutes: null, nextDepartures: [] });
+    expect(json.travelTime).toBeNull();
+    expect(json.additionalRides).toEqual([]);
+    expect(calls('/v1/compare')).toHaveLength(0);
+  };
+
+  it('the review repro: SYN-A sent with a departure point about 135 km away gets no schedule, only the drive', async () => {
+    const json = await run({ ...withStops, departure: { lat: 34, lng: -80 } });
+    expectNoSchedule(json);
+    expect(json.meta?.degraded).toContain('stop_mapping_mismatch');
+    expect(json.comparison?.transit.reason).toBeUndefined();
+    // The drive still answers, for the points the rider sent.
+    expect(json.comparison?.drive).toMatchObject({ minutes: 21 });
+    expect(mockGetDriveRoute.mock.calls[0][1]).toEqual({ lat: 34, lng: -80 });
+  });
+
+  it('an id the active feed does not list: unknown_stop as the reason, never a schedule', async () => {
+    const json = await run({ ...withStops, destinationStopId: 'SYN-GONE' });
+    expectNoSchedule(json);
+    expect(json.comparison?.transit.reason).toBe('unknown_stop');
+    expect(json.meta?.degraded).toContain('stop_mapping_unknown_stop');
+    expect(json.nudgeMessage).toContain("that stop isn’t in the current CARTA schedule, so check CARTA's schedule");
+  });
+
+  it('checks each end, and names every problem it found', async () => {
+    const json = await run({ ...withStops, departureStopId: 'SYN-GONE', destination: northOf(body.destination, 2000) });
+    expectNoSchedule(json);
+    expect(json.meta?.degraded).toEqual(expect.arrayContaining(['stop_mapping_unknown_stop', 'stop_mapping_mismatch']));
+  });
+
+  it.each([
+    [0, true],
+    [399.9, true],
+    [400, true],
+    [400.2, false],
+    [5000, false],
+  ])('a departure point %s m from its picked stop is accepted: %s (the 400 m bound, inclusive)', async (meters, accepted) => {
+    const departure = northOf(body.departure, meters);
+    expect(greatCircleMeters(departure, body.departure)).toBe(meters);
+    const json = await run({ ...withStops, departure });
+    expect(TransitInsightResponseSchema.safeParse(json).success).toBe(true);
+    if (accepted) {
+      expect(json.comparison?.transit.basis).toBe('scheduled');
+      expect(calls('/v1/compare')).toHaveLength(1);
+    } else {
+      expectNoSchedule(json);
+      expect(json.meta?.degraded).toContain('stop_mapping_mismatch');
+    }
+  });
+
+  it('the same id at both ends is still the same stop', async () => {
+    const json = await run({ ...withStops, destinationStopId: 'SYN-A', destination: northOf(body.departure, 50) });
+    expectNoSchedule(json);
+    expect(json.meta?.degraded).toContain('stop_mapping_same_stop');
+  });
+
+  it('stop list unavailable: an id is not trusted unchecked, so nothing is compared', async () => {
+    routes['/v1/stops'] = () => ({ status: 503, json: {} });
+    const json = await run(withStops);
+    expectNoSchedule(json);
+    expect(json.meta?.degraded).toContain('data_agent_unavailable');
+  });
+
+  it('a stop list cut at its limit: a missing id is looked up exactly before it is called unknown', async () => {
+    const full = Array.from({ length: STOP_LIST_LIMIT }, (_, index) => listedStop(`SYN-L${index}`, body.departure));
+    routes['/v1/stops'] = (url) => {
+      const query = url.searchParams.get('query');
+      if (query === null) return { status: 200, json: stopList(full) };
+      // A code that happens to equal the id ranks alongside it; only the exact id counts.
+      const lookalike = { ...listedStop('OTHER', { lat: 0, lng: 0 }), code: query };
+      const exact = query === 'SYN-A' ? [listedStop('SYN-A', body.departure)] : query === 'SYN-B' ? [listedStop('SYN-B', body.destination)] : [];
+      return { status: 200, json: stopList([lookalike, ...exact]) };
+    };
+    const json = await run(withStops);
+    expect(json.comparison?.transit.basis).toBe('scheduled');
+    expect(calls('/v1/stops').map((url) => url.searchParams.get('query')).filter(Boolean).sort()).toEqual(['SYN-A', 'SYN-B']);
+
+    const missing = await run({ ...withStops, destinationStopId: 'SYN-GONE' });
+    expect(missing.meta?.degraded).toContain('stop_mapping_unknown_stop');
+  });
+
+  it('logs carry neither the ids nor the points it checked', async () => {
+    routes['/v1/stops'] = () => ({ status: 500, json: {} });
+    await run({ ...withStops, departure: { lat: 34, lng: -80 } });
+    const logged = [...(console.warn as jest.Mock).mock.calls, ...(console.log as jest.Mock).mock.calls].flat().join('\n');
+    expect(logged).toContain('data_agent_request_failed');
+    for (const secret of ['SYN-A', 'SYN-B', '32.7813', '-79.9306', 'data-agent.test', 'query=']) {
+      expect(logged).not.toContain(secret);
+    }
   });
 });

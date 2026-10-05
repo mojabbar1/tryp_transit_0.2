@@ -13,7 +13,10 @@ import {
   compareTrip,
   type DataAgentResult,
   getAlerts,
+  listStops,
   nearestStops,
+  searchStops,
+  STOP_LIST_LIMIT,
 } from '@/lib/api/data-agent';
 import type { ServerEnv } from '@/lib/env';
 import { citationFromAgent } from '@/lib/facts/approved';
@@ -25,12 +28,17 @@ import { citationFromAgent } from '@/lib/facts/approved';
 
 /**
  * The farthest a rider's point may be from the stop it maps to (engineering default, about a five-minute walk,
- * in line with the approved 5-minute `transit.access_buffer_min`). Farther than this, no stop is assumed.
+ * in line with the approved 5-minute `transit.access_buffer_min`). Farther than this, no stop is assumed. The same
+ * bound applies to a stop id sent with the point, so the schedule and the drive always describe the same journey.
  */
 export const MAX_STOP_DISTANCE_M = 400;
 export const MAX_ALERTS = 3;
 const ALERT_HEADER_MAX = 200;
 const ALERT_DESCRIPTION_MAX = 500;
+// The data agent's great-circle radius for `/v1/stops/nearest` (P4a feeds.py), so both mappings measure alike.
+const EARTH_RADIUS_M = 6_371_008.8;
+// An exact id search ranks id and code matches first (P4a), so a few results always include the id if it exists.
+const STOP_ID_SEARCH_LIMIT = 10;
 
 type AgentEnv = Pick<ServerEnv, 'dataAgentEnabled' | 'dataAgentBaseUrl'>;
 
@@ -133,12 +141,57 @@ function safeUrl(value: string | null): string | undefined {
   }
 }
 
-async function resolveStop(env: AgentEnv, point: LatLng, explicit: string | undefined): Promise<DataAgentResult<string | null>> {
-  if (explicit) return { ok: true, data: explicit };
+/** Great-circle distance in meters (haversine), as the data agent computes it, to 0.1 m as its API reports it. */
+export function greatCircleMeters(a: LatLng, b: LatLng): number {
+  const rad = (degrees: number) => (degrees * Math.PI) / 180;
+  const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2
+    + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
+  return Math.round(EARTH_RADIUS_M * 2 * Math.asin(Math.min(1, Math.sqrt(h))) * 10) / 10;
+}
+
+type StopList = () => ReturnType<typeof listStops>;
+
+/**
+ * A stop of the active feed by exact id, or null when the feed has none: the shared stop list first (cached for a day,
+ * no rider data; the pickers offer from it), then an exact id search only if that list may have been cut at its limit.
+ */
+async function findStop(env: AgentEnv, stopList: StopList, id: string): Promise<DataAgentResult<LatLng | null>> {
+  const list = await stopList();
+  if (!list.ok) return list;
+  const listed = list.data.items.find((stop) => stop.id === id);
+  if (listed || list.data.items.length < STOP_LIST_LIMIT) return { ok: true, data: listed ?? null };
+  const search = await searchStops(env, id, STOP_ID_SEARCH_LIMIT);
+  if (!search.ok) return search;
+  return { ok: true, data: search.data.items.find((stop) => stop.id === id) ?? null };
+}
+
+type StopMappingProblem = 'stop_mapping_unavailable' | 'stop_mapping_unknown_stop' | 'stop_mapping_mismatch';
+type StopMapping = { stopId: string } | { problem: StopMappingProblem };
+
+/**
+ * The stop for one end of the trip. A stop id sent with the point is never trusted on its own: it must be a stop of the
+ * active feed within `MAX_STOP_DISTANCE_M` of that point, else the schedule would describe another journey than the
+ * drive (which always uses the point). Without an id, the point maps to its nearest stop within the same bound.
+ */
+async function resolveStop(
+  env: AgentEnv,
+  stopList: StopList,
+  point: LatLng,
+  explicit: string | undefined,
+): Promise<DataAgentResult<StopMapping>> {
+  if (explicit) {
+    const stop = await findStop(env, stopList, explicit);
+    if (!stop.ok) return stop;
+    if (!stop.data) return { ok: true, data: { problem: 'stop_mapping_unknown_stop' } };
+    return {
+      ok: true,
+      data: greatCircleMeters(point, stop.data) <= MAX_STOP_DISTANCE_M ? { stopId: explicit } : { problem: 'stop_mapping_mismatch' },
+    };
+  }
   const nearest = await nearestStops(env, point, 1);
   if (!nearest.ok) return nearest;
   const stop = nearest.data.items[0];
-  return { ok: true, data: stop && stop.distance_m <= MAX_STOP_DISTANCE_M ? stop.id : null };
+  return { ok: true, data: stop && stop.distance_m <= MAX_STOP_DISTANCE_M ? { stopId: stop.id } : { problem: 'stop_mapping_unavailable' } };
 }
 
 async function loadAlerts(env: AgentEnv, routeId: string): Promise<{ alerts: TransitAlert[]; citations: CitationRef[]; degraded: string[] }> {
@@ -193,17 +246,24 @@ export async function getScheduledTransit(
 ): Promise<ScheduleOutcome> {
   if (!env.dataAgentEnabled) return unavailable(['data_agent_unavailable']);
 
+  // Both ends share one read of the stop list (itself cached for a day), even on a cold cache.
+  let stops: ReturnType<StopList> | undefined;
+  const stopList: StopList = () => (stops ??= listStops(env));
   const [origin, dest] = await Promise.all([
-    resolveStop(env, input.departure, input.departureStopId),
-    resolveStop(env, input.destination, input.destinationStopId),
+    resolveStop(env, stopList, input.departure, input.departureStopId),
+    resolveStop(env, stopList, input.destination, input.destinationStopId),
   ]);
   if (!origin.ok || !dest.ok) return unavailable(['data_agent_unavailable']);
-  if (origin.data === null || dest.data === null) return unavailable(['stop_mapping_unavailable']);
-  if (origin.data === dest.data) return unavailable(['stop_mapping_same_stop']);
+  if (!('stopId' in origin.data) || !('stopId' in dest.data)) {
+    const problems = [...new Set([origin.data, dest.data].flatMap((mapping) => ('problem' in mapping ? [mapping.problem] : [])))];
+    // An id the active feed doesn't have gets the same rider-facing reason the schedule lookup would give.
+    return unavailable(problems, problems.includes('stop_mapping_unknown_stop') ? { reason: 'unknown_stop' } : {});
+  }
+  if (origin.data.stopId === dest.data.stopId) return unavailable(['stop_mapping_same_stop']);
 
   const result = await compareTrip(env, {
-    originStopId: origin.data,
-    destStopId: dest.data,
+    originStopId: origin.data.stopId,
+    destStopId: dest.data.stopId,
     date: localDate(new Date(input.arrivalUtc), env.regionTimezone),
     arriveBy: input.arriveBy,
   });
