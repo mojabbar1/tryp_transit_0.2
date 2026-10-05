@@ -22,9 +22,10 @@ import { NextRequest } from 'next/server';
 import { POST } from '@/app/api/transit-insights/route';
 import { clearDataAgentCaches, STOP_LIST_LIMIT } from '@/lib/api/data-agent';
 import { TransitInsightResponseSchema } from '@/lib/contracts/transit-insights';
-import { greatCircleMeters } from '@/lib/insights/schedule';
+import { transitIsFaster } from '@/lib/insights/facts';
+import { greatCircleMeters, type ScheduledTrip } from '@/lib/insights/schedule';
 import { buildTransitInsights } from '@/lib/insights/v2';
-import type { LlmProvider } from '@/lib/llm/provider';
+import type { GenerateJsonRequest, LlmProvider } from '@/lib/llm/provider';
 
 const BASE = 'http://data-agent.test';
 // Monday 2026-10-05 08:00 in New York.
@@ -134,6 +135,19 @@ const fetchMock = jest.fn(serve);
 const calls = (path: string) => fetchMock.mock.calls.map(([input]) => new URL(String(input))).filter((url) => url.pathname === path);
 
 const provider = (reply: () => Promise<unknown>): LlmProvider => ({ name: 'openai', model: 'gpt-5.6-terra', generateJson: <T,>() => reply() as Promise<T> });
+/** A provider that answers `output` and keeps the prompts it was sent (to read the flags the engine computed). */
+function recordingProvider(output: { nudge: string; slots: string[] }) {
+  const prompts: string[] = [];
+  const llm: LlmProvider = {
+    name: 'openai',
+    model: 'gpt-5.6-terra',
+    generateJson: async <T,>(request: GenerateJsonRequest<T>) => {
+      prompts.push(request.user);
+      return output as T;
+    },
+  };
+  return { llm, flags: () => JSON.parse(prompts[0]).flags as Record<string, boolean> };
+}
 async function run(input: unknown) {
   const result = await buildTransitInsights(input, { now: NOW });
   if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
@@ -483,5 +497,65 @@ describe('explicit stop ids must match the active feed and their points (review 
     for (const secret of ['SYN-A', 'SYN-B', '32.7813', '-79.9306', 'data-agent.test', 'query=']) {
       expect(logged).not.toContain(secret);
     }
+  });
+});
+
+describe('"transit is faster" compares elapsed trip time with the drive, never in-vehicle time alone (review F1)', () => {
+  const drive = (minutes: number) => ({ route: { minutes, delayMinutes: 0, distanceMiles: 5, freeFlowMinutes: minutes }, degraded: [] });
+  const fasterClaim = { nudge: 'Transit is faster; {{bus_minutes}}.', slots: ['bus_minutes'] };
+
+  it('the review repro: 18 min on the bus but 23 min from leave-by (08:05) to arrival (08:28) vs a 20 min drive is not faster', async () => {
+    mockGetDriveRoute.mockResolvedValue(drive(20));
+    const { llm, flags } = recordingProvider(fasterClaim);
+    mockGetProvider.mockReturnValue(llm);
+    const json = await run(withStops);
+    expect(TransitInsightResponseSchema.safeParse(json).success).toBe(true);
+    expect(flags()).toMatchObject({ transitServiceKnown: true, transitFaster: false });
+    expect(json.meta?.narration).toMatchObject({ source: 'template', validated: false });
+    expect(json.meta?.degraded).toContain('narration_fallback');
+    expect(json.nudgeMessage).not.toMatch(/faster/i);
+    // The in-vehicle minutes keep their meaning; they are just not what a drive is compared with.
+    expect(json.travelTime).toBe(18);
+    expect(json.comparison?.transit).toMatchObject({ minutes: 18, leaveBy: '08:05' });
+  });
+
+  it('positive control: 15 min from leave-by (08:05) to arrival (08:20) vs a 20 min drive is faster, and the claim is served', async () => {
+    mockGetDriveRoute.mockResolvedValue(drive(20));
+    routes['/v1/compare'] = () => ({ status: 200, json: compareOk({ transit: trip('T1', '08:10', '08:20', 10, '08:05'), alternatives: [] }) });
+    const { llm, flags } = recordingProvider(fasterClaim);
+    mockGetProvider.mockReturnValue(llm);
+    const json = await run(withStops);
+    expect(flags()).toMatchObject({ transitServiceKnown: true, transitFaster: true });
+    expect(json.meta?.narration).toMatchObject({ source: 'llm', validated: true });
+    expect(json.nudgeMessage).toBe('Transit is faster; about 10 min by bus on route 10.');
+  });
+
+  it.each([
+    ['20 min elapsed vs a 20 min drive (a tie is not faster)', trip('T1', '08:10', '08:25', 15, '08:05'), withStops],
+    ['no leave-by, so no elapsed time (10 min on the bus alone proves nothing)', trip('T1', '08:10', '08:20', 10), withStops],
+    ['a destination point 50 m from its stop (that walk is not measured)', trip('T1', '08:10', '08:20', 10, '08:05'), { ...withStops, destination: northOf(body.destination, 50) }],
+    ['points mapped to stops 150 m away (that walk is not measured)', trip('T1', '08:10', '08:20', 10, '08:05'), body],
+  ])('%s: the claim stays off', async (_label, best, input) => {
+    mockGetDriveRoute.mockResolvedValue(drive(20));
+    routes['/v1/compare'] = () => ({ status: 200, json: compareOk({ transit: best, alternatives: [] }) });
+    routes['/v1/stops/nearest'] = (url) => ({ status: 200, json: nearest(url.searchParams.get('lat') === '32.7813' ? 'SYN-O' : 'SYN-D', 150) });
+    const { llm, flags } = recordingProvider(fasterClaim);
+    mockGetProvider.mockReturnValue(llm);
+    const json = await run(input);
+    expect(json.comparison?.transit.basis).toBe('scheduled');
+    expect(flags()).toMatchObject({ transitServiceKnown: true, transitFaster: false });
+    expect(json.nudgeMessage).not.toMatch(/faster/i);
+  });
+
+  it('transitIsFaster needs an elapsed duration, a drive, and a scheduled basis', () => {
+    const scheduled: ScheduledTrip = { minutes: 18, elapsedMinutes: 15, departure: '08:10', arrival: '08:25', routeId: 'R10' };
+    const route = { minutes: 20, delayMinutes: 0, distanceMiles: 5, freeFlowMinutes: 20 };
+    expect(transitIsFaster(scheduled, route, 'scheduled')).toBe(true);
+    expect(transitIsFaster({ ...scheduled, elapsedMinutes: 23 }, route, 'scheduled')).toBe(false);
+    expect(transitIsFaster({ ...scheduled, elapsedMinutes: 20 }, route, 'scheduled')).toBe(false);
+    expect(transitIsFaster({ ...scheduled, elapsedMinutes: undefined, minutes: 5 }, route, 'scheduled')).toBe(false);
+    expect(transitIsFaster(scheduled, null, 'scheduled')).toBe(false);
+    expect(transitIsFaster(scheduled, route, 'unavailable')).toBe(false);
+    expect(transitIsFaster(null, route, 'scheduled')).toBe(false);
   });
 });

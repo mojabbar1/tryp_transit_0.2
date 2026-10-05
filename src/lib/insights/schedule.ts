@@ -23,7 +23,8 @@ import { citationFromAgent } from '@/lib/facts/approved';
 
 /**
  * P4b: scheduled transit from the data agent (`/v1/compare`, D-6 direct-route lookup), or an honest
- * `unavailable` leg naming why. No number here is computed by the web app except in-vehicle + wait minutes.
+ * `unavailable` leg naming why. The only numbers computed here are the in-vehicle + wait minutes, the elapsed minutes
+ * from leave-by to arrival (for a like-for-like comparison with the drive), and a picked stop's distance from its point.
  */
 
 /**
@@ -43,7 +44,15 @@ const STOP_ID_SEARCH_LIMIT = 10;
 type AgentEnv = Pick<ServerEnv, 'dataAgentEnabled' | 'dataAgentBaseUrl'>;
 
 export interface ScheduledTrip {
+  /** In-vehicle minutes (plus any wait the agent reports): the bus ride itself, not the whole trip. */
   minutes: number;
+  /**
+   * Elapsed minutes from leaving (the leave-by time: the departure minus the approved walk-to-stop buffer) to the
+   * scheduled arrival, which is the span a drive covers too. Only set when that holds like for like: with a leave-by,
+   * and with the destination point at the destination stop itself (as when picked from the list). A walk from the stop
+   * to another point isn't measured, so it is never guessed.
+   */
+  elapsedMinutes?: number;
   leaveBy?: string;
   departure: string;
   arrival: string;
@@ -105,12 +114,14 @@ export function localDate(instant: Date, tz: string): string {
 function usableTrip(trip: AgentTrip, now: Date): boolean {
   const departure = Date.parse(trip.departure);
   const arrival = Date.parse(trip.arrival);
+  const leaveBy = trip.leave_by === null ? null : Date.parse(trip.leave_by);
   return (
     trip.basis === 'scheduled'
     && Number.isFinite(departure)
     && Number.isFinite(arrival)
     && arrival >= departure
     && departure >= now.getTime()
+    && (leaveBy === null || (Number.isFinite(leaveBy) && leaveBy <= departure))
     && trip.in_vehicle_min >= 0
     && trip.in_vehicle_min <= 24 * 60
     && (trip.wait_min === null || (trip.wait_min >= 0 && trip.wait_min <= 24 * 60))
@@ -166,7 +177,8 @@ async function findStop(env: AgentEnv, stopList: StopList, id: string): Promise<
 }
 
 type StopMappingProblem = 'stop_mapping_unavailable' | 'stop_mapping_unknown_stop' | 'stop_mapping_mismatch';
-type StopMapping = { stopId: string } | { problem: StopMappingProblem };
+/** A mapped stop and how far it is from the rider's point (meters, to 0.1 m), or why there is none. */
+type StopMapping = { stopId: string; distanceM: number } | { problem: StopMappingProblem };
 
 /**
  * The stop for one end of the trip. A stop id sent with the point is never trusted on its own: it must be a stop of the
@@ -183,15 +195,26 @@ async function resolveStop(
     const stop = await findStop(env, stopList, explicit);
     if (!stop.ok) return stop;
     if (!stop.data) return { ok: true, data: { problem: 'stop_mapping_unknown_stop' } };
-    return {
-      ok: true,
-      data: greatCircleMeters(point, stop.data) <= MAX_STOP_DISTANCE_M ? { stopId: explicit } : { problem: 'stop_mapping_mismatch' },
-    };
+    const distanceM = greatCircleMeters(point, stop.data);
+    return { ok: true, data: distanceM <= MAX_STOP_DISTANCE_M ? { stopId: explicit, distanceM } : { problem: 'stop_mapping_mismatch' } };
   }
   const nearest = await nearestStops(env, point, 1);
   if (!nearest.ok) return nearest;
   const stop = nearest.data.items[0];
-  return { ok: true, data: stop && stop.distance_m <= MAX_STOP_DISTANCE_M ? { stopId: stop.id } : { problem: 'stop_mapping_unavailable' } };
+  return {
+    ok: true,
+    data: stop && stop.distance_m <= MAX_STOP_DISTANCE_M ? { stopId: stop.id, distanceM: stop.distance_m } : { problem: 'stop_mapping_unavailable' },
+  };
+}
+
+/**
+ * Minutes from leaving to arriving, comparable with a drive between the same points, or undefined when that can't be
+ * established: it needs a leave-by (which already holds the approved walk-to-stop buffer) and a destination point at
+ * the destination stop itself, since no walk from the stop is measured.
+ */
+function elapsedMinutes(trip: AgentTrip, destinationDistanceM: number): number | undefined {
+  if (trip.leave_by === null || destinationDistanceM !== 0) return undefined;
+  return Math.round((Date.parse(trip.arrival) - Date.parse(trip.leave_by)) / 60_000);
 }
 
 async function loadAlerts(env: AgentEnv, routeId: string): Promise<{ alerts: TransitAlert[]; citations: CitationRef[]; degraded: string[] }> {
@@ -297,12 +320,14 @@ export async function getScheduledTransit(
     ...(trip.route_short_name ? { routeShortName: trip.route_short_name } : {}),
   }));
   const leaveBy = best.leave_by ? localHhmm(best.leave_by) ?? undefined : undefined;
+  const elapsed = elapsedMinutes(best, dest.data.distanceM);
   return {
     transit: scheduledLeg(compare, best, alternatives, minutes, alerts.alerts),
     travelTime: minutes,
     additionalRides,
     trip: {
       minutes,
+      ...(elapsed !== undefined ? { elapsedMinutes: elapsed } : {}),
       ...(leaveBy ? { leaveBy } : {}),
       departure: localHhmm(best.departure) as string,
       arrival: localHhmm(best.arrival) as string,

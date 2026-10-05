@@ -68,10 +68,21 @@ export function buildFacts({ route, density, cost, incidents, transit, offerActi
     facts,
     flags: {
       transitServiceKnown: transit.basis !== 'unavailable',
-      transitFaster: Boolean(trip && route && transit.basis !== 'unavailable' && trip.minutes < route.minutes),
+      transitFaster: transitIsFaster(trip, route, transit.basis),
       transitCheaper: cost !== null && cost.differenceCents > 0,
       offerActive,
       trafficNow: density !== null,
     },
   };
+}
+
+/**
+ * "Transit is faster" only on a like-for-like comparison: the bus trip's elapsed minutes (leave-by, which includes the
+ * approved walk-to-stop buffer, to arrival) against the drive's minutes. The in-vehicle minutes alone leave out the
+ * walk and the wait, so with no elapsed duration (see `ScheduledTrip.elapsedMinutes`) the claim stays off. Both
+ * sides are rounded minutes; rounding never reorders values, so a strict "less" holds for the exact times too.
+ */
+export function transitIsFaster(trip: ScheduledTrip | null | undefined, route: DriveRoute | null, basis: Comparison['transit']['basis']): boolean {
+  if (!trip || !route || basis === 'unavailable' || trip.elapsedMinutes === undefined) return false;
+  return trip.elapsedMinutes < route.minutes;
 }
