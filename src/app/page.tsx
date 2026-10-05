@@ -11,7 +11,8 @@ import { StopCombobox } from '@/components/stop-combobox';
 import { TransitInsightResponse, ApiErrorResponse } from '@/types/interfaces';
 import { isDemoMode } from '@/lib/demo-mode';
 import { isDemoScenario } from '@/lib/demo/scenarios';
-import { formatClock, formatCostDifference, transitReasonText } from '@/lib/format';
+import { formatCostDifference, transitReasonText } from '@/lib/format';
+import { scheduledTimeText } from '@/lib/trip-view';
 import { stopRequestFields, type StopOption } from '@/lib/stops/types';
 import { stopSourceNote, useStops } from '@/lib/stops/use-stops';
 import { toNumberOrNull } from '@/lib/utils';
@@ -516,7 +517,7 @@ export default function TransitInsightsPage() {
                       {transit?.basis === 'scheduled' && (
                         <p className="text-sm text-blue-700 mt-1">
                           Scheduled{transit.routeShortName ? `, route ${transit.routeShortName}` : ''}
-                          {transit.leaveBy ? `; leave by ${formatClock(transit.leaveBy)}` : ''}
+                          {transit.leaveBy ? `; leave by ${scheduledTimeText(transit.leaveByAt, transit.leaveBy, data.meta)}` : ''}
                         </p>
                       )}
                     </>
@@ -574,13 +575,13 @@ export default function TransitInsightsPage() {
                         <div>
                           {ride.departureTime && (
                             <span className="text-blue-600 font-semibold mr-4">
-                              🕐 {formatClock(ride.departureTime)}
+                              🕐 {scheduledTimeText(ride.departureAt, ride.departureTime, data.meta)}
                             </span>
                           )}
                           <span className="text-gray-700">
                             {ride.travelTime} mins {view?.isDemoData ? 'travel time' : 'on the bus'}
                             {ride.routeShortName && `, route ${ride.routeShortName}`}
-                            {ride.arrivalTime && `, arrives ${formatClock(ride.arrivalTime)}`}
+                            {ride.arrivalTime && `, arrives ${scheduledTimeText(ride.arrivalAt, ride.arrivalTime, data.meta)}`}
                           </span>
                         </div>
                         {ride.trafficDensity && (

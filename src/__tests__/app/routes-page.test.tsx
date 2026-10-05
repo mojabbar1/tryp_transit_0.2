@@ -10,7 +10,8 @@ jest.mock('next/navigation', () => ({ useRouter: () => ({ push: mockPush }) }));
 jest.mock('@/contexts/travel-context', () => ({ useTravelContext: () => mockTrip }));
 
 import RoutesPage from '@/app/routes/page';
-import { shouldLeaveRoutesPage, visibleIncentive } from '@/lib/trip-view';
+import { type TransitInsightResponse, TransitInsightResponseSchema } from '@/lib/contracts/transit-insights';
+import { shouldLeaveRoutesPage, tripSummaryFrom, visibleIncentive } from '@/lib/trip-view';
 
 const allUnavailable = {
   hasTrip: true,
@@ -92,5 +93,53 @@ describe('routes page', () => {
     expect(text).toContain('this trip needs a transfer');
     expect(text).toContain('Bus time Unavailable');
     expect(text).not.toMatch(/Leave for the stop/);
+  });
+
+  describe('the retained summary keeps the trip’s day (review F3)', () => {
+    // What /find-rides keeps from an answer made at 16:00 in New York on Oct 5 for an 08:30 arrival (Oct 6).
+    const nextDayResponse: TransitInsightResponse = {
+      travelTime: 18,
+      trafficDensity: null,
+      costSavingsPerTrip: null,
+      nudgeMessage: null,
+      incentiveDetails: null,
+      additionalRides: [],
+      comparison: {
+        drive: null,
+        transit: {
+          basis: 'scheduled', minutes: 18, nextDepartures: ['08:10'], source: { name: 'Synthetic test feed GTFS schedule' },
+          routing: 'direct_only', leaveBy: '08:05', routeShortName: '10',
+          leaveByAt: '2026-10-06T08:05:00-04:00', departureAt: '2026-10-06T08:10:00-04:00', arrivalAt: '2026-10-06T08:28:00-04:00',
+          serviceDate: '2026-10-06', targetAt: '2026-10-06T08:30:00-04:00',
+        },
+      },
+      meta: {
+        generatedAt: '2026-10-05T20:00:00.000Z', region: 'charleston-sc', timezone: 'America/New_York', demo: false, offerActive: false,
+        narration: { source: 'template', provider: 'template', validated: false }, degraded: [], citations: [],
+      },
+    };
+    const summaryOf = (response: TransitInsightResponse) => ({ ...tripSummaryFrom(response), hasTrip: true, setTravelData: () => undefined });
+
+    it('a next-day trip says "tomorrow" on /routes', () => {
+      expect(TransitInsightResponseSchema.safeParse(nextDayResponse).success).toBe(true);
+      mockTrip = summaryOf(nextDayResponse);
+      const text = visibleText(renderToString(<RoutesPage />));
+      expect(text).toContain('Leave for the stop by 8:05 AM tomorrow to catch route 10 (scheduled)');
+    });
+
+    it('a later day shows its date, and the day is read in the region zone', () => {
+      const transit = { ...nextDayResponse.comparison!.transit, leaveByAt: '2026-10-08T08:05:00-04:00' };
+      mockTrip = summaryOf({ ...nextDayResponse, comparison: { ...nextDayResponse.comparison!, transit } });
+      expect(visibleText(renderToString(<RoutesPage />))).toContain('Leave for the stop by 8:05 AM on Thu, Oct 8 to catch route 10');
+      // 21:00 in New York is already the next day in UTC; for the rider it is still this evening.
+      const evening = { ...nextDayResponse.comparison!.transit, leaveBy: '21:00', leaveByAt: '2026-10-05T21:00:00-04:00' };
+      mockTrip = summaryOf({ ...nextDayResponse, comparison: { ...nextDayResponse.comparison!, transit: evening } });
+      expect(visibleText(renderToString(<RoutesPage />))).toContain('Leave for the stop by 9:00 PM to catch route 10');
+    });
+
+    it('an older summary without the full time keeps the clock-only line', () => {
+      mockTrip = { ...allUnavailable, travelTime: 18, transitBasis: 'scheduled', leaveBy: '08:05', routeShortName: '10' };
+      expect(visibleText(renderToString(<RoutesPage />))).toContain('Leave for the stop by 8:05 AM to catch route 10 (scheduled)');
+    });
   });
 });

@@ -11,8 +11,8 @@ import {
 import { Citations } from '@/components/citations';
 import { DemoBadge } from '@/components/demo-badge';
 import { useTravelContext } from '@/contexts/travel-context';
-import { formatClock, formatCostDifference, transitReasonText } from '@/lib/format';
-import { shouldLeaveRoutesPage, visibleIncentive } from '@/lib/trip-view';
+import { formatCostDifference, transitReasonText } from '@/lib/format';
+import { scheduledTimeText, shouldLeaveRoutesPage, visibleIncentive } from '@/lib/trip-view';
 import { isNil } from '@/lib/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -20,8 +20,10 @@ import { useEffect } from 'react';
 
 const RoutesPage = () => {
   const trip = useTravelContext();
-  const { hasTrip, costSavings, trafficDensity, travelTime, isDemo, leaveBy, routeShortName, transitReason, alerts, sources, citations } = trip;
+  const { hasTrip, costSavings, trafficDensity, travelTime, isDemo, leaveBy, leaveByAt, routeShortName, transitReason, alerts, sources, citations } = trip;
   const reasonText = transitReasonText(transitReason);
+  // The leave-by with its day ("8:05 AM tomorrow") in the region's zone, as of when the answer was made.
+  const leaveByText = leaveBy ? scheduledTimeText(leaveByAt, leaveBy, trip) : null;
   const router = useRouter();
   const costText = formatCostDifference(costSavings);
   const incentive = visibleIncentive(trip);
@@ -57,10 +59,10 @@ const RoutesPage = () => {
             <div className="grid grid-cols-1 gap-4">
               <div className="flex flex-col items-center bg-primary p-4 rounded-lg shadow-md w-full">
                 <p className="text-lg text-white font-medium">
-                  {leaveBy ? (
+                  {leaveByText ? (
                     <>
                       Leave for the stop by{' '}
-                      <span className="font-bold">{formatClock(leaveBy)}</span>
+                      <span className="font-bold">{leaveByText}</span>
                       {routeShortName && <> to catch route {routeShortName}</>} (scheduled).
                     </>
                   ) : reasonText ? (

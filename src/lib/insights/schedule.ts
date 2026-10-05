@@ -56,6 +56,11 @@ export interface ScheduledTrip {
   leaveBy?: string;
   departure: string;
   arrival: string;
+  /** The full times (offset-qualified local ISO, as the agent gives them) behind the HH:MM fields, and the service day. */
+  leaveByAt?: string;
+  departureAt: string;
+  arrivalAt: string;
+  serviceDate: string;
   routeId: string;
   routeShortName?: string;
 }
@@ -73,7 +78,10 @@ export interface ScheduleOutcome {
 
 const UNAVAILABLE_SOURCE = { name: 'none (schedule unavailable)' };
 
-function unavailable(degraded: string[], extra: Partial<Pick<ScheduleOutcome, 'reason' | 'citations'>> = {}): ScheduleOutcome {
+function unavailable(
+  degraded: string[],
+  extra: Partial<Pick<ScheduleOutcome, 'reason' | 'citations'>> & { targetAt?: string } = {},
+): ScheduleOutcome {
   const reason = extra.reason ?? null;
   return {
     transit: {
@@ -82,6 +90,7 @@ function unavailable(degraded: string[], extra: Partial<Pick<ScheduleOutcome, 'r
       nextDepartures: [],
       source: UNAVAILABLE_SOURCE,
       ...(reason ? { reason, routing: 'direct_only' as const } : {}),
+      ...(extra.targetAt ? { targetAt: extra.targetAt } : {}),
     },
     travelTime: null,
     additionalRides: [],
@@ -248,6 +257,11 @@ function scheduledLeg(compare: AgentCompare, best: AgentTrip, alternatives: Agen
     ...(leaveBy ? { leaveBy } : {}),
     ...(best.route_short_name ? { routeShortName: best.route_short_name } : {}),
     ...(alerts.length ? { alerts } : {}),
+    ...(best.leave_by ? { leaveByAt: best.leave_by } : {}),
+    departureAt: best.departure,
+    arrivalAt: best.arrival,
+    serviceDate: best.service_date,
+    targetAt: compare.target,
   };
 }
 
@@ -298,7 +312,7 @@ export async function getScheduledTransit(
   if (!compare.transit) {
     // No trip means no alternatives either, whatever else the payload carries (no phantom trips).
     return compare.reason
-      ? unavailable([], { reason: compare.reason, citations })
+      ? unavailable([], { reason: compare.reason, citations, targetAt: compare.target })
       : unavailable(['transit_schedule_unavailable']);
   }
   const best = compare.transit;
@@ -318,6 +332,9 @@ export async function getScheduledTransit(
     arrivalTime: localHhmm(trip.arrival) as string,
     travelTime: Math.round(trip.in_vehicle_min + (trip.wait_min ?? 0)),
     ...(trip.route_short_name ? { routeShortName: trip.route_short_name } : {}),
+    departureAt: trip.departure,
+    arrivalAt: trip.arrival,
+    serviceDate: trip.service_date,
   }));
   const leaveBy = best.leave_by ? localHhmm(best.leave_by) ?? undefined : undefined;
   const elapsed = elapsedMinutes(best, dest.data.distanceM);
@@ -331,6 +348,10 @@ export async function getScheduledTransit(
       ...(leaveBy ? { leaveBy } : {}),
       departure: localHhmm(best.departure) as string,
       arrival: localHhmm(best.arrival) as string,
+      ...(best.leave_by ? { leaveByAt: best.leave_by } : {}),
+      departureAt: best.departure,
+      arrivalAt: best.arrival,
+      serviceDate: best.service_date,
       routeId: best.route_id,
       ...(best.route_short_name ? { routeShortName: best.route_short_name } : {}),
     },

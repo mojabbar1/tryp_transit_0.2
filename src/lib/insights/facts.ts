@@ -3,7 +3,7 @@ import type { Comparison, TrafficDensity, TransitAlert } from '@/lib/contracts/t
 import type { DriveRoute, TrafficIncident } from '@/lib/api/tomtom';
 import type { TripCost } from '@/lib/domain/cost';
 import { COST_FACT_KEYS } from '@/lib/facts/approved';
-import { formatClock } from '@/lib/format';
+import { formatClock, formatScheduleTime } from '@/lib/format';
 import type { NarrationFact, NarrationFlags } from '@/lib/llm/validate-claims';
 import type { ScheduledTrip } from './schedule';
 
@@ -28,6 +28,15 @@ export function costPhrase(differenceCents: number): string {
 /** " on route 10", or "" when the feed has no short name. */
 export const onRoute = (trip: Pick<ScheduledTrip, 'routeShortName'>) => (trip.routeShortName ? ` on route ${trip.routeShortName}` : '');
 
+/**
+ * "leave by 8:05 AM", with the day when it isn't the day of the request ("leave by 8:05 AM tomorrow"), read in the
+ * region's zone from the full leave-by time; the clock-only phrase when there is no full time.
+ */
+export function leaveByPhrase(trip: Pick<ScheduledTrip, 'leaveBy' | 'leaveByAt'>, timeZone: string, now: Date): string | undefined {
+  if (!trip.leaveBy) return undefined;
+  return `leave by ${formatScheduleTime(trip.leaveByAt, timeZone, now.toISOString()) ?? formatClock(trip.leaveBy)}`;
+}
+
 export interface FactInputs {
   route: DriveRoute | null;
   density: TrafficDensity | null;
@@ -41,13 +50,16 @@ export interface FactInputs {
   trip?: ScheduledTrip | null;
   /** The first active alert for the trip's route, already reduced to plain text (P4b). */
   alert?: TransitAlert | null;
+  /** The region's time zone and the request time, so a scheduled time carries its day. */
+  timeZone: string;
+  now: Date;
 }
 
 /**
  * Self-describing facts for narration, rendered by code from measured or approved values only.
  * Labels avoid claim words, so a fact never contradicts the flags built alongside it.
  */
-export function buildFacts({ route, density, cost, incidents, transit, offerActive, fareUsd, trip, alert }: FactInputs): {
+export function buildFacts({ route, density, cost, incidents, transit, offerActive, fareUsd, trip, alert, timeZone, now }: FactInputs): {
   facts: NarrationFact[];
   flags: NarrationFlags;
 } {
@@ -61,7 +73,8 @@ export function buildFacts({ route, density, cost, incidents, transit, offerActi
   }
   if (trip) {
     facts.push({ id: 'bus_minutes', label: 'Scheduled bus', phrase: `about ${trip.minutes} min by bus${onRoute(trip)}` });
-    if (trip.leaveBy) facts.push({ id: 'leave_by', label: 'Leave by', phrase: `leave by ${formatClock(trip.leaveBy)}` });
+    const leaveBy = leaveByPhrase(trip, timeZone, now);
+    if (leaveBy) facts.push({ id: 'leave_by', label: 'Leave by', phrase: leaveBy });
   }
   // The alert is CARTA's text, carried as data: it is quoted, never followed, and the validator still applies to
   // any narration that references it (a phrase that contradicts the flags fails closed).

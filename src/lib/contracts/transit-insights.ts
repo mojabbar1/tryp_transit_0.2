@@ -20,6 +20,8 @@ const STOP_ID = /^[\x21-\x7E]{1,100}$/;
 const REASON_CODE = /^[a-z][a-z0-9_]*$/;
 
 const finite = () => z.number().finite();
+// A scheduled instant as the data agent gives it: local time with its UTC offset, so the calendar date is never lost.
+const offsetDateTime = () => z.string().datetime({ offset: true });
 
 // One check that parses and restricts the scheme, so a bad link reports exactly one issue.
 const httpUrl = z.string().refine(
@@ -64,6 +66,10 @@ export const AdditionalRideSchema = z.object({
   trafficDensity: TrafficDensitySchema.optional(),
   arrivalTime: z.string().regex(HHMM, 'Expected HH:MM (24-hour)').optional(),
   routeShortName: z.string().min(1).optional(),
+  // P4b: the full scheduled times behind the HH:MM fields (which stay as they were), and the trip's GTFS service day.
+  departureAt: offsetDateTime().optional(),
+  arrivalAt: offsetDateTime().optional(),
+  serviceDate: z.string().date().optional(),
 });
 
 export const SourceRefSchema = z.object({
@@ -111,15 +117,22 @@ const TransitLegSchema = z
     routing: z.literal('direct_only').optional(),
     reason: TransitReasonSchema.optional(),
     alerts: z.array(TransitAlertSchema).max(3).optional(),
+    // The full scheduled times behind the HH:MM fields (which stay as they were), the trip's GTFS service day, and the
+    // arrival target the lookup was for (also kept when it found no trip), so a next-day trip keeps its date.
+    leaveByAt: offsetDateTime().optional(),
+    departureAt: offsetDateTime().optional(),
+    arrivalAt: offsetDateTime().optional(),
+    serviceDate: z.string().date().optional(),
+    targetAt: offsetDateTime().optional(),
   })
   .superRefine((leg, ctx) => {
     if (leg.basis !== 'unavailable' && leg.reason !== undefined) {
       ctx.addIssue({ code: 'custom', path: ['reason'], message: 'a reason explains a missing trip, so it needs basis "unavailable"' });
     }
-    if (leg.basis === 'unavailable' && leg.leaveBy !== undefined) {
-      ctx.addIssue({ code: 'custom', path: ['leaveBy'], message: 'leaveBy needs a scheduled trip' });
-    }
     if (leg.basis === 'unavailable') {
+      for (const key of ['leaveBy', 'leaveByAt', 'departureAt', 'arrivalAt', 'serviceDate'] as const) {
+        if (leg[key] !== undefined) ctx.addIssue({ code: 'custom', path: [key], message: `${key} needs a scheduled trip` });
+      }
       if (leg.minutes !== null) {
         ctx.addIssue({ code: 'custom', path: ['minutes'], message: 'minutes must be null when basis is "unavailable" (D-21)' });
       }

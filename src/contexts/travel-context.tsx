@@ -21,6 +21,15 @@ export interface TripSummary {
   alerts?: TransitAlert[];
   sources?: CitationRef[];
   citations?: string[];
+  // The scheduled trip's full times and days (offset-qualified), and the region's zone and the moment the answer was
+  // made, so a trip on another day is shown with its day (P4b review).
+  leaveByAt?: string;
+  departureAt?: string;
+  arrivalAt?: string;
+  serviceDate?: string;
+  targetAt?: string;
+  timezone?: string;
+  generatedAt?: string;
 }
 
 interface TravelContextProps extends TripSummary {

@@ -14,12 +14,12 @@ import { densityFromFlows } from '@/lib/domain/traffic';
 import { getTransitResult } from '@/lib/domain/transit-result';
 import { getEnv } from '@/lib/env';
 import { COST_FACT_KEYS, costValuesFrom, getApprovedFacts } from '@/lib/facts/approved';
-import { formatClock, transitReasonText } from '@/lib/format';
+import { transitReasonText } from '@/lib/format';
 import { narrate } from '@/lib/llm/narrate';
 import { getProvider } from '@/lib/llm/provider';
 import { renderTemplate } from '@/lib/llm/template';
 import { log } from '@/lib/log';
-import { buildFacts, costPhrase, NARRATION_FACT_KEYS, onRoute } from './facts';
+import { buildFacts, costPhrase, leaveByPhrase, NARRATION_FACT_KEYS, onRoute } from './facts';
 import { getScheduledTransit, type ScheduleOutcome } from './schedule';
 
 export type InsightsResult =
@@ -136,6 +136,8 @@ export async function buildTransitInsights(
     fareUsd: costValues.baseFareUsd,
     trip,
     alert: schedule?.alerts[0] ?? null,
+    timeZone: env.regionTimezone,
+    now,
   });
   const template = renderTemplate({
     density,
@@ -143,7 +145,7 @@ export async function buildTransitInsights(
     cost: cost ? { differenceCents: cost.differenceCents, phrase: costPhrase(cost.differenceCents) } : undefined,
     basis: transit.basis,
     busPhrase: trip ? `about ${trip.minutes} min${onRoute(trip)}` : undefined,
-    leaveByPhrase: trip?.leaveBy ? `leave by ${formatClock(trip.leaveBy)}` : undefined,
+    leaveByPhrase: trip ? leaveByPhrase(trip, env.regionTimezone, now) : undefined,
     reasonText,
   });
   const outcome = await narrate({ provider: getProvider(env), facts, flags, timeoutMs: env.llmTimeoutMs, template });

@@ -25,6 +25,7 @@ import { TransitInsightResponseSchema } from '@/lib/contracts/transit-insights';
 import { transitIsFaster } from '@/lib/insights/facts';
 import { greatCircleMeters, type ScheduledTrip } from '@/lib/insights/schedule';
 import { buildTransitInsights } from '@/lib/insights/v2';
+import { scheduledTimeText, tripSummaryFrom } from '@/lib/trip-view';
 import type { GenerateJsonRequest, LlmProvider } from '@/lib/llm/provider';
 
 const BASE = 'http://data-agent.test';
@@ -62,6 +63,10 @@ const trip = (id: string, dep: string, arr: string, minutes: number, leaveBy: st
   leave_by: leaveBy ? `2026-10-05T${leaveBy}:00-04:00` : null,
   wait_min: null,
   interpolated: false,
+});
+/** A trip on any day, with full local times (the agent's offset-qualified ISO strings). */
+const tripOn = (id: string, serviceDate: string, departure: string, arrival: string, minutes: number, leaveBy: string | null) => ({
+  ...trip(id, '00:00', '00:00', minutes), service_date: serviceDate, departure, arrival, leave_by: leaveBy,
 });
 const compareOk = (overrides: Record<string, unknown> = {}) => ({
   transit: trip('T1', '08:10', '08:28', 18, '08:05'),
@@ -181,9 +186,18 @@ describe('v2 engine with the data agent (P4b)', () => {
     expect(json.travelTime).toBe(18);
     expect(json.comparison?.transit).toMatchObject({
       basis: 'scheduled', minutes: 18, leaveBy: '08:05', routeShortName: '10', routing: 'direct_only', nextDepartures: ['08:10', '08:20'],
+      // The full times behind the HH:MM fields, the service day, and the arrival target.
+      leaveByAt: '2026-10-05T08:05:00-04:00',
+      departureAt: '2026-10-05T08:10:00-04:00',
+      arrivalAt: '2026-10-05T08:28:00-04:00',
+      serviceDate: '2026-10-05',
+      targetAt: '2026-10-05T08:30:00-04:00',
     });
     expect(json.comparison?.transit.reason).toBeUndefined();
-    expect(json.additionalRides).toEqual([{ departureTime: '08:20', arrivalTime: '08:40', travelTime: 20, routeShortName: '10' }]);
+    expect(json.additionalRides).toEqual([{
+      departureTime: '08:20', arrivalTime: '08:40', travelTime: 20, routeShortName: '10',
+      departureAt: '2026-10-05T08:20:00-04:00', arrivalAt: '2026-10-05T08:40:00-04:00', serviceDate: '2026-10-05',
+    }]);
     expect(json.additionalRides?.[0]).not.toHaveProperty('trafficDensity');
     expect(json.meta?.sources).toEqual(expect.arrayContaining([
       expect.objectContaining({ sourceId: 'synthetic-gtfs', attribution: 'Synthetic test feed' }),
@@ -548,7 +562,10 @@ describe('"transit is faster" compares elapsed trip time with the drive, never i
   });
 
   it('transitIsFaster needs an elapsed duration, a drive, and a scheduled basis', () => {
-    const scheduled: ScheduledTrip = { minutes: 18, elapsedMinutes: 15, departure: '08:10', arrival: '08:25', routeId: 'R10' };
+    const scheduled: ScheduledTrip = {
+      minutes: 18, elapsedMinutes: 15, departure: '08:10', arrival: '08:25', routeId: 'R10',
+      departureAt: '2026-10-05T08:10:00-04:00', arrivalAt: '2026-10-05T08:25:00-04:00', serviceDate: '2026-10-05',
+    };
     const route = { minutes: 20, delayMinutes: 0, distanceMiles: 5, freeFlowMinutes: 20 };
     expect(transitIsFaster(scheduled, route, 'scheduled')).toBe(true);
     expect(transitIsFaster({ ...scheduled, elapsedMinutes: 23 }, route, 'scheduled')).toBe(false);
@@ -628,5 +645,104 @@ describe('a narrated fare cites its own source, with or without a driving cost (
       expect(json.meta?.citations?.filter((ref) => ref === key)).toEqual([key]);
       expect(refs(json).filter((ref) => ref === key)).toEqual([key]);
     }
+  });
+});
+
+describe('scheduled times keep their date through the response and the retained summary (review F3)', () => {
+  // 16:00 in New York on Monday, October 5: "arrive by 08:30" now means Tuesday, October 6.
+  const AT_4PM = new Date('2026-10-05T20:00:00Z');
+  const nextDay = () => compareOk({
+    transit: tripOn('T1', '2026-10-06', '2026-10-06T08:10:00-04:00', '2026-10-06T08:28:00-04:00', 18, '2026-10-06T08:05:00-04:00'),
+    alternatives: [tripOn('T2', '2026-10-06', '2026-10-06T08:20:00-04:00', '2026-10-06T08:40:00-04:00', 20, '2026-10-06T08:15:00-04:00')],
+    target: '2026-10-06T08:30:00-04:00',
+  });
+  async function runAt(now: Date, input: unknown) {
+    const result = await buildTransitInsights(input, { now });
+    if (result.status !== 200) throw new Error(`expected 200, got ${result.status}`);
+    expect(TransitInsightResponseSchema.safeParse(result.body).success).toBe(true);
+    return result.body;
+  }
+
+  it('the review repro: asked at 16:00 on Oct 5, the 08:30 arrival is Oct 6, and every time says so', async () => {
+    routes['/v1/compare'] = () => ({ status: 200, json: nextDay() });
+    const json = await runAt(AT_4PM, withStops);
+    expect(calls('/v1/compare')[0].searchParams.get('date')).toBe('2026-10-06');
+    const transit = json.comparison!.transit;
+    // The HH:MM fields stay as they were; the full times and days come alongside them.
+    expect(transit).toMatchObject({
+      basis: 'scheduled', leaveBy: '08:05', nextDepartures: ['08:10', '08:20'],
+      leaveByAt: '2026-10-06T08:05:00-04:00', departureAt: '2026-10-06T08:10:00-04:00', arrivalAt: '2026-10-06T08:28:00-04:00',
+      serviceDate: '2026-10-06', targetAt: '2026-10-06T08:30:00-04:00',
+    });
+    expect(json.additionalRides).toEqual([{
+      departureTime: '08:20', arrivalTime: '08:40', travelTime: 20, routeShortName: '10',
+      departureAt: '2026-10-06T08:20:00-04:00', arrivalAt: '2026-10-06T08:40:00-04:00', serviceDate: '2026-10-06',
+    }]);
+    // Home page: the nudge it shows verbatim, the leave-by line and each alternative, in the region's zone.
+    expect(json.nudgeMessage).toContain('the scheduled bus takes about 18 min on route 10, so leave by 8:05 AM tomorrow.');
+    expect(scheduledTimeText(transit.leaveByAt, transit.leaveBy, json.meta)).toBe('8:05 AM tomorrow');
+    expect(json.additionalRides!.map((ride) => [
+      scheduledTimeText(ride.departureAt, ride.departureTime, json.meta),
+      scheduledTimeText(ride.arrivalAt, ride.arrivalTime, json.meta),
+    ])).toEqual([['8:20 AM tomorrow', '8:40 AM tomorrow']]);
+    // The summary /routes keeps after /find-rides: the same full times, plus the zone and moment of the answer.
+    const summary = tripSummaryFrom(json);
+    expect(summary).toMatchObject({
+      leaveBy: '08:05', leaveByAt: '2026-10-06T08:05:00-04:00', departureAt: '2026-10-06T08:10:00-04:00',
+      arrivalAt: '2026-10-06T08:28:00-04:00', serviceDate: '2026-10-06', targetAt: '2026-10-06T08:30:00-04:00',
+      timezone: 'America/New_York', generatedAt: AT_4PM.toISOString(),
+    });
+    expect(summary.additionalRides[0]).toMatchObject({ departureAt: '2026-10-06T08:20:00-04:00', serviceDate: '2026-10-06' });
+    expect(scheduledTimeText(summary.leaveByAt, summary.leaveBy, summary)).toBe('8:05 AM tomorrow');
+  });
+
+  it('the narration fact carries the day too', async () => {
+    routes['/v1/compare'] = () => ({ status: 200, json: nextDay() });
+    const { llm } = recordingProvider({ nudge: 'Leave by: {{leave_by}}. Check the next bus.', slots: ['leave_by'] });
+    mockGetProvider.mockReturnValue(llm);
+    const json = await runAt(AT_4PM, withStops);
+    expect(json.meta?.narration).toMatchObject({ source: 'llm', validated: true });
+    expect(json.nudgeMessage).toBe('Leave by: leave by 8:05 AM tomorrow. Check the next bus.');
+  });
+
+  it('a same-day trip reads as before: no day added', async () => {
+    const json = await run(withStops);
+    expect(json.nudgeMessage).toContain('so leave by 8:05 AM.');
+    expect(scheduledTimeText(json.comparison?.transit.leaveByAt, json.comparison?.transit.leaveBy, json.meta)).toBe('8:05 AM');
+  });
+
+  it('overnight: a trip of the 5th’s service day leaves tonight and arrives after midnight, each time on its own day', async () => {
+    const AT_10PM = new Date('2026-10-06T02:00:00Z'); // 22:00 in New York, October 5
+    routes['/v1/compare'] = () => ({
+      status: 200,
+      json: compareOk({
+        transit: tripOn('T9', '2026-10-05', '2026-10-05T23:50:00-04:00', '2026-10-06T00:20:00-04:00', 30, '2026-10-05T23:45:00-04:00'),
+        alternatives: [],
+        target: '2026-10-06T00:30:00-04:00',
+      }),
+    });
+    const json = await runAt(AT_10PM, { ...withStops, timeToDestination: '00:30' });
+    expect(Object.fromEntries(calls('/v1/compare')[0].searchParams)).toMatchObject({ date: '2026-10-06', arrive_by: '00:30' });
+    const transit = json.comparison!.transit;
+    expect(transit).toMatchObject({
+      leaveBy: '23:45', serviceDate: '2026-10-05', leaveByAt: '2026-10-05T23:45:00-04:00',
+      arrivalAt: '2026-10-06T00:20:00-04:00', targetAt: '2026-10-06T00:30:00-04:00',
+    });
+    expect(json.nudgeMessage).toContain('so leave by 11:45 PM.');
+    expect(scheduledTimeText(transit.leaveByAt, transit.leaveBy, json.meta)).toBe('11:45 PM');
+    expect(scheduledTimeText(transit.arrivalAt, undefined, json.meta)).toBe('12:20 AM tomorrow');
+  });
+
+  it('no trip: the reason keeps the target it was for, and carries no trip times', async () => {
+    routes['/v1/compare'] = () => ({
+      status: 200,
+      json: compareOk({ transit: null, alternatives: [], reason: 'no_service', target: '2026-10-06T08:30:00-04:00' }),
+    });
+    const json = await runAt(AT_4PM, withStops);
+    expect(json.comparison?.transit).toMatchObject({ basis: 'unavailable', reason: 'no_service', targetAt: '2026-10-06T08:30:00-04:00' });
+    for (const key of ['leaveBy', 'leaveByAt', 'departureAt', 'arrivalAt', 'serviceDate']) {
+      expect(json.comparison?.transit).not.toHaveProperty(key);
+    }
+    expect(tripSummaryFrom(json).targetAt).toBe('2026-10-06T08:30:00-04:00');
   });
 });
