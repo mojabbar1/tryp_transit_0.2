@@ -1,17 +1,40 @@
 import 'server-only';
-import type { Comparison, TrafficDensity } from '@/lib/contracts/transit-insights';
+import type { Comparison, TrafficDensity, TransitAlert } from '@/lib/contracts/transit-insights';
 import type { DriveRoute, TrafficIncident } from '@/lib/api/tomtom';
-import { assumptions } from '@/lib/domain/assumptions';
 import type { TripCost } from '@/lib/domain/cost';
+import { COST_FACT_KEYS } from '@/lib/facts/approved';
+import { formatClock, formatScheduleTime } from '@/lib/format';
 import type { NarrationFact, NarrationFlags } from '@/lib/llm/validate-claims';
+import type { ScheduledTrip } from './schedule';
 
 const money = (cents: number) => `$${(Math.abs(cents) / 100).toFixed(2)}`;
+
+/**
+ * The approved fact keys behind each narration fact that quotes them, so a narrated figure cites its own source
+ * whether or not the response shows a cost: the fare needs no drive, so it can be narrated without one.
+ */
+export const NARRATION_FACT_KEYS: Readonly<Record<string, readonly string[]>> = {
+  bus_fare: ['transit.base_fare_usd'],
+  cost_difference_per_trip: COST_FACT_KEYS,
+};
 
 /** Signed cost phrase: drive − transit, so positive means the bus base fare is cheaper than driving. */
 export function costPhrase(differenceCents: number): string {
   if (differenceCents > 0) return `about ${money(differenceCents)} less than driving`;
   if (differenceCents < 0) return `about ${money(differenceCents)} more than driving`;
   return 'about the same as driving';
+}
+
+/** " on route 10", or "" when the feed has no short name. */
+export const onRoute = (trip: Pick<ScheduledTrip, 'routeShortName'>) => (trip.routeShortName ? ` on route ${trip.routeShortName}` : '');
+
+/**
+ * "leave by 8:05 AM", with the day when it isn't the day of the request ("leave by 8:05 AM tomorrow"), read in the
+ * region's zone from the full leave-by time; the clock-only phrase when there is no full time.
+ */
+export function leaveByPhrase(trip: Pick<ScheduledTrip, 'leaveBy' | 'leaveByAt'>, timeZone: string, now: Date): string | undefined {
+  if (!trip.leaveBy) return undefined;
+  return `leave by ${formatScheduleTime(trip.leaveByAt, timeZone, now.toISOString()) ?? formatClock(trip.leaveBy)}`;
 }
 
 export interface FactInputs {
@@ -21,13 +44,22 @@ export interface FactInputs {
   incidents: TrafficIncident[] | null;
   transit: Comparison['transit'];
   offerActive: boolean;
+  /** The approved base fare in USD, or null when no approved value is available (the fact is then omitted). */
+  fareUsd: number | null;
+  /** The scheduled direct trip (P4b), if one was found. */
+  trip?: ScheduledTrip | null;
+  /** The first active alert for the trip's route, already reduced to plain text (P4b). */
+  alert?: TransitAlert | null;
+  /** The region's time zone and the request time, so a scheduled time carries its day. */
+  timeZone: string;
+  now: Date;
 }
 
 /**
  * Self-describing facts for narration, rendered by code from measured or approved values only.
  * Labels avoid claim words, so a fact never contradicts the flags built alongside it.
  */
-export function buildFacts({ route, density, cost, incidents, transit, offerActive }: FactInputs): {
+export function buildFacts({ route, density, cost, incidents, transit, offerActive, fareUsd, trip, alert, timeZone, now }: FactInputs): {
   facts: NarrationFact[];
   flags: NarrationFlags;
 } {
@@ -39,8 +71,17 @@ export function buildFacts({ route, density, cost, incidents, transit, offerActi
       facts.push({ id: 'drive_delay_minutes', label: 'Expected delay', phrase: `about ${route.delayMinutes} min of delay on the drive` });
     }
   }
-  const fareCents = Math.round(assumptions['transit.base_fare_usd'].value * 100);
-  facts.push({ id: 'bus_fare', label: 'Bus fare', phrase: `a ${money(fareCents)} base fare` });
+  if (trip) {
+    facts.push({ id: 'bus_minutes', label: 'Scheduled bus', phrase: `about ${trip.minutes} min by bus${onRoute(trip)}` });
+    const leaveBy = leaveByPhrase(trip, timeZone, now);
+    if (leaveBy) facts.push({ id: 'leave_by', label: 'Leave by', phrase: leaveBy });
+  }
+  // The alert is CARTA's text, carried as data: it is quoted, never followed, and the validator still applies to
+  // any narration that references it (a phrase that contradicts the flags fails closed).
+  if (alert) facts.push({ id: 'service_alert', label: 'Service alert', phrase: `CARTA service alert: “${alert.header}”` });
+  if (fareUsd !== null) {
+    facts.push({ id: 'bus_fare', label: 'Bus fare', phrase: `a ${money(Math.round(fareUsd * 100))} base fare` });
+  }
   if (cost) facts.push({ id: 'cost_difference_per_trip', label: 'Cost difference per trip', phrase: costPhrase(cost.differenceCents) });
   if (incidents && incidents.length > 0) {
     const count = incidents.length;
@@ -50,10 +91,22 @@ export function buildFacts({ route, density, cost, incidents, transit, offerActi
     facts,
     flags: {
       transitServiceKnown: transit.basis !== 'unavailable',
-      transitFaster: false,
+      transitFaster: transitIsFaster(trip, route, transit.basis),
       transitCheaper: cost !== null && cost.differenceCents > 0,
       offerActive,
       trafficNow: density !== null,
     },
   };
+}
+
+/**
+ * "Transit is faster" only on a like-for-like comparison: the bus trip's elapsed minutes (leave-by, which includes the
+ * approved walk-to-stop buffer, to arrival) against the drive's minutes. The in-vehicle minutes alone leave out the
+ * walk and the wait, and a point away from its stop adds a walk nobody measured, so with no elapsed duration (see
+ * `ScheduledTrip.elapsedMinutes`: set only with both points at their stops) the claim stays off. Both sides are
+ * rounded minutes; rounding never reorders values, so a strict "less" holds for the exact times too.
+ */
+export function transitIsFaster(trip: ScheduledTrip | null | undefined, route: DriveRoute | null, basis: Comparison['transit']['basis']): boolean {
+  if (!trip || !route || basis === 'unavailable' || trip.elapsedMinutes === undefined) return false;
+  return trip.elapsedMinutes < route.minutes;
 }

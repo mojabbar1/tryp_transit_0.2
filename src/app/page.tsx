@@ -4,10 +4,17 @@ import { useState, useRef, useEffect, useReducer, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { busStopCoordinates } from '@/app/data/busStopCoordinates';
+import { demoScenarioStops, type DemoStop } from '@/app/data/demo-stops';
+import { Citations } from '@/components/citations';
+import { DemoBadge } from '@/components/demo-badge';
+import { StopCombobox } from '@/components/stop-combobox';
 import { TransitInsightResponse, ApiErrorResponse } from '@/types/interfaces';
 import { isDemoMode } from '@/lib/demo-mode';
-import { formatCostDifference } from '@/lib/format';
+import { isDemoScenario } from '@/lib/demo/scenarios';
+import { formatCostDifference, transitReasonText } from '@/lib/format';
+import { scheduledTimeText } from '@/lib/trip-view';
+import { stopRequestFields, type StopOption } from '@/lib/stops/types';
+import { stopSourceNote, useStops } from '@/lib/stops/use-stops';
 import { toNumberOrNull } from '@/lib/utils';
 import {
   RequestAction,
@@ -29,15 +36,23 @@ function describeInsights(data: TransitInsightResponse) {
   return {
     isDemoData: data.meta?.demo === true,
     transitUnavailable: data.comparison?.transit.basis === 'unavailable',
+    reasonText: transitReasonText(data.comparison?.transit.reason),
     trafficUnavailable: data.meta?.degraded.some((code) => TRAFFIC_UNAVAILABLE.has(code)) ?? false,
     costText: formatCostDifference(data.comparison?.costUsd?.difference ?? toNumberOrNull(data.costSavingsPerTrip)),
     rewardActive: data.incentiveDetails !== null && data.meta?.offerActive === true,
   };
 }
 
-const DemoBadge = () => (
-  <span className="ml-2 px-2 py-0.5 bg-purple-200 text-purple-800 text-xs rounded-full align-middle">Demo</span>
-);
+/** A demo scenario's pre-filled stop: a labeled demo place, never a GTFS stop (05 §2b is unsigned). */
+const demoOption = (stop: DemoStop): StopOption => ({
+  key: `demo:${stop.key}`,
+  kind: 'place',
+  id: null,
+  name: stop.key,
+  lat: stop.lat,
+  lng: stop.lng,
+  routes: [],
+});
 
 const maxRetries = 2;
 const retryDelayMs = 1000;
@@ -48,8 +63,9 @@ const insightsReducer = (
 ) => requestReducer(state, action);
 
 export default function TransitInsightsPage() {
-  const [departureStop, setDepartureStop] = useState('');
-  const [destinationStop, setDestinationStop] = useState('');
+  const [departureStop, setDepartureStop] = useState<StopOption | null>(null);
+  const [destinationStop, setDestinationStop] = useState<StopOption | null>(null);
+  const stops = useStops();
   const [arrivalTime, setArrivalTime] = useState('');
   const [requestState, dispatch] = useReducer(insightsReducer, maxRetries, (retries: number) =>
     createRequestState<TransitInsightResponse>(retries)
@@ -66,9 +82,9 @@ export default function TransitInsightsPage() {
   const requestIdRef = useRef(0);
 
   const loadingSteps = [
-    "Analyzing traffic patterns...",
-    "Calculating ridership predictions...",
-    "Generating personalized insights..."
+    "Checking current traffic...",
+    "Looking up scheduled buses...",
+    "Comparing your options..."
   ];
 
   const stopLoadingAnimation = useCallback(() => {
@@ -141,21 +157,16 @@ export default function TransitInsightsPage() {
         return;
       }
 
-      // Get coordinates from bus stop names
-      const departureCoords = busStopCoordinates[departureStop];
-      const destinationCoords = busStopCoordinates[destinationStop];
-
-      if (!departureCoords || !destinationCoords) {
-        failValidation('Invalid bus stop names. Please select from the available stops.');
-        return;
-      }
-
+      const departure = stopRequestFields(departureStop);
+      const destination = stopRequestFields(destinationStop);
       request = {
         endpoint: '/api/transit-insights',
         body: {
-          departure: departureCoords,
-          destination: destinationCoords,
+          departure: departure.point,
+          destination: destination.point,
           timeToDestination: arrivalTime,
+          ...(departure.stopId ? { departureStopId: departure.stopId } : {}),
+          ...(destination.stopId ? { destinationStopId: destination.stopId } : {}),
         },
       };
     }
@@ -189,23 +200,12 @@ export default function TransitInsightsPage() {
     setDemoMode(scenario);
     dispatch({ type: 'reset' });
 
-    // Pre-fill form based on scenario (keys near real CARTA service; see 05 §2b)
-    switch (scenario) {
-      case 'rush-hour':
-        setDepartureStop('King Street / Morris Street');
-        setDestinationStop('Spring Street / Ashley Avenue');
-        setArrivalTime('08:30');
-        break;
-      case 'weekend':
-        setDepartureStop('Market Street / Meeting Street');
-        setDestinationStop('Isle of Palms / 14th Avenue');
-        setArrivalTime('14:00');
-        break;
-      case 'night-out':
-        setDepartureStop('King Street / Wentworth Street');
-        setDestinationStop('Calhoun Street / King Street');
-        setArrivalTime('23:30');
-        break;
+    // Pre-fill the form from the demo stops (05 §2b P0 keys; demo-only, no GTFS ids until §2b is signed)
+    if (isDemoScenario(scenario)) {
+      const prefill = demoScenarioStops[scenario];
+      setDepartureStop(demoOption(prefill.departure));
+      setDestinationStop(demoOption(prefill.destination));
+      setArrivalTime(prefill.arriveBy);
     }
 
     // Auto-submit after 1 second
@@ -221,7 +221,9 @@ export default function TransitInsightsPage() {
   // Cleanup the loading animation on unmount
   useEffect(() => stopLoadingAnimation, [stopLoadingAnimation]);
 
-  const availableStops = Object.keys(busStopCoordinates);
+  const stopOptions = stops.data?.stops ?? [];
+  const sourceNote = stopSourceNote(stops.data);
+  const transit = data?.comparison?.transit;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -231,14 +233,14 @@ export default function TransitInsightsPage() {
             🚌 Tryp Transit Insights
           </h1>
           <p className="text-gray-600 mb-4">
-            Get real-time transit insights with AI-powered recommendations
+            Compare driving with CARTA&apos;s scheduled buses, using current traffic and cited costs
           </p>
           <div className="flex justify-center space-x-4">
             <a
               href="/dashboard"
               className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
             >
-              📊 Investor Dashboard
+              📊 Dashboard
             </a>
             <a
               href="/test"
@@ -312,51 +314,35 @@ export default function TransitInsightsPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {stops.status === 'error' && (
+                <p role="alert" className="text-sm text-red-700">We couldn&apos;t load the stop list. Please refresh to try again.</p>
+              )}
+              {sourceNote && <p className="text-sm text-amber-800" role="note">{sourceNote}</p>}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Departure Stop
-                  </label>
-                  <select
-                    value={departureStop}
-                    onChange={(e) => setDepartureStop(e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select departure stop</option>
-                    {availableStops.map((stop) => (
-                      <option key={stop} value={stop}>
-                        {stop}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Destination Stop
-                  </label>
-                  <select
-                    value={destinationStop}
-                    onChange={(e) => setDestinationStop(e.target.value)}
-                    className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    required
-                  >
-                    <option value="">Select destination stop</option>
-                    {availableStops.map((stop) => (
-                      <option key={stop} value={stop}>
-                        {stop}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <StopCombobox
+                  label="Departure Stop"
+                  placeholder="Select departure stop"
+                  options={stopOptions}
+                  loading={stops.status === 'loading'}
+                  value={departureStop}
+                  onChange={setDepartureStop}
+                />
+                <StopCombobox
+                  label="Destination Stop"
+                  placeholder="Select destination stop"
+                  options={stopOptions}
+                  loading={stops.status === 'loading'}
+                  value={destinationStop}
+                  onChange={setDestinationStop}
+                />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label htmlFor="arrival-time" className="block text-sm font-medium text-gray-700 mb-2">
                   Desired Arrival Time (HH:MM)
                 </label>
                 <Input
+                  id="arrival-time"
                   type="time"
                   value={arrivalTime}
                   onChange={(e) => setArrivalTime(e.target.value)}
@@ -499,23 +485,19 @@ export default function TransitInsightsPage() {
                     <div className="text-4xl mr-4 animate-bounce">💡</div>
                     <div className="flex-1">
                       <h3 className="font-bold text-2xl text-green-800 mb-3 flex items-center">
-                        ✨ AI-Powered Transit Insight
-                        <span className="ml-2 px-2 py-1 bg-green-200 text-green-800 text-xs rounded-full">SMART</span>
+                        Trip Insight
                         {view?.isDemoData && <DemoBadge />}
                       </h3>
                       <p className="text-green-700 text-xl font-medium leading-relaxed mb-4">
                         {data.nudgeMessage}
                       </p>
-                      <div className="flex items-center text-sm text-green-600">
-                        <span className="flex items-center mr-4">
-                          <span className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></span>
-                          Real-time Analysis
-                        </span>
-                        <span className="flex items-center">
-                          <span className="w-2 h-2 bg-blue-500 rounded-full mr-2 animate-pulse"></span>
-                          Personalized for You
-                        </span>
-                      </div>
+                      {!view?.isDemoData && (
+                        <p className="text-sm text-green-600">
+                          {data.meta?.narration.source === 'llm'
+                            ? 'Worded by AI from the figures below, then checked against them.'
+                            : 'Summary of the figures below.'}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -524,13 +506,21 @@ export default function TransitInsightsPage() {
               {/* Main Stats Grid */}
               <div className="grid md:grid-cols-3 gap-6 mb-6">
                 <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                  <h3 className="font-semibold text-lg text-blue-800 mb-2">⏱️ Travel Time{view?.isDemoData && <DemoBadge />}</h3>
+                  <h3 className="font-semibold text-lg text-blue-800 mb-2">⏱️ Bus Time{view?.isDemoData && <DemoBadge />}</h3>
                   {view?.transitUnavailable ? (
-                    <p className="text-lg font-semibold text-blue-600">Transit timing unavailable</p>
+                    <p className="text-lg font-semibold text-blue-600">{view.reasonText ?? 'Transit timing unavailable'}</p>
                   ) : (
-                    <p className="text-2xl font-bold text-blue-600">
-                      {data.travelTime !== null ? `${data.travelTime} mins` : 'N/A'}
-                    </p>
+                    <>
+                      <p className="text-2xl font-bold text-blue-600">
+                        {data.travelTime !== null ? `${data.travelTime} mins` : 'N/A'}
+                      </p>
+                      {transit?.basis === 'scheduled' && (
+                        <p className="text-sm text-blue-700 mt-1">
+                          Scheduled{transit.routeShortName ? `, route ${transit.routeShortName}` : ''}
+                          {transit.leaveBy ? `; leave by ${scheduledTimeText(transit.leaveByAt, transit.leaveBy, data.meta)}` : ''}
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -585,24 +575,46 @@ export default function TransitInsightsPage() {
                         <div>
                           {ride.departureTime && (
                             <span className="text-blue-600 font-semibold mr-4">
-                              🕐 {ride.departureTime}
+                              🕐 {scheduledTimeText(ride.departureAt, ride.departureTime, data.meta)}
                             </span>
                           )}
                           <span className="text-gray-700">
-                            {ride.travelTime} mins travel time
+                            {ride.travelTime} mins {view?.isDemoData ? 'travel time' : 'on the bus'}
+                            {ride.routeShortName && `, route ${ride.routeShortName}`}
+                            {ride.arrivalTime && `, arrives ${scheduledTimeText(ride.arrivalAt, ride.arrivalTime, data.meta)}`}
                           </span>
                         </div>
-                        <div className={`px-2 py-1 rounded text-sm font-medium ${ride.trafficDensity === 'Light' ? 'bg-green-100 text-green-800' :
-                          ride.trafficDensity === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                            'bg-red-100 text-red-800'
-                          }`}>
-                          {ride.trafficDensity} Traffic
-                        </div>
+                        {ride.trafficDensity && (
+                          <div className={`px-2 py-1 rounded text-sm font-medium ${ride.trafficDensity === 'Light' ? 'bg-green-100 text-green-800' :
+                            ride.trafficDensity === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-red-100 text-red-800'
+                            }`}>
+                            {ride.trafficDensity} Traffic
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 </div>
               )}
+
+              {/* Service alerts are CARTA's plain text, rendered escaped */}
+              {transit?.alerts && transit.alerts.length > 0 && (
+                <section aria-label="Service alerts" className="mt-6 p-4 rounded-lg border border-amber-300 bg-amber-50 text-amber-900">
+                  <h3 className="font-semibold text-lg mb-2">⚠️ CARTA service alerts</h3>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {transit.alerts.map((alert, index) => (
+                      <li key={index}>
+                        {alert.header}
+                        {alert.description && <span className="block text-sm">{alert.description}</span>}
+                        {alert.url && <a className="underline text-sm" href={alert.url} target="_blank" rel="noopener noreferrer nofollow">Details</a>}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+
+              {!view?.isDemoData && <Citations sources={data.meta?.sources} citations={data.meta?.citations} />}
 
               {/* Debug Section (Optional - Remove in Production) */}
               <details className="mt-6">
