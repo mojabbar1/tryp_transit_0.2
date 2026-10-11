@@ -1,5 +1,6 @@
 import 'server-only';
 import {
+  type CitationRef,
   type TransitInsightResponse,
   TransitInsightRequestSchema,
   TransitInsightResponseSchema,
@@ -19,13 +20,14 @@ import { getProvider } from '@/lib/llm/provider';
 import { renderTemplate } from '@/lib/llm/template';
 import { log } from '@/lib/log';
 import { buildFacts, costPhrase, leaveByPhrase, NARRATION_FACT_KEYS, onRoute } from './facts';
-import { getScheduledTransit, type ScheduleOutcome } from './schedule';
+import { getScheduledTransit, ROUTE_FARE_REF, type ScheduleOutcome } from './schedule';
 
 export type InsightsResult =
   | { status: 200; body: TransitInsightResponse }
   | { status: 400; body: ApiErrorResponse };
 
 const REGION = 'charleston-sc';
+const BASE_FARE_KEY = 'transit.base_fare_usd';
 const TOMTOM_ROUTING = {
   name: 'TomTom Routing API (Calculate Route, arriveAt)',
   url: 'https://developer.tomtom.com/routing-api/documentation/tomtom-maps/calculate-route',
@@ -100,17 +102,31 @@ export async function buildTransitInsights(
   approved?.degraded.forEach((code) => degraded.add(code));
   const costModel = costModelFrom(approved);
   if (costModel.localFallback) degraded.add('assumptions_local_fallback');
-  const cost = route ? calculateCost(route.distanceMiles, costModel.values) : null;
-  cost?.degraded.forEach((code) => degraded.add(code));
-  if (!cost) degraded.add('cost_unavailable');
-  // CO2 needs a bus distance; the schedule gives minutes, not miles, and the drive distance is not an approved proxy.
-  degraded.add('co2_transit_distance_unavailable');
 
   const schedule = scheduleResult;
   if (!schedule) degraded.add('data_agent_unavailable');
   schedule?.degraded.forEach((code) => degraded.add(code));
   const transit = schedule?.transit ?? getTransitResult();
   const trip = schedule?.trip ?? null;
+
+  // The transit side of the cost. CARTA's fares differ by route (fixed route, Express, free DASH), so a scheduled trip
+  // is priced at its own route's fare from the GTFS feed, cited to the feed. A trip whose route fare is unknown gets no
+  // cost at all: the approved standard base fare never stands in for it. Without a trip, the cost compares against the
+  // approved standard base fare, as in P1.
+  const routeFare = trip?.fare ?? null;
+  const fareUnknown = trip !== null && routeFare === null;
+  if (fareUnknown) degraded.add('transit_fare_unknown');
+  const fareKey = routeFare ? ROUTE_FARE_REF : BASE_FARE_KEY;
+  const withFareKey = (key: string) => (key === BASE_FARE_KEY ? fareKey : key);
+  const costSources: Partial<Record<string, CitationRef[]>> = routeFare
+    ? { ...costModel.sources, [ROUTE_FARE_REF]: [routeFare.citation] }
+    : costModel.sources;
+  const costValues = routeFare ? { ...costModel.values, baseFareUsd: routeFare.usd } : costModel.values;
+  const cost = route && !fareUnknown ? calculateCost(route.distanceMiles, costValues) : null;
+  cost?.degraded.forEach((code) => degraded.add(code));
+  if (!cost) degraded.add('cost_unavailable');
+  // CO2 needs a bus distance; the schedule gives minutes, not miles, and the drive distance is not an approved proxy.
+  degraded.add('co2_transit_distance_unavailable');
   const reasonText = transitReasonText(schedule?.reason) ?? undefined;
   const incentive = evaluateIncentivePolicy();
 
@@ -121,7 +137,8 @@ export async function buildTransitInsights(
     incidents: traffic?.incidents ?? null,
     transit,
     offerActive: incentive.offerActive,
-    fareUsd: costModel.values.baseFareUsd,
+    fareUsd: fareUnknown ? null : costValues.baseFareUsd,
+    fareOnRoute: routeFare !== null,
     trip,
     alert: schedule?.alerts[0] ?? null,
     timeZone: env.regionTimezone,
@@ -144,9 +161,9 @@ export async function buildTransitInsights(
 
   // Cite only what the response shows: every cost input when a cost was computed, and otherwise the approved facts
   // behind any figure the served narration quotes (the fare alone needs no drive). The template quotes no fare.
-  const narratedKeys = new Set((outcome.factIds ?? []).flatMap((id) => NARRATION_FACT_KEYS[id] ?? []));
-  const citedCostKeys = COST_FACT_KEYS.filter((key) => cost !== null || narratedKeys.has(key));
-  const sources = [...citedCostKeys.flatMap((key) => costModel.sources[key] ?? []), ...(schedule?.citations ?? [])];
+  const narratedKeys = new Set((outcome.factIds ?? []).flatMap((id) => NARRATION_FACT_KEYS[id] ?? []).map(withFareKey));
+  const citedCostKeys = COST_FACT_KEYS.map(withFareKey).filter((key) => cost !== null || narratedKeys.has(key));
+  const sources = [...citedCostKeys.flatMap((key) => costSources[key] ?? []), ...(schedule?.citations ?? [])];
   const citations = [...new Set([...citedCostKeys, ...sources.map((source) => source.ref)])];
   const body: TransitInsightResponse = {
     travelTime: schedule?.travelTime ?? null,
@@ -160,7 +177,7 @@ export async function buildTransitInsights(
         ? { minutes: route.minutes, delayMinutes: route.delayMinutes, source: { ...TOMTOM_ROUTING, retrieved: now.toISOString() } }
         : null,
       transit,
-      ...(cost ? { costUsd: cost.costUsd } : {}),
+      ...(cost ? { costUsd: { ...cost.costUsd, factRefs: cost.costUsd.factRefs.map(withFareKey) } } : {}),
     },
     meta: {
       generatedAt: now.toISOString(),

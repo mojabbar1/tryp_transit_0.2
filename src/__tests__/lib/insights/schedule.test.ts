@@ -50,6 +50,7 @@ const feed = {
   loaded_at: '2026-10-01T00:00:00Z',
   attribution: 'Synthetic test feed',
 };
+type SyntheticFare = { fare_id: string; price: number; currency_type: string; transfers: number | null; transfer_duration_s: number | null };
 const trip = (id: string, dep: string, arr: string, minutes: number, leaveBy: string | null = null) => ({
   basis: 'scheduled',
   trip_id: id,
@@ -65,6 +66,8 @@ const trip = (id: string, dep: string, arr: string, minutes: number, leaveBy: st
   leave_by: leaveBy ? `2026-10-05T${leaveBy}:00-04:00` : null,
   wait_min: null,
   interpolated: false,
+  // The route's GTFS fare: the same as the store's default base fare below, so cost figures match either way.
+  fare: { fare_id: 'SYN-F1', price: 2.5, currency_type: 'USD', transfers: 1, transfer_duration_s: 7200 } as SyntheticFare | null,
 });
 /** A trip on any day, with full local times (the agent's offset-qualified ISO strings). */
 const tripOn = (id: string, serviceDate: string, departure: string, arrival: string, minutes: number, leaveBy: string | null) => ({
@@ -85,6 +88,10 @@ const compareOk = (overrides: Record<string, unknown> = {}) => ({
   ],
   ...overrides,
 });
+/** No direct trip (a reason instead): the cost then compares against the approved standard base fare, as in P1. */
+const noTrip = () => {
+  routes['/v1/compare'] = () => ({ status: 200, json: compareOk({ transit: null, alternatives: [], reason: 'transfer_required' }) });
+};
 const fact = (id: number, key: string, valueNum: number | null, valueText: string | null = null) => ({
   id,
   key,
@@ -225,6 +232,7 @@ describe('v2 engine with the data agent (P4b)', () => {
   });
 
   it('cost comes from the approved facts in /v1/assumptions, with their ids and attribution', async () => {
+    noTrip();
     const json = await run(withStops);
     // 5 mi x (4.0 / 20 + 0.1) = 150 cents vs the store's 250-cent fare
     expect(json.comparison?.costUsd).toMatchObject({ drive: 1.5, transit: 2.5, difference: -1 });
@@ -240,10 +248,62 @@ describe('v2 engine with the data agent (P4b)', () => {
     // A non-marginal basis would mislabel the figure, so the whole model uses the approved 05 §2 values.
     ['not marginal', { ...assumptionsAll(), items: assumptionsAll().items.map((i) => (i.key === 'cost.basis' ? { ...i, fact: fact(1, 'cost.basis', null, 'total cost of ownership') } : i)) }, { drive: 1.49, transit: 2 }],
   ])('assumptions %s: the approved 05 §2 values are the flagged fallback', async (_label, payload, expected) => {
+    noTrip();
     routes['/v1/assumptions'] = () => ({ status: 200, json: payload });
     const json = await run(withStops);
     expect(json.comparison?.costUsd).toMatchObject(expected);
     expect(json.meta?.degraded).toContain('assumptions_local_fallback');
+  });
+
+  describe('a scheduled trip is priced at its own route fare from the GTFS feed (CARTA: $2.00, Express $3.50, DASH free)', () => {
+    const fare = (price: number, currency = 'USD') => ({ fare_id: 'SYN-F', price, currency_type: currency, transfers: 0, transfer_duration_s: null });
+    const withFare = (value: SyntheticFare | null) => {
+      routes['/v1/compare'] = () => ({ status: 200, json: compareOk({ transit: { ...trip('T1', '08:10', '08:28', 18, '08:05'), fare: value } }) });
+    };
+    const ROUTE_FARE_SOURCE = { ref: 'transit.route_fare_usd', sourceId: 'synthetic-gtfs', attribution: 'Synthetic test feed' };
+
+    it.each([
+      ['a free route', 0, { drive: 1.5, transit: 0, difference: 1.5 }],
+      ['an Express route', 3.5, { drive: 1.5, transit: 3.5, difference: -2 }],
+    ])('%s: the route fare, cited to the feed, never the approved base fare', async (_label, price, expected) => {
+      withFare(fare(price));
+      const json = await run(withStops);
+      expect(TransitInsightResponseSchema.safeParse(json).success).toBe(true);
+      expect(json.comparison?.costUsd).toMatchObject(expected);
+      expect(json.comparison?.costUsd?.factRefs).toContain('transit.route_fare_usd');
+      expect(json.comparison?.costUsd?.factRefs).not.toContain('transit.base_fare_usd');
+      expect(json.meta?.sources).toContainEqual(ROUTE_FARE_SOURCE);
+      expect(json.meta?.sources).not.toContainEqual(expect.objectContaining({ ref: 'transit.base_fare_usd' }));
+      expect(json.meta?.citations).toContain('transit.route_fare_usd');
+      expect(json.meta?.citations).not.toContain('transit.base_fare_usd');
+      expect(json.meta?.degraded).not.toContain('transit_fare_unknown');
+    });
+
+    it.each([
+      ['no fare for the route', null],
+      ['a fare in another currency', fare(2, 'EUR')],
+      ['an implausible fare', fare(250)],
+    ])('%s: no cost at all (the base fare never stands in), and no fare cited', async (_label, value) => {
+      withFare(value);
+      const json = await run(withStops);
+      expect(TransitInsightResponseSchema.safeParse(json).success).toBe(true);
+      expect(json.comparison?.costUsd).toBeUndefined();
+      expect(json.costSavingsPerTrip).toBeNull();
+      expect(json.meta?.degraded).toEqual(expect.arrayContaining(['transit_fare_unknown', 'cost_unavailable']));
+      expect(json.meta?.citations).not.toContain('transit.base_fare_usd');
+      expect(json.meta?.citations).not.toContain('transit.route_fare_usd');
+      expect(json.travelTime).toBe(18);
+    });
+
+    it('a narrated route fare says it is this route\'s fare and cites the feed', async () => {
+      mockGetDriveRoute.mockRejectedValue(new Error('down'));
+      withFare(fare(0));
+      mockGetProvider.mockReturnValue(provider(async () => ({ nudge: 'Bus fare: {{bus_fare}}', slots: ['bus_fare'] })));
+      const json = await run(withStops);
+      expect(json.nudgeMessage).toBe('Bus fare: a $0.00 fare on this route');
+      expect(json.meta?.sources).toContainEqual(ROUTE_FARE_SOURCE);
+      expect(json.meta?.citations).not.toContain('transit.base_fare_usd');
+    });
   });
 
   it('lat/lng only: maps each point to its nearest stop within the bound', async () => {
@@ -769,6 +829,8 @@ describe('a narrated fare cites its own source, with or without a driving cost (
   const fareSource = { ref: 'transit.base_fare_usd', sourceId: 'synthetic-src', attribution: 'Synthetic attribution', retrieved: '2026-10-01', factId: 5 };
   const narrating = (nudge: string, slots: string[]) => mockGetProvider.mockReturnValue(provider(async () => ({ nudge, slots })));
   const refs = (json: Awaited<ReturnType<typeof run>>) => (json.meta?.sources ?? []).map((source) => source.ref);
+  // The approved base fare backs the cost only without a trip; a trip is priced at its route's GTFS fare.
+  beforeEach(noTrip);
 
   it('the review repro, end to end through the route: TomTom down, the approved $2.50 fare narrated, and only its source cited', async () => {
     // The route reads the real clock; pin Date (only) to the fixtures' NOW so their scheduled bus hasn't left yet.
@@ -830,11 +892,14 @@ describe('a narrated fare cites its own source, with or without a driving cost (
 
   it('a narration that does not quote the fare cites no fare source', async () => {
     mockGetDriveRoute.mockRejectedValue(new Error('down'));
+    routes['/v1/compare'] = () => ({ status: 200, json: compareOk() }); // a trip, with its route fare
     narrating('Scheduled bus: {{bus_minutes}}. Check the next bus.', ['bus_minutes']);
     const json = await run(withStops);
     expect(json.meta?.narration).toMatchObject({ source: 'llm', validated: true });
-    expect(json.meta?.citations).not.toContain('transit.base_fare_usd');
-    expect(refs(json)).not.toContain('transit.base_fare_usd');
+    for (const key of ['transit.base_fare_usd', 'transit.route_fare_usd']) {
+      expect(json.meta?.citations).not.toContain(key);
+      expect(refs(json)).not.toContain(key);
+    }
   });
 
   it('with a cost, every cost input is cited once, however the narration quotes the fare', async () => {
@@ -869,6 +934,7 @@ describe('a whole-model cost fallback cites the local values it uses, never the 
   const narrating = (nudge: string, slots: string[]) => mockGetProvider.mockReturnValue(provider(async () => ({ nudge, slots })));
   const refs = (json: Awaited<ReturnType<typeof run>>) => (json.meta?.sources ?? []).map((source) => source.ref);
   const storeSourced = (json: Awaited<ReturnType<typeof run>>) => (json.meta?.sources ?? []).filter((source) => source.attribution === 'Synthetic attribution');
+  beforeEach(noTrip);
 
   it.each(REJECTED_MODELS)('the review repro: TomTom down, %s beside a $2.50 store fare: the local $2.00 fare is narrated and cited to its own source', async (_label, payload) => {
     mockGetDriveRoute.mockRejectedValue(new Error('down'));

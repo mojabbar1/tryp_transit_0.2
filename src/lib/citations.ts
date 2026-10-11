@@ -17,6 +17,7 @@ const LABELS: Record<string, string> = {
   'drive.total_cost_usd_per_mile': 'Total cost to own and operate per mile',
   'parking.downtown_usd': 'Downtown garage parking',
   'transit.base_fare_usd': 'CARTA base fare',
+  'transit.route_fare_usd': 'CARTA fare for this route (GTFS)',
   'transit.access_buffer_min': 'Walk-to-stop buffer',
   'co2.car_g_per_mile': 'Car CO2 per mile',
   'co2.car_occupancy': 'Car occupancy',

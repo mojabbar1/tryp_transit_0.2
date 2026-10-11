@@ -77,6 +77,14 @@ const TripSchema = z.object({
   leave_by: isoDateTime.nullable(),
   wait_min: finite.nullable(),
   interpolated: z.boolean(),
+  // The route's GTFS fare (fares v1), or null when the feed has none for it (zones, ambiguity, or no fares).
+  fare: z.object({
+    fare_id: z.string(),
+    price: finite.nonnegative(),
+    currency_type: z.string(),
+    transfers: z.number().int().nullable(),
+    transfer_duration_s: z.number().int().nullable(),
+  }).nullable(),
 });
 
 const CompareSchema = z.object({

@@ -44,8 +44,10 @@ export interface FactInputs {
   incidents: TrafficIncident[] | null;
   transit: Comparison['transit'];
   offerActive: boolean;
-  /** The approved base fare in USD, or null when no approved value is available (the fact is then omitted). */
+  /** The fare in USD, or null when none is known (the fact is then omitted). */
   fareUsd: number | null;
+  /** The fare is the scheduled trip's own route fare (GTFS), not the approved standard base fare. */
+  fareOnRoute?: boolean;
   /** The scheduled direct trip (P4b), if one was found. */
   trip?: ScheduledTrip | null;
   /** The first active alert for the trip's route, already reduced to plain text (P4b). */
@@ -59,7 +61,7 @@ export interface FactInputs {
  * Self-describing facts for narration, rendered by code from measured or approved values only.
  * Labels avoid claim words, so a fact never contradicts the flags built alongside it.
  */
-export function buildFacts({ route, density, cost, incidents, transit, offerActive, fareUsd, trip, alert, timeZone, now }: FactInputs): {
+export function buildFacts({ route, density, cost, incidents, transit, offerActive, fareUsd, fareOnRoute, trip, alert, timeZone, now }: FactInputs): {
   facts: NarrationFact[];
   flags: NarrationFlags;
 } {
@@ -80,7 +82,8 @@ export function buildFacts({ route, density, cost, incidents, transit, offerActi
   // any narration that references it (a phrase that contradicts the flags fails closed).
   if (alert) facts.push({ id: 'service_alert', label: 'Service alert', phrase: `CARTA service alert: “${alert.header}”` });
   if (fareUsd !== null) {
-    facts.push({ id: 'bus_fare', label: 'Bus fare', phrase: `a ${money(Math.round(fareUsd * 100))} base fare` });
+    const amount = money(Math.round(fareUsd * 100));
+    facts.push({ id: 'bus_fare', label: 'Bus fare', phrase: fareOnRoute ? `a ${amount} fare on this route` : `a ${amount} base fare` });
   }
   if (cost) facts.push({ id: 'cost_difference_per_trip', label: 'Cost difference per trip', phrase: costPhrase(cost.differenceCents) });
   if (incidents && incidents.length > 0) {

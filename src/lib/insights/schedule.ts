@@ -54,6 +54,18 @@ const STOP_ID_SEARCH_LIMIT = 10;
 
 type AgentEnv = Pick<ServerEnv, 'dataAgentEnabled' | 'dataAgentBaseUrl'>;
 
+/** The citation ref for a trip's own route fare, as the GTFS feed publishes it (not an approved 05 §2 fact). */
+export const ROUTE_FARE_REF = 'transit.route_fare_usd';
+// The same plausibility bound the approved base fare has (approved.ts): a larger value is treated as unknown.
+const MAX_FARE_USD = 50;
+
+/** The trip's route fare from the GTFS feed (fares v1), cited to that feed. */
+export interface RouteFare {
+  usd: number;
+  fareId: string;
+  citation: CitationRef;
+}
+
 export interface ScheduledTrip {
   /** In-vehicle minutes (plus any wait the agent reports): the bus ride itself, not the whole trip. */
   minutes: number;
@@ -75,6 +87,11 @@ export interface ScheduledTrip {
   serviceDate: string;
   routeId: string;
   routeShortName?: string;
+  /**
+   * The route's own fare, when the feed prices it unambiguously in USD. CARTA's fares differ by route (fixed route,
+   * Express, free DASH), so a trip without one has no known fare; the approved base fare never stands in for it.
+   */
+  fare?: RouteFare;
 }
 
 export interface ScheduleOutcome {
@@ -324,6 +341,17 @@ function scheduledLeg(compare: AgentCompare, best: AgentTrip, alternatives: Agen
   };
 }
 
+/** The trip's route fare in USD from the feed the schedule came from, or undefined when the feed gives none usable. */
+function routeFare(feed: AgentFeed, trip: AgentTrip): RouteFare | undefined {
+  const fare = trip.fare;
+  if (!fare || fare.currency_type !== 'USD' || !(fare.price >= 0 && fare.price <= MAX_FARE_USD)) return undefined;
+  return {
+    usd: fare.price,
+    fareId: fare.fare_id,
+    citation: { ref: ROUTE_FARE_REF, sourceId: feed.source_id, ...(feed.attribution ? { attribution: feed.attribution } : {}) },
+  };
+}
+
 /**
  * The transit leg for one request. Never throws for upstream trouble: a disabled, down, slow or malformed agent
  * yields `basis: "unavailable"` and a degraded code. Coordinates and stop ids are never logged here.
@@ -393,6 +421,7 @@ export async function getScheduledTransit(
   }));
   const leaveBy = best.leave_by ? localHhmm(best.leave_by) ?? undefined : undefined;
   const elapsed = elapsedMinutes(best, origin.distanceM, dest.distanceM);
+  const fare = routeFare(compare.feed, best);
   return {
     transit: scheduledLeg(compare, best, alternatives, minutes, alerts.alerts),
     travelTime: minutes,
@@ -409,6 +438,7 @@ export async function getScheduledTransit(
       serviceDate: best.service_date,
       routeId: best.route_id,
       ...(best.route_short_name ? { routeShortName: best.route_short_name } : {}),
+      ...(fare ? { fare } : {}),
     },
     reason: null,
     alerts: alerts.alerts,

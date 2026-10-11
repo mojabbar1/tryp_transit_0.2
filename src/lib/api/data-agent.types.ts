@@ -367,6 +367,26 @@ export interface components {
             source_id: string;
         };
         /**
+         * FareOut
+         * @description The trip's route fare from the GTFS feed (fares v1: ``fare_attributes.txt`` + ``fare_rules.txt``).
+         *
+         *     The full fare as the feed publishes it for the route; reduced or free fares for eligible riders aren't
+         *     modeled. ``transfers`` empty means unlimited (GTFS); ``transfer_duration_s`` is how long a transfer stays
+         *     valid.
+         */
+        FareOut: {
+            /** Currency Type */
+            currency_type: string;
+            /** Fare Id */
+            fare_id: string;
+            /** Price */
+            price: number;
+            /** Transfer Duration S */
+            transfer_duration_s: number | null;
+            /** Transfers */
+            transfers: number | null;
+        };
+        /**
          * FeedOut
          * @description The active GTFS feed an answer comes from, with the attribution clients must show.
          */
@@ -526,7 +546,7 @@ export interface components {
         };
         /**
          * StopOut
-         * @description A boardable stop of the active feed, with the route short names that serve it.
+         * @description A boardable stop of the active feed and the routes serving it (short, else long name, else id).
          */
         StopOut: {
             /** Code */
@@ -554,7 +574,8 @@ export interface components {
          *
          *     ``leave_by`` (``arrive_by`` requests) is the departure minus the access buffer; ``wait_min``
          *     (``depart_at`` requests) is the time from the target to the departure. ``interpolated`` marks a blank GTFS
-         *     time that was interpolated between the trip's timed stops.
+         *     time that was interpolated between the trip's timed stops. ``fare`` is the route's GTFS fare, or null when
+         *     the feed has none for the route, or it depends on zones or is ambiguous (never a default).
          */
         TripOut: {
             /**
@@ -574,6 +595,7 @@ export interface components {
             departure: string;
             /** Direction Id */
             direction_id: number | null;
+            fare: components["schemas"]["FareOut"] | null;
             /** Headsign */
             headsign: string | null;
             /** In Vehicle Min */

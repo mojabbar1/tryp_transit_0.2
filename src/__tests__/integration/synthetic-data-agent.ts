@@ -210,6 +210,7 @@ function trip(index: number, departure: number): Schemas['TripOut'] {
     leave_by: localIso(departure - ACCESS_BUFFER_MIN * MINUTE_MS),
     wait_min: null,
     interpolated: false,
+    fare: { fare_id: 'SYN-IT-FARE', price: 1.25, currency_type: 'USD', transfers: null, transfer_duration_s: null },
   };
 }
 
