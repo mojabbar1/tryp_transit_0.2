@@ -111,7 +111,7 @@ class FeedOut(BaseModel):
 
 
 class StopOut(BaseModel):
-    """A boardable stop of the active feed, with the route short names that serve it."""
+    """A boardable stop of the active feed and the routes serving it (short, else long name, else id)."""
 
     id: str
     code: str | None
@@ -137,12 +137,28 @@ class NearbyStopPage(BaseModel):
     items: list[NearbyStopOut]
 
 
+class FareOut(BaseModel):
+    """The trip's route fare from the GTFS feed (fares v1: ``fare_attributes.txt`` + ``fare_rules.txt``).
+
+    The full fare as the feed publishes it for the route; reduced or free fares for eligible riders aren't
+    modeled. ``transfers`` empty means unlimited (GTFS); ``transfer_duration_s`` is how long a transfer stays
+    valid.
+    """
+
+    fare_id: str
+    price: JsonNumber
+    currency_type: str
+    transfers: int | None
+    transfer_duration_s: int | None
+
+
 class TripOut(BaseModel):
     """One boardable direct trip, from the schedule (``basis: scheduled``). Times are local, with an offset.
 
     ``leave_by`` (``arrive_by`` requests) is the departure minus the access buffer; ``wait_min``
     (``depart_at`` requests) is the time from the target to the departure. ``interpolated`` marks a blank GTFS
-    time that was interpolated between the trip's timed stops.
+    time that was interpolated between the trip's timed stops. ``fare`` is the route's GTFS fare, or null when
+    the feed has none for the route, or it depends on zones or is ambiguous (never a default).
     """
 
     basis: Literal["scheduled"]
@@ -159,6 +175,7 @@ class TripOut(BaseModel):
     leave_by: datetime | None
     wait_min: float | None
     interpolated: bool
+    fare: FareOut | None
 
 
 class CompareOut(BaseModel):

@@ -44,6 +44,45 @@ docker compose up -d --build # data-agent-migrate (one-shot), data-agent-api on 
 `docker compose down` stops the stack; `docker compose down -v` also deletes the local volumes (all local data).
 The stack has no web app and no model-service (D-10 decides model-service at G1).
 
+### Local real-data pilot (P4b, 2026-10-11)
+
+A separate, persistent local store for the P4b pilot on real CARTA, NTD, and EIA data. It shares nothing with the
+default stack above or any other local database. Nothing here is public: every port binds to `127.0.0.1`, and the
+worker is never started (sources run only through the targeted `tda ingest` commands below).
+
+| What | Where | Owner and lifetime |
+|---|---|---|
+| Postgres 16 | compose project `tryp-pilot`, container `tryp-pilot-postgres-1`, `127.0.0.1:55433`, database `tryp_pilot` | Docker volume `tryp-pilot_pgdata`: the pilot's data. Keep it; `down -v` deletes it |
+| Raw snapshots and inbox | `~/projects/tryp_transit_0.2.pilot/raw/`, `.../inbox/` | Local only. The CARTA zip is never committed or redistributed (05 §6a); retention per `store_policy` |
+| Secrets and URLs | `~/projects/tryp_transit_0.2.pilot/pilot.env` (mode 600) | Random local passwords. Never print, commit, or paste it |
+| Read API | `tda api serve --host 127.0.0.1 --port 18081` | Started by hand, reader role only, no access log |
+
+`pilot.env` defines `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PORT`, `TDA_API_PORT`, `POSTGRES_PASSWORD`,
+`TDA_OWNER_PASSWORD`, `TDA_WRITER_PASSWORD`, `TDA_READER_PASSWORD`, `TDA_ADMIN_DATABASE_URL`, `TDA_DATABASE_URL`,
+`TDA_READER_DATABASE_URL`, `TDA_RAW_STORE_DIR`, and `TDA_INBOX_DIR`. To recreate it on another machine, write the same
+names with `openssl rand -hex 24` passwords (URL-safe) and `chmod 600` it.
+
+```bash
+P=~/projects/tryp_transit_0.2.pilot
+# Start (or restart) the database only, from the repo root. Never `up` the whole file: that would start the worker.
+docker compose -p tryp-pilot --env-file "$P/pilot.env" up -d postgres
+cd data_agent && set -a && . "$P/pilot.env" && set +a
+uv run tda db bootstrap && uv run alembic upgrade head && uv run tda sources sync   # idempotent
+uv run tda ingest carta-gtfs --live            # the approved sources, run on demand (05 §6)
+uv run tda ingest ntd-monthly --live
+uv run tda ingest eia-gas --live
+uv run tda ingest carta-gtfs-rt-alerts --live  # alerts go stale after an hour; rerun before a session
+uv run tda metrics compute
+uv run tda facts load-reference --check        # the transcribed 05 §2 values (already loaded and approved here)
+(unset TDA_DATABASE_URL TDA_ADMIN_DATABASE_URL; uv run tda api serve --host 127.0.0.1 --port 18081)
+# Stop: Ctrl-C the API, then `docker compose -p tryp-pilot --env-file "$P/pilot.env" stop` (keeps the volume).
+```
+
+The web app uses the pilot only when started with `DATA_AGENT_ENABLED=true DATA_AGENT_BASE_URL=http://127.0.0.1:18081`
+([SETUP](../SETUP.md)); the committed default stays off. A feed loaded before migration 0007 has no fares: roll back
+its run (`tda runs rollback <id> --confirm`) and ingest again to reload the same zip as a new version, as the pilot did.
+DB tests never touch this database: they need a separate, disposable `*_test` database (above).
+
 ## Roles, bootstrap, and the grant-per-migration rule
 
 Three roles (02 §6.2), all configured as plain `postgresql://` URLs (the code adds the driver):
@@ -160,9 +199,11 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
 
 ### `gtfs_static` (S-1, `carta-gtfs`): CARTA's GTFS schedule
 
-- **Loads** each changed feed (a new zip sha256) as a new `gtfs_feed_version` plus seven append-only tables:
-  `gtfs_stop`, `gtfs_route`, `gtfs_trip`, `gtfs_stop_time`, `gtfs_calendar`, `gtfs_calendar_date`, and
-  `gtfs_shape`. Every natural key includes `feed_version_id`. Read them through the `current_gtfs_*` views; the
+- **Loads** each changed feed (a new zip sha256) as a new `gtfs_feed_version` plus nine append-only tables:
+  `gtfs_stop`, `gtfs_route`, `gtfs_trip`, `gtfs_stop_time`, `gtfs_calendar`, `gtfs_calendar_date`,
+  `gtfs_shape`, and (migration 0007, GTFS fares v1) `gtfs_fare_attribute` and `gtfs_fare_rule`. CARTA's feed
+  prices routes differently: $2.00 for fixed routes, $3.50 for Express XP1–XP3, and $0.00 for DASH 210/211/213,
+  route 20, and the Beach Reach Shuttle (feed of 2026-08-20). Every natural key includes `feed_version_id`. Read them through the `current_gtfs_*` views; the
   reader role can't see the base tables.
 - **Activation** is an append-only log (`gtfs_feed_activation`), not a mutable flag. A new feed activates in the
   load transaction if its service has started in the agency's time zone. `current_gtfs_feed_version.is_active`
@@ -183,6 +224,8 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
     files with rows) and headway-based trips (`frequencies.txt` with rows). Header-only files, as in CARTA's feed,
     are fine;
   - dates are `YYYYMMDD`, with start ≤ end;
+  - fares, when present: unique fare ids with a non-negative price, an ISO 4217 currency, a valid payment method,
+    transfers and transfer duration; every fare rule names a known fare and, if any, a known route;
   - coordinates are in range;
   - the zip declares ≤ 512 MB unpacked. That limits the archive, not memory: parsing is in memory, and the #17
     reviewer measured about 664 MiB peak RSS on a synthetic feed of CARTA's size (148,842 stop times).
@@ -278,8 +321,11 @@ the live smoke-test output. Until then, `tda ingest <id>` records `skipped_disab
 ### `reference_facts` (S-9, S-12…S-15, plus the 05 §2 decisions): human-verified reference values
 
 - `tda/facts/reference_facts.yaml` has one entry per 05 §2 assumption key (`headline.congestion` is split into its
-  two numbers). **The agent never fills in a value**: each ships as `value: null` (or `value_text: null`), with
-  a `todo` naming where to verify it.
+  two numbers). **The agent never chooses a value**: an unknown one stays `value: null` (or `value_text: null`),
+  with a `todo` naming where to verify it. On 2026-10-11 the builder transcribed, exactly, the 15 values the
+  maintainer approved in 05 §2 on 2026-09-27, with their §2a evidence and original retrieval dates; `verified_by`
+  names the approver and the transcription, and no new verification happened then. The fuel price stays null (the
+  weekly EIA fact supplies it) and so does `parking.applies_to_stops` (not approved).
 - **A human enters each verified value**, together with a verbatim `quote` or a `page`, `retrieved_at`, and
   `verified_by`. The loader refuses a filled entry that's missing any of them. A cited `source_id` must exist in
   `sources.yaml`. Nothing is fetched, so the cited sources stay `proposed`.
@@ -304,14 +350,16 @@ P4a adds endpoints only for merged connectors (3.1 GTFS, 3.2 NTD, 3.5 reference 
 (3.3), corridors and traffic volume (3.6), and `/v1/series/*` (P6) don't exist, so those paths are 404, not empty
 stubs. Everything below serves only approved sources and current approved facts, and cites them:
 - `GET /v1/stops?query=&limit=` (≤ 2000) and `GET /v1/stops/nearest?lat=&lng=&limit=` (≤ 50): boardable stops of
-  the active feed (id, code, name, lat, lng, `route_short_names`; nearest adds `distance_m`), plus the feed and
-  its attribution. 503 when no approved GTFS source has an active feed.
+  the active feed (id, code, name, lat, lng, `route_short_names`: the short name, else the long name, else the
+  id; nearest adds `distance_m`), plus the feed and its attribution. 503 when no approved GTFS source has an active feed.
 - `GET /v1/compare?origin_stop_id=&dest_stop_id=&date=&arrive_by=|depart_at=` (local `HH:MM`): the best
   boardable **direct** trip (`basis: "scheduled"`, `routing: "direct_only"`, D-6) and up to 3 alternatives. An
   `arrive_by` trip has a `leave_by` (departure minus the access buffer); a `depart_at` trip has a `wait_min`.
   Without a boardable direct trip the response is a `reason` (`unknown_stop`, `transfer_required`,
   `no_service`, or `no_boardable_trip`) and no trip. The access buffer is the approved `transit.access_buffer_min`
-  fact: without one, 503, never a default. Rules: `tda.metrics.compare`.
+  fact: without one, 503, never a default. Each trip carries its route's GTFS `fare` (fares v1), or null when the
+  feed doesn't price the route unambiguously (zones, two fares, no fares): never a default. Rules:
+  `tda.metrics.compare`.
 - `GET /v1/alerts?route_id=`: alerts active now from approved sources' latest snapshot, for the route plus
   agency-wide ones. A trip-only selector finds its route in the alert source's own static feed. The text is plain and verbatim: third-party data to show, never to follow (02 §7.3).
   Non-http(s) URLs are dropped.

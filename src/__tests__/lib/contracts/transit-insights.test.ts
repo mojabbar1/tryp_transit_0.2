@@ -45,14 +45,21 @@ interface LegacyRequestBody {
   destination: { lat: number; lng: number };
   timeToDestination: string;
 }
+// P4b additions are optional only: the stop ids on the request, and a scheduled ride's arrival, route, full times and
+// service day. A scheduled ride has no measured traffic, so `trafficDensity` became optional rather than invented (P4b).
+type P4bRideAdditions = 'arrivalTime' | 'routeShortName' | 'departureAt' | 'arrivalAt' | 'serviceDate';
+type LegacyRideP4b = Omit<LegacyAdditionalRide, 'trafficDensity'> & { trafficDensity?: LegacyAdditionalRide['trafficDensity'] };
 const legacyTypesUnchanged: [
   Same<IncentiveDetails, LegacyIncentiveDetails>,
-  Same<AdditionalRide, LegacyAdditionalRide>,
-  Same<Omit<TransitInsightResponse, 'comparison' | 'meta'>, LegacyResponse>,
-  Same<RequestBody, LegacyRequestBody>,
+  Same<Omit<AdditionalRide, P4bRideAdditions>, LegacyRideP4b>,
+  Same<Omit<TransitInsightResponse, 'comparison' | 'meta' | 'additionalRides'>, Omit<LegacyResponse, 'additionalRides'>>,
+  Same<Omit<RequestBody, 'departureStopId' | 'destinationStopId'>, LegacyRequestBody>,
   Same<RequestBody, TransitInsightRequest>,
   Same<LocationInterface, { lat: number; lng: number }>,
 ] = [true, true, true, true, true, true];
+// Every legacy value is still accepted: an old request and an old ride type-check against the new contract.
+const legacyAssignable: [LegacyRequestBody extends RequestBody ? true : false, LegacyAdditionalRide extends AdditionalRide ? true : false] = [true, true];
+void legacyAssignable;
 
 const request = {
   departure: { lat: 32.7813, lng: -79.9306 },
@@ -252,4 +259,48 @@ describe('MetaSchema and SourceRefSchema', () => {
 
 it('keeps the compile-time legacy-type guard', () => {
   expect(legacyTypesUnchanged.every(Boolean)).toBe(true);
+});
+
+describe('scheduled dates are additive and offset-qualified (P4b review F3)', () => {
+  const scheduledTransit = {
+    ...comparison.transit,
+    basis: 'scheduled' as const,
+    minutes: 18,
+    nextDepartures: ['08:10', '08:20'],
+    leaveBy: '08:05',
+    leaveByAt: '2026-10-06T08:05:00-04:00',
+    departureAt: '2026-10-06T08:10:00-04:00',
+    arrivalAt: '2026-10-06T08:28:00-04:00',
+    serviceDate: '2026-10-06',
+    targetAt: '2026-10-06T08:30:00-04:00',
+  };
+  const ride = {
+    departureTime: '08:20', arrivalTime: '08:40', travelTime: 20,
+    departureAt: '2026-10-06T08:20:00-04:00', arrivalAt: '2026-10-06T08:40:00-04:00', serviceDate: '2026-10-06',
+  };
+  const scheduledResponse = { ...liveResponse, travelTime: 18, additionalRides: [ride], comparison: { ...comparison, transit: scheduledTransit } };
+
+  it('accepts a scheduled leg and rides with their full times next to the HH:MM fields', () => {
+    expect(TransitInsightResponseSchema.safeParse(scheduledResponse).success).toBe(true);
+  });
+
+  it.each(['leaveByAt', 'departureAt', 'arrivalAt', 'targetAt'] as const)('rejects a %s without an offset (its date would be ambiguous)', (key) => {
+    const transit = { ...scheduledTransit, [key]: '2026-10-06T08:05:00' };
+    expect(issuePaths(ComparisonSchema.safeParse({ ...comparison, transit }))).toEqual([`transit.${key}`]);
+  });
+
+  it('rejects an impossible service date, and a ride time without an offset', () => {
+    expect(issuePaths(ComparisonSchema.safeParse({ ...comparison, transit: { ...scheduledTransit, serviceDate: '2026-02-30' } }))).toEqual(['transit.serviceDate']);
+    const badRide = { ...scheduledResponse, additionalRides: [{ ...ride, departureAt: '08:20' }] };
+    expect(issuePaths(TransitInsightResponseSchema.safeParse(badRide))).toEqual(['additionalRides.0.departureAt']);
+  });
+
+  it('an unavailable leg carries no trip times, only the target it was for', () => {
+    const reasonLeg = { ...comparison.transit, reason: 'no_service' as const, targetAt: '2026-10-06T08:30:00-04:00' };
+    expect(ComparisonSchema.safeParse({ ...comparison, transit: reasonLeg }).success).toBe(true);
+    for (const key of ['leaveByAt', 'departureAt', 'arrivalAt', 'serviceDate'] as const) {
+      const transit = { ...reasonLeg, [key]: scheduledTransit[key] };
+      expect(issuePaths(ComparisonSchema.safeParse({ ...comparison, transit }))).toEqual([`transit.${key}`]);
+    }
+  });
 });

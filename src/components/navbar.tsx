@@ -40,7 +40,7 @@ const Navbar = () => {
                   className="ml-4 font-bold text-secondary hover:text-[#FFDF57]/95"
                   href="/find-rides"
                 >
-                  Find Rewards
+                  Plan a Trip
                 </Link>
                 <button
                   onClick={handleLogout}

@@ -10,12 +10,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import Engine
 
-from tda.metrics.compare import Comparison, Mode, compare
+from tda.metrics.compare import Comparison, Fare, Mode, compare
 from tda.metrics.feeds import ActiveFeed
 from tests.support.feeds import LoadFeed, edited, r1_trip
 
@@ -96,6 +97,42 @@ def test_a_direct_trip_has_exact_scheduled_minutes(ask: Callable[..., Ask]) -> N
     assert (best.departure, best.arrival) == (_at(WEDNESDAY, "07:00"), _at(WEDNESDAY, "07:20"))
     assert (best.in_vehicle_min, best.service_date, best.interpolated) == (20.0, WEDNESDAY, False)
     assert result.alternatives == []
+
+
+def test_each_trip_carries_its_routes_gtfs_fare(ask: Callable[..., Ask]) -> None:
+    run = ask(EXTRAS)
+    r1 = run("FX02", "FX05", WEDNESDAY, "depart_at", "07:10")
+    assert r1.best is not None
+    assert [o.fare for o in (r1.best, *r1.alternatives)] == [Fare("F1", Decimal("2.00"), "USD", 1, 7200)] * 4
+    r2 = run("FX01", "FX09", WEDNESDAY, "depart_at", "23:00")
+    assert r2.best is not None and r2.best.fare == Fare("F2", Decimal("0.00"), "USD", 0, None)
+
+
+FARE_HEADER = "fare_id,route_id,origin_id,destination_id,contains_id\n"
+
+
+@pytest.mark.parametrize(
+    ("rules", "r1_fare", "r2_fare"),
+    [
+        (None, None, None),  # no fares in the feed
+        ("F1,R1,Z1,,\nF2,R2,,,\n", None, "F2"),  # R1's fare depends on a zone
+        ("F1,R1,,,\nF2,R1,,,\nF2,R2,,,\n", None, "F2"),  # R1 matches two fares
+        ("F1,,,,\nF2,R2,,,\n", "F1", None),  # an agency-wide fare, and R2 matching two
+    ],
+)
+def test_a_fare_is_given_only_when_the_feed_prices_the_route_unambiguously(
+    ask: Callable[..., Ask], rules: str | None, r1_fare: str | None, r2_fare: str | None
+) -> None:
+    if rules is None:
+        contents: dict[str, str | None] = {"fare_attributes.txt": None, "fare_rules.txt": None}
+    else:
+        contents = {"fare_rules.txt": FARE_HEADER + rules}
+    run = ask(contents)
+    r1 = run("FX01", "FX06", WEDNESDAY, "depart_at", "06:50")
+    r2 = run("FX01", "FX09", WEDNESDAY, "depart_at", "23:00")
+    assert r1.best is not None and r2.best is not None
+    fares = tuple(trip.fare.fare_id if trip.fare else None for trip in (r1.best, r2.best))
+    assert fares == (r1_fare, r2_fare)
 
 
 def test_depart_at_picks_the_earliest_departure_and_three_alternatives(ask: Callable[..., Ask]) -> None:

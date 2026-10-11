@@ -11,6 +11,8 @@ const MAX_NUDGE_CHARS = 400;
 export interface NarrationOutcome {
   nudge: string;
   narration: Narration;
+  /** The ids of the facts a served LLM nudge renders (its validated slots), so the caller can cite them. */
+  factIds?: string[];
   /** Why an attempted LLM narration fell back to the template (a reason code, for the log). */
   fallbackReason?: string;
 }
@@ -69,5 +71,6 @@ export async function narrate(options: {
   return {
     nudge: substituteNudge(output.nudge, output.slots, facts, flags),
     narration: { source: 'llm', provider: provider.name, model: provider.model, validated: true },
+    factIds: [...output.slots],
   };
 }

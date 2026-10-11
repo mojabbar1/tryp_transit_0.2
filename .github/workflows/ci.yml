@@ -28,10 +28,15 @@ jobs:
 
       - run: npm run lockfile:check
       - run: npm ci
+      # Contract test (P4b): the committed data-agent types must match contracts/data-agent.openapi.json.
+      - run: npm run check:data-agent-types
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test -- --ci
-      - run: npm run build
+      # One offline production build (`next build`, in its global setup; test font fixture, network guard and proxy
+      # trap), then the HTTP integration checks against `next start` with a synthetic loopback data agent
+      # (src/__tests__/integration). A failed build, or any build attempt to leave loopback, fails this step.
+      - run: npm run test:integration -- --ci
 
   python:
     name: python (compile)

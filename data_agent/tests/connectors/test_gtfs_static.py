@@ -37,6 +37,8 @@ TABLES = (
     "gtfs_calendar",
     "gtfs_calendar_date",
     "gtfs_shape",
+    "gtfs_fare_attribute",
+    "gtfs_fare_rule",
 )
 FIXTURE_COUNTS = {
     "gtfs_feed_version": 1,
@@ -47,6 +49,8 @@ FIXTURE_COUNTS = {
     "gtfs_calendar": 2,
     "gtfs_calendar_date": 2,
     "gtfs_shape": 7,
+    "gtfs_fare_attribute": 2,
+    "gtfs_fare_rule": 2,
 }
 
 
@@ -68,6 +72,27 @@ def test_the_fixture_parses_with_times_past_midnight_and_blank_times() -> None:
     assert (last["arrival_time"], last["arrival_s"]) == ("24:06:00", 24 * 3600 + 6 * 60)
     blank = next(st for st in tables["gtfs_stop_time"] if st["trip_id"] == "T2" and st["stop_sequence"] == 3)
     assert (blank["arrival_time"], blank["arrival_s"]) == (None, None)
+
+
+def test_fares_parse_and_a_feed_without_them_still_loads() -> None:
+    _, tables = parse_feed(zipped())
+    first = tables["gtfs_fare_attribute"][0]
+    assert (first["fare_id"], str(first["price"]), first["transfers"], first["transfer_duration"]) == (
+        "F1",
+        "2.00",
+        1,
+        7200,
+    )
+    assert tables["gtfs_fare_attribute"][1]["transfer_duration"] is None
+    assert tables["gtfs_fare_rule"][0] == {
+        "fare_id": "F1",
+        "route_id": "R1",
+        "origin_id": None,
+        "destination_id": None,
+        "contains_id": None,
+    }
+    _, without = parse_feed(zipped({"fare_attributes.txt": None, "fare_rules.txt": None}))
+    assert (without["gtfs_fare_attribute"], without["gtfs_fare_rule"]) == ([], [])
 
 
 def test_feed_dates_come_from_the_calendar_without_feed_info() -> None:
@@ -113,6 +138,17 @@ def test_feed_dates_come_from_the_calendar_without_feed_info() -> None:
             replace("calendar_dates.txt", "WKDY,20260907,2", "WKDY,20260907,3"),
             "exception_type must be 1 or 2",
         ),
+        (append("fare_rules.txt", "F9,R1,,,"), "1 fare rules with an unknown fare_id"),
+        (append("fare_rules.txt", "F1,R9,,,"), "1 fare rules with an unknown route_id"),
+        (append("fare_attributes.txt", "F1,1.00,USD,0,,FX,"), "gtfs_fare_attribute: duplicate fare_id"),
+        (append("fare_rules.txt", "F1,R1,,,"), "gtfs_fare_rule: duplicate fare_id"),
+        (replace("fare_attributes.txt", "F1,2.00", "F1,-1"), "price -1 is not a non-negative amount"),
+        (replace("fare_attributes.txt", "F1,2.00", "F1,two"), "price 'two' is not a valid amount"),
+        (replace("fare_attributes.txt", "F1,2.00,USD", "F1,2.00,usd"), "is not an ISO 4217 code"),
+        (replace("fare_attributes.txt", "USD,0,1,FX", "USD,3,1,FX"), "payment_method must be 0 or 1"),
+        (replace("fare_attributes.txt", "USD,0,1,FX", "USD,0,5,FX"), "transfers must be 0, 1, 2 or empty"),
+        (replace("fare_attributes.txt", "FX,7200", "FX,-1"), "transfer_duration is negative"),
+        ({"fare_attributes.txt": None}, "2 fare rules with an unknown fare_id"),
     ],
 )
 def test_invalid_feeds_are_rejected(contents: dict[str, str | None], message: str) -> None:

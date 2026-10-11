@@ -5,6 +5,14 @@
 # `verified_by`. The loader refuses a filled entry that's missing any of them. The approved values and their
 # verbatim evidence are in docs/transit-data-agent/05-decisions-and-review.md §2 and §2a. Null entries are skipped.
 # Each loaded fact is a `candidate` until someone runs `tda review approve <item>`.
+#
+# Transcription (2026-10-11): the filled entries below copy, exactly, the "Approved value" column of 05 §2, which the
+# maintainer (mojabbar) approved on 2026-09-27 (chat, see 05 §7 P1), with the verbatim evidence from 05 §2a
+# (retrieved 2026-09-25 ET; decisions dated 2026-09-27). They are historically dated, recorded assumptions: the
+# Copilot builder transcribed them on 2026-10-11 under the maintainer's 2026-10-11 instruction, and **no new human
+# verification of any source happened on that date**. Not transcribed: `drive.fuel_price_usd_per_gal` (the current
+# weekly value comes from the approved eia_gas connector, never the old 4.163) and `parking.applies_to_stops`
+# (05 §2 has no approved value).
 facts:
   - key: drive.fuel_price_usd_per_gal
     value: null
@@ -15,117 +23,161 @@ facts:
     todo: provided weekly by the eia_gas connector (P3.4); enter a value only for a manual snapshot (05 §2)
 
   - key: drive.mpg
-    value: null
+    value: 22.2
     unit: miles per gallon (average gasoline vehicle on the road)
     source_id: epa-typical-vehicle
     geography: country:us
     url: https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle
-    todo: verify from the EPA page (EPA-420-F-23-014), the fuel-economy sentence; approved value in 05 §2
+    quote: "This assumes the average gasoline vehicle on the road today has a fuel economy of about 22.2 miles per gallon and drives around 11,500 miles per year."
+    retrieved_at: 2026-09-25
+    verified_by: &transcribed "mojabbar (approved value, 05 §2, 2026-09-27); transcribed from 05 §2/§2a by the Copilot builder 2026-10-11, no new verification"
+    note: On-road fleet average, not new cars (05 §2a)
 
   - key: co2.car_g_per_mile
-    value: null
+    value: 400
     unit: g CO2 per vehicle-mile (tailpipe)
     source_id: epa-typical-vehicle
     geography: country:us
     url: https://www.epa.gov/greenvehicles/greenhouse-gas-emissions-typical-passenger-vehicle
-    todo: verify from the EPA page, the grams-per-mile sentence; approved value in 05 §2
+    quote: "The average passenger vehicle emits about 400 grams of CO2 per mile."
+    retrieved_at: 2026-09-25
+    verified_by: *transcribed
+    note: Tailpipe only (05 §2a)
 
   - key: drive.maintenance_usd_per_mile
-    value: null
+    value: 0.1104
     unit: USD per mile (maintenance, repair and tires; includes an extended warranty)
     source_id: aaa-driving-costs
     geography: country:us
     url: https://newsroom.aaa.com/wp-content/uploads/2025/09/UPDATE-AAA-Fact-Sheet-Your-Driving-Cost-9.2025-1.pdf
-    todo: verify from the AAA fact sheet p.1 ("Maintenance, Repair & Tires"); approved value in 05 §2
+    page: p. 1
+    quote: "Maintenance, Repair & Tires 11.04¢/mile"
+    retrieved_at: 2026-09-25
+    verified_by: *transcribed
+    note: National average for new cars; includes an allocated extended-warranty cost, so not purely marginal (05 §2a)
 
   - key: drive.total_cost_usd_per_mile
-    value: null
+    value: 0.77
     unit: USD per mile (total cost to own and operate, 15,000 miles a year; annual stats only)
     source_id: aaa-driving-costs
     geography: country:us
     url: https://newsroom.aaa.com/wp-content/uploads/2025/09/UPDATE-AAA-Fact-Sheet-Your-Driving-Cost-9.2025-1.pdf
-    todo: verify from the AAA fact sheet p.1 ("Average Ownership Costs Per Mile", 15k column); approved value in 05 §2
+    page: p. 1
+    quote: "Average Ownership Costs Per Mile — Miles per Year 10k 15k 20k — Average Cost $1.00 77¢ 66¢"
+    retrieved_at: 2026-09-25
+    verified_by: *transcribed
+    note: The printed 15k-mile value (05 §2 "as printed")
 
   - key: parking.downtown_usd
-    value: null
+    value: 24.00
     unit: USD per standard-rate workday in a City garage
     source_id: carta-fares-parking
     geography: place:charleston-sc
     url: https://www.charleston-sc.gov/1025/Where-to-Park
-    todo: verify from the City's Where to Park page (garage rates and daily max); approved value and scenario in 05 §2
+    quote: "Garages - Rates Per 20 Min: Rates $1, Daily Max* $24. * Daily is 12 midnight to 12 midnight, computed per single parking event."
+    retrieved_at: 2026-09-25
+    verified_by: *transcribed
+    note: Standard-rate, self-paid workday scenario (05 §2); no evening discount, exemption, or employer-paid parking
 
   - key: transit.base_fare_usd
-    value: null
+    value: 2.00
     unit: USD per fixed-route one-way ride
     source_id: carta-fares-parking
     geography: agency:ntd:40110
     url: https://ridecarta.com/fares-passes/
-    todo: verify from CARTA Fares & Passes ("Fixed Route One-Way"); approved value in 05 §2
+    quote: "Fixed Route One-Way: $2.00/ride"
+    retrieved_at: 2026-09-25
+    verified_by: *transcribed
+    note: Standard fixed-route fare only; Express is $3.50, and reduced or free fares have conditions (05 §2a)
 
   - key: co2.bus_g_per_passenger_mile
-    value: null
+    value: 290
     unit: g CO2 per passenger-mile (2010 national bus average, a proxy)
     source_id: fta-2010-climate
     geography: country:us
     url: https://www.epa.gov/sites/default/files/2016-04/documents/public_transportations_role_in_responding_to_climate_change.pdf
-    todo: verify from the FTA deck slide 3 ("Bus Transit" bar, lb converted to g); approved value in 05 §2
+    page: slide 3
+    quote: "Pounds CO2 per Passenger Mile: ... Bus Transit 0.64"
+    retrieved_at: 2026-09-25
+    verified_by: *transcribed
+    note: 0.64 lb x 453.59 g/lb, about 290 g; read visually from a chart; a stale (2010) national proxy, not CARTA's own (05 §2a)
 
   - key: headline.congestion.level_pct
-    value: null
+    value: 35.5
     unit: percent average congestion level (TomTom Traffic Index 2025, City view)
     source_id: tomtom-traffic-index
     geography: place:charleston-sc
     url: https://www.tomtom.com/traffic-index/city/charleston-sc/
+    quote: "Average congestion level 35.5%"
+    retrieved_at: 2026-09-25
+    verified_by: *transcribed
+    period_start: 2025-01-01
+    period_end: 2025-12-31
     note: from 05 §2 key headline.congestion; display only, and label the area "City"
-    todo: verify on the TomTom page (City view, "Average congestion level"); approved value in 05 §2
 
   - key: headline.congestion.rush_hour_hours_lost
-    value: null
+    value: 48
     unit: hours lost to rush-hour traffic in 2025 (TomTom Traffic Index, City view, 10 km commute)
     source_id: tomtom-traffic-index
     geography: place:charleston-sc
     url: https://www.tomtom.com/traffic-index/city/charleston-sc/
+    quote: "Time lost due to traffic in rush hour in 2025: 48 hours"
+    retrieved_at: 2026-09-25
+    verified_by: *transcribed
+    period_start: 2025-01-01
+    period_end: 2025-12-31
     note: from 05 §2 key headline.congestion; display only, and label the area "City"
-    todo: verify on the TomTom page (City view, "Time lost due to traffic in rush hour"); approved value in 05 §2
 
   # Decisions rather than measurements: their evidence is the 05 §2 decision record itself.
   - key: cost.basis
-    value_text: null
+    value_text: Marginal (fuel + maintenance) per trip; total cost of ownership for annual stats only
     source_id: null
     url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
-    todo: enter the decision recorded in 05 §2 (cost.basis)
+    page: 05 §2, row cost.basis, "Approved value" column
+    retrieved_at: 2026-09-27
+    verified_by: *transcribed
 
   - key: co2.car_occupancy
-    value: null
+    value: 1.0
     unit: persons per car (a drive-alone commute)
     source_id: null
     url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
-    todo: enter the decision recorded in 05 §2 (co2.car_occupancy)
+    page: 05 §2, row co2.car_occupancy, "Approved value" column
+    retrieved_at: 2026-09-27
+    verified_by: *transcribed
 
   - key: traffic.density_thresholds
-    value_text: null
+    value_text: Light ≥ 0.85, Medium ≥ 0.60, Heavy < 0.60; labeled "Traffic now"
     source_id: null
     url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
-    todo: enter the decision recorded in 05 §2 (traffic.density_thresholds)
+    page: 05 §2, row traffic.density_thresholds, "Approved value" column
+    retrieved_at: 2026-09-27
+    verified_by: *transcribed
 
   - key: transit.access_buffer_min
-    value: null
+    value: 5
     unit: minutes of walk-to-stop buffer
     source_id: null
     url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
-    todo: enter the decision recorded in 05 §2 (transit.access_buffer_min)
+    page: 05 §2, row transit.access_buffer_min, "Approved value" column
+    retrieved_at: 2026-09-27
+    verified_by: *transcribed
 
   - key: incentive.policy
-    value_text: null
+    value_text: Demo-only until D-25 funded offers exist; when live, eCredit within $0.50–$2.00, chosen deterministically
     source_id: null
     url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
-    todo: enter the decision recorded in 05 §2 (incentive.policy)
+    page: 05 §2, row incentive.policy, "Approved value" column
+    retrieved_at: 2026-09-27
+    verified_by: *transcribed
 
   - key: nudge.tone_rules
-    value_text: null
+    value_text: 'As proposed: 1–2 sentences; no false urgency or fear; numbers by reference only; "about" for estimates; no demographic targeting'
     source_id: null
     url: https://github.com/mojabbar1/tryp_transit_0.2/blob/main/docs/transit-data-agent/05-decisions-and-review.md
-    todo: enter the decision recorded in 05 §2 (nudge.tone_rules)
+    page: 05 §2, row nudge.tone_rules, "Approved value" column
+    retrieved_at: 2026-09-27
+    verified_by: *transcribed
 
   - key: parking.applies_to_stops
     value_text: null

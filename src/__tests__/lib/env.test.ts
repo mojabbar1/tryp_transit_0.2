@@ -31,6 +31,7 @@ describe('parseEnv', () => {
       llmTimeoutMs: 8000,
       regionTimezone: 'America/New_York',
       dataAgentBaseUrl: undefined,
+      dataAgentEnabled: false,
     });
     expect([env.geminiApiKey, env.openaiApiKey, env.tomtomApiKey]).toEqual([undefined, undefined, undefined]);
   });
@@ -68,8 +69,16 @@ describe('parseEnv', () => {
     ['REGION_TIMEZONE', 'Mars/Olympus_Mons'],
     ['DATA_AGENT_BASE_URL', 'javascript:alert(1)'],
     ['DATA_AGENT_BASE_URL', 'not a url'],
+    ['DATA_AGENT_ENABLED', 'yes'],
   ])('rejects an invalid %s (%p) by name', (name, value) => {
     expect(thrown(() => parseEnv({ [name]: value }))).toBe(`Invalid server environment: ${name}`);
+  });
+
+  it('keeps the data agent off unless it is enabled and has a URL (P4b default off)', () => {
+    expect(parseEnv({ DATA_AGENT_BASE_URL: 'http://localhost:8081' }).dataAgentEnabled).toBe(false);
+    expect(parseEnv({ DATA_AGENT_ENABLED: 'true' }).dataAgentEnabled).toBe(false);
+    expect(parseEnv({ DATA_AGENT_ENABLED: 'false', DATA_AGENT_BASE_URL: 'http://localhost:8081' }).dataAgentEnabled).toBe(false);
+    expect(parseEnv({ DATA_AGENT_ENABLED: 'true', DATA_AGENT_BASE_URL: 'http://localhost:8081' }).dataAgentEnabled).toBe(true);
   });
 
   it('prefers TOMTOM_API_KEY and falls back to the legacy NEXT_PUBLIC_ name', () => {

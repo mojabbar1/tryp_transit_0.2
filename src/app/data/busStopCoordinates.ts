@@ -1,5 +1,11 @@
 import { BusStopCoordinates } from '@/types/interfaces';
 
+/**
+ * P1 approximate locations (intersections), **not** CARTA stops. Since the real `tda gtfs export-stops` fallback is
+ * committed (P4b pilot), the stop picker serves this list only if that file is empty or rejected, labeled as places.
+ * It also keeps the P0 keys that the demo scenarios and the unapproved `parking.applies_to_stops` proposal (05 §2) name.
+ */
+
 export const busStopCoordinates: BusStopCoordinates = {
   // Downtown Charleston
   'Mary Street / Meeting Street': { lat: 32.7913, lng: -79.9353 },

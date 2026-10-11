@@ -1,117 +1,82 @@
-'use client';
-
+import { Citations } from '@/components/citations';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { getEnv } from '@/lib/env';
+import { getApprovedFacts } from '@/lib/facts/approved';
+import { costRows, factOriginNote } from '@/lib/facts/pages';
 
-const SafetyCostComparisonPage = () => {
+export const dynamic = 'force-dynamic';
+
+const COST_KEYS = [
+  'drive.fuel_price_usd_per_gal',
+  'drive.mpg',
+  'drive.maintenance_usd_per_mile',
+  'drive.total_cost_usd_per_mile',
+  'parking.downtown_usd',
+  'transit.base_fare_usd',
+] as const;
+
+/**
+ * Safety: no approved crash or injury facts exist yet (NHTSA FARS, catalog S-18, is a P3.9 follow-up), so the
+ * section says the data is unavailable instead of showing uncited percentages. Cost: approved facts with
+ * citations, plus the marginal per-mile cost computed from them. The old percentage table had no sources and is gone.
+ */
+export default async function SafetyCostComparisonPage() {
+  const approved = await getApprovedFacts(getEnv(), COST_KEYS);
+  const rows = costRows(approved.facts);
+  const note = factOriginNote(approved.facts);
+  const sources = COST_KEYS.flatMap((key) => approved.facts[key]?.citations ?? []);
+
   return (
     <>
-      <h2 className="text-3xl md:text-5xl font-bold w-full bg-secondary p-6 text-center">
-        Safety and Cost Comparison
-      </h2>
+      <h2 className="text-3xl md:text-5xl font-bold w-full bg-secondary p-6 text-center">Safety and Cost Comparison</h2>
       <div className="p-6 text-secondary-foreground text-center">
-        <Card className="w-full max-w-4xl mx-auto bg-primary-foreground rounded-lg overflow-hidden shadow-2xl mb-8">
+        <Card role="status" className="w-full max-w-4xl mx-auto bg-primary-foreground rounded-lg overflow-hidden shadow-2xl mb-8">
           <CardHeader className="bg-primary p-6">
-            <CardTitle className="text-secondary text-2xl font-semibold">
-              Safety Comparison
-            </CardTitle>
+            <CardTitle className="text-secondary text-2xl font-semibold">Safety Comparison</CardTitle>
           </CardHeader>
-          <CardContent className="p-6 bg-primary-foreground">
-            <p className="text-lg font-medium text-secondary-foreground mb-4">
-              <span className="font-bold">Fatalities:</span> Buses have
-              approximately 90% fewer fatalities compared to cars.
-            </p>
-            <p className="text-lg font-medium text-secondary-foreground mb-4">
-              <span className="font-bold">Injuries:</span> Buses have around
-              70-80% fewer injuries compared to cars.
-            </p>
-            <p className="text-lg font-medium text-secondary-foreground">
-              Using public buses is significantly safer compared to cars in
-              terms of both fatalities and injuries.
+          <CardContent className="p-6 bg-primary-foreground text-left">
+            <p className="text-lg font-medium text-secondary-foreground mb-2">Data unavailable</p>
+            <p className="text-secondary-foreground">
+              No approved, cited crash or injury figures for Charleston-area driving and bus travel exist yet, so none
+              are shown. They will come from the NHTSA Fatality Analysis Reporting System once that source is
+              connected and its figures are approved.
             </p>
           </CardContent>
         </Card>
 
         <Card className="w-full max-w-4xl mx-auto bg-primary-foreground rounded-lg overflow-hidden shadow-2xl">
           <CardHeader className="bg-primary p-6">
-            <CardTitle className="text-secondary text-2xl font-semibold">
-              Cost and Environmental Impact Comparison
-            </CardTitle>
+            <CardTitle className="text-secondary text-2xl font-semibold">Cost of driving vs. the bus</CardTitle>
           </CardHeader>
           <CardContent className="p-6 bg-primary-foreground">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Criteria</TableHead>
-                  <TableHead>Cars</TableHead>
-                  <TableHead>Public Buses</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead>Value</TableHead>
+                  <TableHead>Basis</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                <TableRow className="text-start">
-                  <TableCell>Initial Cost</TableCell>
-                  <TableCell>100%</TableCell>
-                  <TableCell>0% (no purchase needed)</TableCell>
-                </TableRow>
-                <TableRow className="text-start">
-                  <TableCell>Depreciation</TableCell>
-                  <TableCell>100%</TableCell>
-                  <TableCell>0%</TableCell>
-                </TableRow>
-                <TableRow className="text-start">
-                  <TableCell>Fuel Cost</TableCell>
-                  <TableCell>100%</TableCell>
-                  <TableCell>10% (included in fare)</TableCell>
-                </TableRow>
-                <TableRow className="text-start">
-                  <TableCell>Insurance</TableCell>
-                  <TableCell>100%</TableCell>
-                  <TableCell>0%</TableCell>
-                </TableRow>
-                <TableRow className="text-start">
-                  <TableCell>Maintenance Cost</TableCell>
-                  <TableCell>100%</TableCell>
-                  <TableCell>10% (covered by authority)</TableCell>
-                </TableRow>
-                <TableRow className="text-start">
-                  <TableCell>Repair Cost</TableCell>
-                  <TableCell>100%</TableCell>
-                  <TableCell>10% (included in fare)</TableCell>
-                </TableRow>
-                <TableRow className="text-start">
-                  <TableCell>Parking Cost</TableCell>
-                  <TableCell>100%</TableCell>
-                  <TableCell>0%</TableCell>
-                </TableRow>
-                <TableRow className="text-start">
-                  <TableCell>Overall Cost</TableCell>
-                  <TableCell>100%</TableCell>
-                  <TableCell>20% (fare covers most expenses)</TableCell>
-                </TableRow>
-                <TableRow className="text-start">
-                  <TableCell>Convenience</TableCell>
-                  <TableCell>100% (door-to-door)</TableCell>
-                  <TableCell>70% (limited by routes/schedule)</TableCell>
-                </TableRow>
-                <TableRow className="text-start">
-                  <TableCell>Environmental Impact</TableCell>
-                  <TableCell>Higher (100%)</TableCell>
-                  <TableCell>Lower (30%)</TableCell>
-                </TableRow>
+                {rows.map((row) => (
+                  <TableRow key={row.id} className="text-start">
+                    <TableCell>{row.label}</TableCell>
+                    <TableCell>{row.value ?? 'Data unavailable'}</TableCell>
+                    <TableCell className="text-sm">{row.basis}</TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
+            <p className="mt-4 text-left text-sm">
+              Trip comparisons use the marginal cost (gasoline and maintenance). Parking applies only to some trips, and
+              which ones is not approved yet, so trip comparisons leave it out.
+            </p>
+            {note && <p className="mt-2 text-left text-sm text-amber-800">{note}</p>}
+            <Citations sources={sources} />
           </CardContent>
         </Card>
       </div>
     </>
   );
-};
-
-export default SafetyCostComparisonPage;
+}

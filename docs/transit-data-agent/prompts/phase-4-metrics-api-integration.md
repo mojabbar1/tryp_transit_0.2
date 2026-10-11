@@ -157,8 +157,9 @@ consumes the read API and the committed fallback file.
 docker compose up -d --build postgres data-agent-api && (cd data_agent && uv run tda db bootstrap && uv run alembic upgrade head) && sleep 3
 curl -s "localhost:8081/v1/compare?origin_stop_id=<A>&dest_stop_id=<B>&date=$(date +%F)&arrive_by=08:30" \
   | jq -e '.transit.basis=="scheduled" and (.alternatives|length)>=0'
-# 4b (from the repo root)
-(cd src && npm run gen:data-agent && git diff --exit-code lib/api/data-agent.types.ts && npm run lint && npm run typecheck && npm test -- --ci && npm run build)
+# 4b (from the repo root); test:integration runs `next build` once, then the HTTP checks against a synthetic
+# loopback data agent (SETUP.md, "HTTP integration checks")
+(cd src && npm run gen:data-agent && git diff --exit-code lib/api/data-agent.types.ts && npm run lint && npm run typecheck && npm test -- --ci && npm run test:integration)
 ```
 
 Manual checklist (a human, with a live GTFS feed loaded):
