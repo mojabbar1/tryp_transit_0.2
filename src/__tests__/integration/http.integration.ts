@@ -8,6 +8,7 @@
  * server-rendered page text. It is not a browser/UI test, and it validates nothing about the real data agent, CARTA
  * data, or any fact approval: every upstream answer is synthetic.
  */
+import { fallbackFeed, fallbackStops } from '@/app/data/stops.fallback.generated';
 import { type TransitInsightResponse, TransitInsightResponseSchema } from '@/lib/contracts/transit-insights';
 import { StatsResponseSchema } from '@/lib/stats/types';
 import { type StopsResponse, StopsResponseSchema } from '@/lib/stops/types';
@@ -140,19 +141,17 @@ async function expectHealthWithoutProviders(app: NextApp) {
   expect(health.body).toEqual({ status: 'ok', configured: { llm: false, traffic: false } });
 }
 
-function expectLegacyPlaces(stops: StopsResponse) {
-  expect(stops.source).toBe('legacy_places');
-  expect(stops.stops.length).toBeGreaterThan(0);
-  // Approximate places, labeled as such: never a stop id, a feed, or a stop citation.
+function expectSavedStops(stops: StopsResponse) {
+  // The committed `tda gtfs export-stops` file (the real CARTA feed, P4b pilot): GTFS stops, cited to that feed.
+  expect(stops.source).toBe('gtfs_fallback');
+  expect(stops.stops).toHaveLength(fallbackStops.length);
   for (const option of stops.stops) {
-    expect(option.kind).toBe('place');
-    expect(option.id).toBeNull();
-    expect(option.key.startsWith('place:')).toBe(true);
+    expect(option.kind).toBe('gtfs_stop');
+    expect(option.key).toBe(`stop:${option.id}`);
   }
-  expect(stops.feed).toBeNull();
-  expect(stops.citations).toEqual([]);
-  // The committed export-stops file is still the empty placeholder (no real GTFS export yet).
-  expect(stops.degraded).toEqual(['data_agent_unavailable', 'stops_fallback_unavailable']);
+  expect(stops.feed).toEqual(fallbackFeed);
+  expect(stops.citations).toEqual([{ ref: 'gtfs.stops.fallback', sourceId: fallbackFeed?.sourceId, attribution: fallbackFeed?.attribution }]);
+  expect(stops.degraded).toEqual(['data_agent_unavailable']);
 }
 
 async function expectStatsUnavailable(app: NextApp) {
@@ -450,10 +449,10 @@ describe('HTTP integration: production app with a SYNTHETIC data agent', () => {
       await agent?.close();
     });
 
-    test('stops: the labeled approximate places, never fake stops', async () => {
+    test('stops: the saved CARTA stop export, cited to its feed, never fake stops', async () => {
       const stops = await getJson(app, '/api/stops');
       expect(stops.status).toBe(200);
-      expectLegacyPlaces(StopsResponseSchema.parse(stops.body));
+      expectSavedStops(StopsResponseSchema.parse(stops.body));
       expect(stops.headers.get('cache-control')).toBe('public, max-age=60');
     });
 
@@ -502,10 +501,10 @@ describe('HTTP integration: production app with a SYNTHETIC data agent', () => {
       await expectHealthWithoutProviders(app);
     });
 
-    test('stops: the labeled approximate places', async () => {
+    test('stops: the saved CARTA stop export, cited to its feed', async () => {
       const stops = await getJson(app, '/api/stops');
       expect(stops.status).toBe(200);
-      expectLegacyPlaces(StopsResponseSchema.parse(stops.body));
+      expectSavedStops(StopsResponseSchema.parse(stops.body));
     });
 
     test('trip: degraded (the P1 rollback path), never invented; a bad request is a 400', async () => {

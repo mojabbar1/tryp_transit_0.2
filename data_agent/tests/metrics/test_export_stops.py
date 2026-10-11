@@ -12,6 +12,7 @@ from typer.testing import CliRunner
 
 from tda.cli import app
 from tda.config.settings import get_settings
+from tda.connectors.gtfs_cli import FEED_TYPE
 from tests.conftest import DbUrls
 from tests.support.feeds import LoadFeed, edited
 
@@ -21,6 +22,10 @@ HEADER = [
     "// Source: carta-gtfs, feed fixture-1, valid 2026-01-01 to 2026-12-31.",
     "// Test data",
     "export type FallbackStop = { id: string; name: string; lat: number; lng: number };",
+    FEED_TYPE,
+    "",
+    'export const fallbackFeed: FallbackFeed | null = { sourceId: "carta-gtfs", label: "fixture-1", '
+    'validFrom: "2026-01-01", validTo: "2026-12-31", attribution: "Test data" };',
     "",
     "export const fallbackStops: readonly FallbackStop[] = [",
 ]

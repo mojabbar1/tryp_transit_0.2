@@ -104,6 +104,12 @@ def render_stops_ts(feed: ActiveFeed, stops: list[Stop], attribution: str | None
         lines.append(f"// {_comment(attribution)}")
     lines += [
         "export type FallbackStop = { id: string; name: string; lat: number; lng: number };",
+        FEED_TYPE,
+        "",
+        # The feed the stops came from, so the web app can show its attribution and validity with them.
+        f"export const fallbackFeed: FallbackFeed | null = {{ sourceId: {_js(feed.source_id)}, "
+        f"label: {_js_or_null(feed.feed_label)}, validFrom: {_js(feed.feed_start.isoformat())}, "
+        f"validTo: {_js(feed.feed_end.isoformat())}, attribution: {_js_or_null(attribution)} }};",
         "",
         "export const fallbackStops: readonly FallbackStop[] = [",
         *(
@@ -115,6 +121,16 @@ def render_stops_ts(feed: ActiveFeed, stops: list[Stop], attribution: str | None
         "",
     ]
     return "\n".join(lines)
+
+
+FEED_TYPE = (
+    "export type FallbackFeed = { sourceId: string; label: string | null; validFrom: string; "
+    "validTo: string; attribution: string | null };"
+)
+
+
+def _js_or_null(value: str | None) -> str:
+    return "null" if value is None else _js(value)
 
 
 def _js(value: str) -> str:

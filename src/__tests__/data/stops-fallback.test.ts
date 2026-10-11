@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DEMO_STOP_MAPPING_STATUS, demoScenarioStops } from '@/app/data/demo-stops';
 import { busStopCoordinates } from '@/app/data/busStopCoordinates';
-import { fallbackStops } from '@/app/data/stops.fallback.generated';
+import { fallbackFeed, fallbackStops } from '@/app/data/stops.fallback.generated';
 import { DEMO_SCENARIO_IDS } from '@/lib/demo/scenarios';
 import { looksLikeFixture } from '@/lib/stops/catalog';
 
@@ -30,9 +30,16 @@ describe('stops.fallback.generated.ts', () => {
     }
   });
 
+  it('once filled, names the feed it came from and its attribution (CARTA/Trillium, 05 §6)', () => {
+    if (fallbackStops.length === 0) return;
+    expect(fallbackFeed).toMatchObject({ sourceId: 'carta-gtfs', attribution: expect.stringContaining('CARTA') });
+    expect(fallbackSource).toContain(`// Source: carta-gtfs, feed ${fallbackFeed?.label}, valid ${fallbackFeed?.validFrom} to ${fallbackFeed?.validTo}.`);
+  });
+
   it('exports the names the export-stops command writes, so a regenerated file drops in unchanged', () => {
     expect(fallbackSource).toContain('export type FallbackStop = { id: string; name: string; lat: number; lng: number };');
     expect(fallbackSource).toContain('export const fallbackStops: readonly FallbackStop[] = [');
+    expect(fallbackSource).toContain('export const fallbackFeed: FallbackFeed | null = ');
   });
 });
 

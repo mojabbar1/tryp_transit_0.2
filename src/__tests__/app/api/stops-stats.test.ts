@@ -21,6 +21,7 @@ import { GET as getStops } from '@/app/api/stops/route';
 import { GET as getStatsRoute } from '@/app/api/stats/route';
 import { POST as postInsights } from '@/app/api/transit-insights/route';
 import { busStopCoordinates } from '@/app/data/busStopCoordinates';
+import { fallbackFeed, fallbackStops } from '@/app/data/stops.fallback.generated';
 import { clearDataAgentCaches } from '@/lib/api/data-agent';
 import { TransitInsightResponseSchema } from '@/lib/contracts/transit-insights';
 import { getStopCatalog, looksLikeFixture } from '@/lib/stops/catalog';
@@ -119,14 +120,16 @@ describe('GET /api/stops', () => {
     ['malformed', () => { replies['/v1/stops'] = () => new Response('{"feed":{}}', { status: 200 }); }],
     ['503', () => { replies['/v1/stops'] = json({ detail: 'no active feed' }, 503); }],
     ['empty', () => { replies['/v1/stops'] = json({ feed, items: [] }); }],
-  ])('agent %s: no real export exists yet, so the P1 places are served, labeled as places, and flagged', async (_label, arrange) => {
+  ])('agent %s: the committed real export is served as GTFS stops, cited to its feed, and flagged', async (_label, arrange) => {
     arrange();
     const response = await getStops(stopsRequest());
     const body = StopsResponseSchema.parse(await response.json());
-    expect(body.source).toBe('legacy_places');
-    expect(body.stops.every((s) => s.kind === 'place' && s.id === null)).toBe(true);
-    expect(body.stops).toHaveLength(Object.keys(busStopCoordinates).length);
-    expect(body.degraded).toEqual(['data_agent_unavailable', 'stops_fallback_unavailable']);
+    expect(body.source).toBe('gtfs_fallback');
+    expect(body.stops.every((s) => s.kind === 'gtfs_stop' && s.id !== null)).toBe(true);
+    expect(body.stops).toHaveLength(fallbackStops.length);
+    expect(body.feed).toEqual(fallbackFeed);
+    expect(body.citations).toEqual([{ ref: 'gtfs.stops.fallback', sourceId: 'carta-gtfs', attribution: fallbackFeed?.attribution }]);
+    expect(body.degraded).toEqual(['data_agent_unavailable']);
     expect(response.headers.get('cache-control')).toBe('public, max-age=60');
   });
 });
@@ -138,6 +141,16 @@ describe('stop catalog fallback order', () => {
     const catalog = await getStopCatalog(disabled, [{ id: '1234', name: 'Meeting St & Mary St', lat: 32.79, lng: -79.93 }]);
     expect(catalog.source).toBe('gtfs_fallback');
     expect(catalog.stops).toEqual([{ key: 'stop:1234', kind: 'gtfs_stop', id: '1234', name: 'Meeting St & Mary St', lat: 32.79, lng: -79.93, routes: [] }]);
+  });
+
+  it('an empty committed export: the P1 places, labeled as places, and flagged', async () => {
+    const catalog = await getStopCatalog(disabled, [], null);
+    expect(catalog.source).toBe('legacy_places');
+    expect(catalog.stops.every((s) => s.kind === 'place' && s.id === null)).toBe(true);
+    expect(catalog.stops).toHaveLength(Object.keys(busStopCoordinates).length);
+    expect(catalog.feed).toBeNull();
+    expect(catalog.citations).toEqual([]);
+    expect(catalog.degraded).toEqual(['data_agent_unavailable', 'stops_fallback_unavailable']);
   });
 
   it('fixture or synthetic output is never served as real stops', async () => {
@@ -166,11 +179,18 @@ describe('rollback: data agent off or unreachable', () => {
     const [from, to] = stops.stops;
     const departure = stopRequestFields(from);
     const destination = stopRequestFields(to);
-    expect(departure.stopId).toBeUndefined();
+    expect(stops.source).toBe('gtfs_fallback');
+    expect([departure.stopId, destination.stopId]).toEqual([fallbackStops[0].id, fallbackStops[1].id]);
     const response = await postInsights(new NextRequest('http://localhost/api/transit-insights', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ departure: departure.point, destination: destination.point, timeToDestination: '08:30' }),
+      body: JSON.stringify({
+        departure: departure.point,
+        destination: destination.point,
+        departureStopId: departure.stopId,
+        destinationStopId: destination.stopId,
+        timeToDestination: '08:30',
+      }),
     }));
     expect(response.status).toBe(200);
     const body = await response.json();

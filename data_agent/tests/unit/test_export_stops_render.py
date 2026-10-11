@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tda.connectors.gtfs_cli import render_stops_ts
+from tda.connectors.gtfs_cli import FEED_TYPE, render_stops_ts
 from tda.metrics.feeds import ActiveFeed, Stop
 
 HOSTILE = "release\nnot valid TypeScript\r\u2028still a comment\u2029end"
@@ -44,12 +44,19 @@ def test_every_line_is_a_comment_a_declaration_or_a_stop() -> None:
     assert lines[3] == "// Attribution with a break"
     fixed = {
         "export type FallbackStop = { id: string; name: string; lat: number; lng: number };",
+        FEED_TYPE,
         "",
         "export const fallbackStops: readonly FallbackStop[] = [",
         "];",
     }
+    feed_line = (
+        'export const fallbackFeed: FallbackFeed | null = { sourceId: "carta-gtfs", '
+        'label: "release\\nnot valid TypeScript\\r\\u2028still a comment\\u2029end", '
+        'validFrom: "2026-01-01", validTo: "2026-12-31", attribution: "Attribution\\nwith a break" };'
+    )
+    assert feed_line in lines
     for line in lines:
-        assert line.startswith("// ") or line in fixed or LINE.match(line), line
+        assert line.startswith("// ") or line in fixed or line == feed_line or LINE.match(line), line
     assert '  { id: "S2", name: "S2", lat: 32.8, lng: -79.8 },' in lines, (
         "a missing name falls back to the id"
     )
@@ -60,8 +67,11 @@ def test_node_parses_it(tmp_path: Path) -> None:
     if node is None:
         pytest.skip("node isn't installed here (the structural test above still runs)")
     # Strip the two type annotations, then let Node's parser check the rest as JavaScript.
-    js = render_stops_ts(FEED, STOPS, "Attribution\nwith a break").replace(
-        "export type FallbackStop = { id: string; name: string; lat: number; lng: number };", ""
+    js = (
+        render_stops_ts(FEED, STOPS, "Attribution\nwith a break")
+        .replace("export type FallbackStop = { id: string; name: string; lat: number; lng: number };", "")
+        .replace(FEED_TYPE, "")
+        .replace(": FallbackFeed | null", "")
     )
     path = tmp_path / "stops.mjs"
     path.write_text(js.replace(": readonly FallbackStop[]", ""), encoding="utf-8")
