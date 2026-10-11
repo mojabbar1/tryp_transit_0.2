@@ -33,8 +33,9 @@ jobs:
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test -- --ci
-      # One production build (`next build`, in its global setup), then the HTTP integration checks against `next start`
-      # with a synthetic loopback data agent (src/__tests__/integration). A failed build fails this step.
+      # One offline production build (`next build`, in its global setup; test font fixture, network guard and proxy
+      # trap), then the HTTP integration checks against `next start` with a synthetic loopback data agent
+      # (src/__tests__/integration). A failed build, or any build attempt to leave loopback, fails this step.
       - run: npm run test:integration -- --ci
 
   python:

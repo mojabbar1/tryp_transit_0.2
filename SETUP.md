@@ -122,9 +122,12 @@ What it asserts, through the app's own response schemas:
   carries one of the synthetic stop ids or coordinates.
 
 Requirements: `npm ci` done, Node 22 or later, and `git` (to verify build reuse). No Docker, database, data agent,
-or API key. The first run builds (about a minute) and overwrites `src/.next` as `npm run build` does; later runs reuse
-that build only if this command made it and nothing it depends on changed (files under `src/` outside `__tests__/`,
-the Next and Node versions, the pinned settings). `TEST_INTEGRATION_REBUILD=1` forces a build.
+API key, or network access: the whole run, build included, needs only loopback. The first run builds (about a minute)
+and overwrites `src/.next` as `npm run build` does, leaving a **test build** there (pinned settings, test font
+fixture), so run `npm run build` again before `npm start`. Later runs reuse that build only if this command made it
+and nothing it depends on changed: files under `src/` outside `__tests__/`, the font fixture and child guard, the Next
+and Node versions, and the build's settings and environment. `TEST_INTEGRATION_REBUILD=1` forces a build; a failed
+build never leaves a reusable marker.
 
 Isolation: the servers get only `PATH`, `HOME`, temp-dir and locale variables from your shell, plus pinned settings:
 `LLM_PROVIDER=none`, every key blank, `DATA_AGENT_*` per scenario, and `NEXT_PUBLIC_DEMO_MODE=false`. These override
@@ -134,10 +137,30 @@ preloaded guard makes every non-loopback connection from the servers fail, and t
 Each server is stopped after its scenario; if the run is interrupted or killed, its servers exit when the run's pipe
 to them closes.
 
+Offline build: `next build` runs with the same pinned environment and guard, plus, in that child's environment only
+(never `.env*`, never `npm run build`):
+- `NEXT_FONT_GOOGLE_MOCKED_RESPONSES`, Next's own next/font/google test hook, pointing at
+  `src/__tests__/integration/fixtures/google-fonts-offline.js`. It answers the layout's one Poppins stylesheet URL with
+  `local()` faces only, so Next neither requests fonts.googleapis.com nor downloads a font file, and no font is
+  committed. A changed font call fails the build until the fixture is updated.
+- Every proxy variable (`HTTP(S)_PROXY`, `ALL_PROXY`) pointing at a loopback trap that refuses and records each
+  connection. The Node guard can't see Turbopack's native HTTP client; this catches it.
+- `INTEGRATION_OFFLINE_BUILD=1`, which `src/next.config.mjs` reads to turn off Turbopack's persistent build cache for
+  this build only, so a cached ordinary build can't replay its Google Fonts request here and the test font never
+  enters the ordinary build's cache. Without the variable the config is unchanged.
+
+The run fails, writing no marker, if the guard blocks anything during the build or the trap gets any connection,
+even when the build itself succeeds. Guarantee: no Node code in the build or the servers opens a non-loopback TCP/TLS
+connection (it is refused before any DNS lookup), and Turbopack's HTTP client reaches nothing but the trap. Not
+covered by these guards: native code that ignores the proxy variables (none is known here). P4b verified the whole
+run cold (no `src/.next`) and with a reused build under macOS `sandbox-exec` allowing only loopback; CI's runner has
+no such sandbox, so there the guards are the enforcement.
+
 Limits: HTTP-level checks only, not a browser or UI test (client-rendered text, such as the stop picker's
 "approximate locations" note, isn't exercised). Every upstream answer is synthetic, so this validates nothing about the
-real data agent, CARTA data, a GTFS feed, or fact approvals, and it changes no activation gate. `next build` itself
-fetches the Google font as usual.
+real data agent, CARTA data, a GTFS feed, or fact approvals, and it changes no activation gate. The test build uses
+the font fixture, so typography isn't checked (Poppins renders only if installed locally, otherwise Next's generated
+fallback); production builds still fetch and self-host the real Google font.
 
 ### 📁 Clean Directory Structure
 
