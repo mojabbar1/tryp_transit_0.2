@@ -21,6 +21,7 @@ from tda.api.schemas import (
     AlertPage,
     Citation,
     CompareOut,
+    FareOut,
     FeedOut,
     NearbyStopOut,
     NearbyStopPage,
@@ -202,6 +203,15 @@ def _trip(option: TripOption, result: Comparison, access: timedelta) -> TripOut:
         leave_by=(option.departure.astimezone(UTC) - access).astimezone(zone) if arrive_by else None,
         wait_min=None if arrive_by else (option.departure.timestamp() - result.target.timestamp()) / 60,
         interpolated=option.interpolated,
+        fare=None
+        if option.fare is None
+        else FareOut(
+            fare_id=option.fare.fare_id,
+            price=option.fare.price,
+            currency_type=option.fare.currency_type,
+            transfers=option.fare.transfers,
+            transfer_duration_s=option.fare.transfer_duration_s,
+        ),
     )
 
 

@@ -1,9 +1,10 @@
 """CARTA GTFS static (P3.1, catalog S-1, source ``carta-gtfs``).
 
-Each changed feed (a new sha256) becomes a new ``gtfs_feed_version``, with its rows in seven append-only
-tables. It is activated in the same transaction if its service has started (in the agency's time zone). An
-unchanged feed is ``not_modified`` (a 304, or the same sha256). Nothing is updated or deleted: activation
-appends to ``gtfs_feed_activation``, and rolling back a load makes the previous valid feed active again.
+Each changed feed (a new sha256) becomes a new ``gtfs_feed_version``, with its rows in nine append-only
+tables (the seven schedule tables, plus GTFS fares v1: ``fare_attributes`` and ``fare_rules``, when present).
+It is activated in the same transaction if its service has started (in the agency's time zone). An unchanged
+feed is ``not_modified`` (a 304, or the same sha256). Nothing is updated or deleted: activation appends to
+``gtfs_feed_activation``, and rolling back a load makes the previous valid feed active again.
 
 Data-quality checks. Any failure marks the run ``failed`` and loads nothing:
 - the body is a zip within the size limit, with agency, stops, routes, trips, and stop_times, plus calendar
@@ -11,6 +12,9 @@ Data-quality checks. Any failure marks the run ``failed`` and loads nothing:
 - there is at least one stop, and each table's key is unique;
 - stop_times reference known trips and stops, and trips reference known routes (no orphans);
 - times parse as H:MM:SS, allowing 24:00:00 and later (GTFS service days); dates parse, and start <= end;
+- fares, when present: each fare_id is unique, with a non-negative price, a three-letter currency, a
+  payment method of 0 or 1, transfers of 0, 1, 2 or empty (unlimited), and a non-negative transfer_duration;
+  every fare rule names a known fare_id and, if it has one, a known route_id;
 - required times are present: ``arrival_time`` at each trip's first and last stop, and both times at every
   exact timepoint (``timepoint`` 1, or empty, which GTFS treats as exact). Only approximate stops
   (``timepoint`` 0) may leave both blank;
@@ -31,6 +35,7 @@ import zipfile
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -55,6 +60,8 @@ CHILD_TABLES = (
     "gtfs_calendar",
     "gtfs_calendar_date",
     "gtfs_shape",
+    "gtfs_fare_attribute",
+    "gtfs_fare_rule",
 )
 DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 # GTFS-Flex stop_times fields, plus the earlier Flex draft's fields that some producers still export (empty).
@@ -347,6 +354,8 @@ def parse_feed(raw: bytes) -> tuple[dict[str, Any], Parsed]:
             for i in range(len(src.rows))
         ]
 
+    tables["gtfs_fare_attribute"], tables["gtfs_fare_rule"] = _fares(archive, names)
+
     for table, key in (
         ("gtfs_stop", ("stop_id",)),
         ("gtfs_route", ("route_id",)),
@@ -355,10 +364,68 @@ def parse_feed(raw: bytes) -> tuple[dict[str, Any], Parsed]:
         ("gtfs_calendar", ("service_id",)),
         ("gtfs_calendar_date", ("service_id", "date")),
         ("gtfs_shape", ("shape_id", "shape_pt_sequence")),
+        ("gtfs_fare_attribute", ("fare_id",)),
+        ("gtfs_fare_rule", ("fare_id", "route_id", "origin_id", "destination_id", "contains_id")),
     ):
         _unique(tables[table], key, table)
     _check_references(tables)
     return _version(archive, names, raw, timezone or "", tables), tables
+
+
+def amount(value: str) -> Decimal:
+    """A decimal amount, raising ``ValueError`` (as the other parsers do) when it doesn't parse."""
+    try:
+        return Decimal(value)
+    except InvalidOperation:
+        raise ValueError(value) from None
+
+
+def _fares(archive: zipfile.ZipFile, names: set[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """GTFS fares v1 rows (``fare_attributes.txt``, ``fare_rules.txt``); both empty when the feed has none."""
+    attributes: list[dict[str, Any]] = []
+    if "fare_attributes.txt" in names:
+        src = _read(archive, "fare_attributes.txt")
+        for i in range(len(src.rows)):
+            price = src.number(i, "price", amount, required=True)
+            if not price.is_finite() or price < 0:
+                raise src.fail(i, f"price {price} is not a non-negative amount")
+            currency = src.text(i, "currency_type", required=True) or ""
+            if not re.fullmatch(r"[A-Z]{3}", currency):
+                raise src.fail(i, f"currency_type {currency!r} is not an ISO 4217 code")
+            payment = src.number(i, "payment_method", int, required=True)
+            if payment not in (0, 1):
+                raise src.fail(i, f"payment_method must be 0 or 1, not {payment}")
+            transfers = src.number(i, "transfers", int)
+            if transfers not in (None, 0, 1, 2):
+                raise src.fail(i, f"transfers must be 0, 1, 2 or empty, not {transfers}")
+            duration = src.number(i, "transfer_duration", int)
+            if duration is not None and duration < 0:
+                raise src.fail(i, "transfer_duration is negative")
+            attributes.append(
+                {
+                    "fare_id": src.text(i, "fare_id", required=True),
+                    "price": price,
+                    "currency_type": currency,
+                    "payment_method": payment,
+                    "transfers": transfers,
+                    "agency_id": src.text(i, "agency_id"),
+                    "transfer_duration": duration,
+                }
+            )
+    rules: list[dict[str, Any]] = []
+    if "fare_rules.txt" in names:
+        src = _read(archive, "fare_rules.txt")
+        rules = [
+            {
+                "fare_id": src.text(i, "fare_id", required=True),
+                "route_id": src.text(i, "route_id"),
+                "origin_id": src.text(i, "origin_id"),
+                "destination_id": src.text(i, "destination_id"),
+                "contains_id": src.text(i, "contains_id"),
+            }
+            for i in range(len(src.rows))
+        ]
+    return attributes, rules
 
 
 def _check_references(tables: Parsed) -> None:
@@ -366,10 +433,20 @@ def _check_references(tables: Parsed) -> None:
     stops = {stop["stop_id"] for stop in tables["gtfs_stop"]}
     routes = {route["route_id"] for route in tables["gtfs_route"]}
     stop_times, trip_rows = tables["gtfs_stop_time"], tables["gtfs_trip"]
+    fares = {fare["fare_id"] for fare in tables["gtfs_fare_attribute"]}
+    fare_rules = tables["gtfs_fare_rule"]
     orphans = [
         ("stop_times with an unknown trip_id", sum(1 for st in stop_times if st["trip_id"] not in trips)),
         ("stop_times with an unknown stop_id", sum(1 for st in stop_times if st["stop_id"] not in stops)),
         ("trips with an unknown route_id", sum(1 for trip in trip_rows if trip["route_id"] not in routes)),
+        (
+            "fare rules with an unknown fare_id",
+            sum(1 for rule in fare_rules if rule["fare_id"] not in fares),
+        ),
+        (
+            "fare rules with an unknown route_id",
+            sum(1 for rule in fare_rules if rule["route_id"] is not None and rule["route_id"] not in routes),
+        ),
     ]
     found = [f"{count} {what}" for what, count in orphans if count]
     if found:

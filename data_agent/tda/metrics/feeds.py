@@ -205,19 +205,28 @@ def boardable_stop_ids(connection: Connection, feed: ActiveFeed, stop_ids: list[
 
 
 def _with_routes(connection: Connection, feed: ActiveFeed, stops: list[Stop]) -> list[Stop]:
-    """Fill in the route short names (the route id when a route has none) that serve each stop."""
+    """Fill in the names of the routes that serve each stop: the short name, else the long name, else the id.
+
+    CARTA's real feed has a route with only a long name ("Beach Reach Shuttle"); its id means nothing to
+    a rider.
+    """
     if not stops:
         return stops
     names: dict[str, set[str]] = {}
+    # Each view is read once into a materialized CTE, then hash-joined. Joining the views directly let the
+    # planner nest loops over CARTA's real feed (148,842 stop times): 3 to 8 s for the whole list, past the
+    # web app's 3 s deadline. This shape takes about 0.2 s for every stop, and milliseconds for a few.
     for stop_id, name in connection.execute(
         text(
-            "SELECT DISTINCT st.stop_id, coalesce(r.route_short_name, r.route_id) "
-            "FROM tda.active_gtfs_stop_time st "
-            "JOIN tda.active_gtfs_trip t "
-            "ON t.feed_version_id = st.feed_version_id AND t.trip_id = st.trip_id "
-            "JOIN tda.active_gtfs_route r "
-            "ON r.feed_version_id = t.feed_version_id AND r.route_id = t.route_id "
-            "WHERE st.feed_version_id = :v AND st.stop_id = ANY(:ids)"
+            "WITH st AS MATERIALIZED (SELECT DISTINCT trip_id, stop_id FROM tda.active_gtfs_stop_time "
+            "WHERE feed_version_id = :v AND stop_id = ANY(:ids)), "
+            "trips AS MATERIALIZED (SELECT trip_id, route_id FROM tda.active_gtfs_trip "
+            "WHERE feed_version_id = :v), "
+            "routes AS MATERIALIZED (SELECT route_id, "
+            "coalesce(route_short_name, route_long_name, route_id) AS name "
+            "FROM tda.active_gtfs_route WHERE feed_version_id = :v) "
+            "SELECT DISTINCT st.stop_id, routes.name FROM st "
+            "JOIN trips ON trips.trip_id = st.trip_id JOIN routes ON routes.route_id = trips.route_id"
         ),
         {"v": feed.feed_version_id, "ids": [stop.stop_id for stop in stops]},
     ):

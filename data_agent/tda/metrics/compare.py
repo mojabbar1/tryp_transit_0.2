@@ -20,6 +20,9 @@ Inputs: an origin and a destination stop, a local date, and a target (``arrive_b
   marked ``interpolated``. It uses ``shape_dist_traveled`` only when the three distances are finite and in
   order, and stop order otherwise, so the time always falls between its neighbors'. **Fail closed:** when the
   neighbors' times run backwards, or a trip would arrive before it departs, the trip isn't offered.
+- **Fare:** each trip carries its route's GTFS fare (fares v1, ``fare_attributes`` + ``fare_rules``) when the
+  active feed prices that route with exactly one route-based fare. A fare that depends on zones, an ambiguous
+  match, or a feed without fares gives ``None``, never a default.
 - **No fabrication:** without a boardable direct trip, the result is a reason instead: ``unknown_stop`` (not a
   boardable stop of the active feed), ``transfer_required`` (no trip serves the origin and then the
   destination), ``no_service`` (none of those trips runs on the date), or ``no_boardable_trip`` (they run, but
@@ -30,8 +33,9 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, time, timedelta
+from decimal import Decimal
 from typing import Literal
 
 from sqlalchemy import Connection, text
@@ -42,6 +46,17 @@ Mode = Literal["arrive_by", "depart_at"]
 Reason = Literal["no_boardable_trip", "transfer_required", "no_service", "unknown_stop"]
 BOARDING_ALLOWED = frozenset({None, 0, 3})
 ALTERNATIVES = 3
+
+
+@dataclass(frozen=True)
+class Fare:
+    """A route's GTFS fare (fares v1): the full fare as the feed publishes it, not a rider's eligibility."""
+
+    fare_id: str
+    price: Decimal
+    currency_type: str
+    transfers: int | None
+    transfer_duration_s: int | None
 
 
 @dataclass(frozen=True)
@@ -58,6 +73,7 @@ class TripOption:
     departure: datetime
     arrival: datetime
     interpolated: bool
+    fare: Fare | None = None
 
     @property
     def in_vehicle_min(self) -> float:
@@ -160,7 +176,42 @@ def compare(
             unique.append(option)
     if not unique:
         return Comparison(mode, target, None, reason="no_boardable_trip")
-    return Comparison(mode, target, unique[0], unique[1 : 1 + ALTERNATIVES])
+    shown = unique[: 1 + ALTERNATIVES]
+    fares = route_fares(connection, feed, {option.route_id for option in shown})
+    shown = [replace(option, fare=fares.get(option.route_id)) for option in shown]
+    return Comparison(mode, target, shown[0], shown[1:])
+
+
+def route_fares(connection: Connection, feed: ActiveFeed, route_ids: set[str]) -> dict[str, Fare]:
+    """Each route's single route-based GTFS fare, for the routes the feed prices unambiguously.
+
+    A rule applies to a route when it names the route or no route. A route is left out (no fare) when an
+    applicable rule depends on zones (origin, destination, or contains), which this release doesn't
+    evaluate, or when the applicable rules name more than one fare.
+    """
+    if not route_ids:
+        return {}
+    rows = connection.execute(
+        text(
+            "SELECT r.route_id, r.origin_id, r.destination_id, r.contains_id, a.fare_id, a.price, "
+            "a.currency_type, a.transfers, a.transfer_duration "
+            "FROM tda.active_gtfs_fare_rule r JOIN tda.active_gtfs_fare_attribute a "
+            "ON a.feed_version_id = r.feed_version_id AND a.fare_id = r.fare_id "
+            "WHERE r.feed_version_id = :v AND (r.route_id IS NULL OR r.route_id = ANY(:routes))"
+        ),
+        {"v": feed.feed_version_id, "routes": sorted(route_ids)},
+    ).all()
+    fares: dict[str, Fare] = {}
+    for route_id in route_ids:
+        applicable = [row for row in rows if row.route_id in (None, route_id)]
+        zoned = any(row.origin_id or row.destination_id or row.contains_id for row in applicable)
+        if zoned or len({row.fare_id for row in applicable}) != 1:
+            continue
+        row = applicable[0]
+        fares[route_id] = Fare(
+            row.fare_id, row.price, row.currency_type, row.transfers, row.transfer_duration
+        )
+    return fares
 
 
 def _direct_trips(connection: Connection, feed: ActiveFeed, origin: str, dest: str) -> dict[str, _Trip]:

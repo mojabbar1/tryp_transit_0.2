@@ -571,6 +571,54 @@
         "title": "FactSource",
         "type": "object"
       },
+      "FareOut": {
+        "description": "The trip's route fare from the GTFS feed (fares v1: ``fare_attributes.txt`` + ``fare_rules.txt``).\n\nThe full fare as the feed publishes it for the route; reduced or free fares for eligible riders aren't\nmodeled. ``transfers`` empty means unlimited (GTFS); ``transfer_duration_s`` is how long a transfer stays\nvalid.",
+        "properties": {
+          "currency_type": {
+            "title": "Currency Type",
+            "type": "string"
+          },
+          "fare_id": {
+            "title": "Fare Id",
+            "type": "string"
+          },
+          "price": {
+            "title": "Price",
+            "type": "number"
+          },
+          "transfer_duration_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transfer Duration S"
+          },
+          "transfers": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Transfers"
+          }
+        },
+        "required": [
+          "fare_id",
+          "price",
+          "currency_type",
+          "transfers",
+          "transfer_duration_s"
+        ],
+        "title": "FareOut",
+        "type": "object"
+      },
       "FeedOut": {
         "description": "The active GTFS feed an answer comes from, with the attribution clients must show.",
         "properties": {
@@ -1048,7 +1096,7 @@
         "type": "object"
       },
       "StopOut": {
-        "description": "A boardable stop of the active feed, with the route short names that serve it.",
+        "description": "A boardable stop of the active feed and the routes serving it (short, else long name, else id).",
         "properties": {
           "code": {
             "anyOf": [
@@ -1124,7 +1172,7 @@
         "type": "object"
       },
       "TripOut": {
-        "description": "One boardable direct trip, from the schedule (``basis: scheduled``). Times are local, with an offset.\n\n``leave_by`` (``arrive_by`` requests) is the departure minus the access buffer; ``wait_min``\n(``depart_at`` requests) is the time from the target to the departure. ``interpolated`` marks a blank GTFS\ntime that was interpolated between the trip's timed stops.",
+        "description": "One boardable direct trip, from the schedule (``basis: scheduled``). Times are local, with an offset.\n\n``leave_by`` (``arrive_by`` requests) is the departure minus the access buffer; ``wait_min``\n(``depart_at`` requests) is the time from the target to the departure. ``interpolated`` marks a blank GTFS\ntime that was interpolated between the trip's timed stops. ``fare`` is the route's GTFS fare, or null when\nthe feed has none for the route, or it depends on zones or is ambiguous (never a default).",
         "properties": {
           "arrival": {
             "format": "date-time",
@@ -1151,6 +1199,16 @@
               }
             ],
             "title": "Direction Id"
+          },
+          "fare": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FareOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "headsign": {
             "anyOf": [
@@ -1244,7 +1302,8 @@
           "in_vehicle_min",
           "leave_by",
           "wait_min",
-          "interpolated"
+          "interpolated",
+          "fare"
         ],
         "title": "TripOut",
         "type": "object"

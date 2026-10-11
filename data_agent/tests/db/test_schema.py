@@ -91,6 +91,9 @@ def test_reader_sees_only_api_exposed_objects(writer: Connection, reader: Connec
         "active_gtfs_calendar",
         "active_gtfs_calendar_date",
         "approved_service_alert",
+        # P4b pilot (migration 0007): the active feed's GTFS fares, for /v1/compare.
+        "active_gtfs_fare_attribute",
+        "active_gtfs_fare_rule",
     ):
         reader.execute(text(f"SELECT count(*) FROM tda.{relation}")).scalar_one()
     for relation in ("fetch_run", "review_item", "agent_run", "alembic_version"):

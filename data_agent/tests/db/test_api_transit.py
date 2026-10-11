@@ -100,6 +100,16 @@ def test_stops_list_boardable_stops_with_their_routes(
     assert by_id["FX07"]["route_short_names"] == ["2"]
 
 
+def test_a_route_without_a_short_name_is_listed_by_its_long_name(
+    at: Callable[..., TestClient], load_feed: LoadFeed
+) -> None:
+    # As CARTA's real "Beach Reach Shuttle": a long name only, so its id would mean nothing to a rider.
+    load_feed(edited(replace=[("routes.txt", "R2,FX,2,Fixture Express", "R2,FX,,Fixture Express")]))
+    by_id = {s["id"]: s for s in at().get("/v1/stops", params={"limit": 50}).json()["items"]}
+    assert by_id["FX07"]["route_short_names"] == ["Fixture Express"]
+    assert by_id["FX01"]["route_short_names"] == ["1", "Fixture Express"]
+
+
 @pytest.mark.parametrize(
     ("params", "ids"),
     [
@@ -186,6 +196,13 @@ def test_compare_arrive_by_returns_a_scheduled_trip_leave_by_and_alternatives(
         "leave_by": "2026-09-09T07:25:00-04:00",
         "wait_min": None,
         "interpolated": False,
+        "fare": {
+            "fare_id": "F1",
+            "price": 2.0,
+            "currency_type": "USD",
+            "transfers": 1,
+            "transfer_duration_s": 7200,
+        },
     }
     assert [(t["trip_id"], t["leave_by"]) for t in body["alternatives"]] == [
         ("A1", "2026-09-09T07:10:00-04:00"),
