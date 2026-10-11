@@ -1,7 +1,8 @@
 """Reference facts (P3.5): human-verified values from ``reference_facts.yaml``, loaded as ``candidate`` facts.
 
-- The agent never fills in a number. The file ships with every value null, and a human enters each verified
-  value together with its evidence.
+- The agent never chooses a number. A human enters each verified value together with its evidence; the
+  committed file's filled entries are exact transcriptions of the maintainer-approved 05 §2 values (see its
+  header).
 - Data-quality checks: every filled entry has a source URL, a verbatim quote or a page, a retrieval date, and
   who verified it. Null entries are skipped. Keys are unique, and a cited ``source_id`` must exist in
   ``sources.yaml``.

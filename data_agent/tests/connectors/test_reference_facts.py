@@ -57,6 +57,36 @@ def test_the_committed_file_covers_every_05_assumption_and_its_sources_exist() -
             assert entry.todo, f"{entry.key}: an empty entry says where to verify it"
 
 
+def _approved_cells() -> dict[str, str]:
+    """05 §2's "Approved value" cell for each key."""
+    text = DECISIONS.read_text(encoding="utf-8")
+    table = text[text.index("## 2. Assumptions table") : text.index("## 2a.")]
+    cells: dict[str, str] = {}
+    for line in table.splitlines():
+        match = re.match(r"^\| `([a-z0-9_.]+)`[^|]*\|", line)
+        if match:
+            cells[match.group(1)] = [c.strip() for c in line.split("|")][6]
+    return cells
+
+
+def test_filled_entries_transcribe_the_05_approved_values_and_say_so() -> None:
+    reference, _ = read_reference()
+    cells = _approved_cells()
+    by_key = {entry.key: entry for entry in reference.facts}
+    # Not approved in 05 §2, or supplied weekly by the eia_gas connector: never transcribed.
+    assert not by_key["parking.applies_to_stops"].filled and cells["parking.applies_to_stops"] == ""
+    assert not by_key["drive.fuel_price_usd_per_gal"].filled
+    for entry in reference.facts:
+        if not entry.filled:
+            continue
+        cell = cells[entry.key.removesuffix(".level_pct").removesuffix(".rush_hour_hours_lost")]
+        expected = entry.value_text if entry.value is None else f"{entry.value}"
+        assert expected and expected.replace("**", "") in cell.replace("**", ""), entry.key
+        assert entry.verified_by and "mojabbar" in entry.verified_by and "transcribed" in entry.verified_by
+        assert "no new verification" in entry.verified_by, entry.key
+        assert entry.retrieved_at is not None and entry.retrieved_at.isoformat() <= "2026-09-27", entry.key
+
+
 def _file(tmp_path: Path, *entries: dict[str, Any]) -> Path:
     path = tmp_path / "reference.yaml"
     path.write_text(yaml.safe_dump({"facts": list(entries)}), encoding="utf-8")
