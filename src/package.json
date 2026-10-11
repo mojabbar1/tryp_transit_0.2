@@ -13,6 +13,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:integration": "jest --config jest.integration.config.js --runInBand",
     "gen:data-agent": "openapi-typescript ../contracts/data-agent.openapi.json -o lib/api/data-agent.types.ts",
     "check:data-agent-types": "npm run gen:data-agent && git diff --exit-code lib/api/data-agent.types.ts"
   },

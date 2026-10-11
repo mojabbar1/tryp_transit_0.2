@@ -771,6 +771,19 @@ describe('a narrated fare cites its own source, with or without a driving cost (
   const refs = (json: Awaited<ReturnType<typeof run>>) => (json.meta?.sources ?? []).map((source) => source.ref);
 
   it('the review repro, end to end through the route: TomTom down, the approved $2.50 fare narrated, and only its source cited', async () => {
+    // The route reads the real clock; pin Date (only) to the fixtures' NOW so their scheduled bus hasn't left yet.
+    jest.useFakeTimers({
+      now: NOW,
+      doNotFake: ['hrtime', 'nextTick', 'performance', 'queueMicrotask', 'setImmediate', 'clearImmediate', 'setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'],
+    });
+    try {
+      await fareReproThroughRoute();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  async function fareReproThroughRoute() {
     mockGetDriveRoute.mockRejectedValue(new Error('down'));
     narrating('Bus fare: {{bus_fare}}', ['bus_fare']);
     const request = new NextRequest('http://localhost/api/transit-insights', { method: 'POST', body: JSON.stringify(withStops), headers: { 'content-type': 'application/json' } });
@@ -790,7 +803,7 @@ describe('a narrated fare cites its own source, with or without a driving cost (
       expect(refs(json)).not.toContain(key);
     }
     expect(json.meta?.citations).toContain('gtfs.schedule');
-  });
+  }
 
   it('with the store down, the fare narrated is the approved 05 §2 value, cited to its own source', async () => {
     mockGetDriveRoute.mockRejectedValue(new Error('down'));
