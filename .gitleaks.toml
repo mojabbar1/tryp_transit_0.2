@@ -26,3 +26,13 @@ condition = "AND"
 paths = ['''^data_agent/tda/facts/reference_facts\.yaml$''']
 regexTarget = "line"
 regexes = ['''^\s*- key: (co2\.car_g_per_mile|co2\.bus_g_per_passenger_mile)\s*$''']
+
+# The same false positive in the synthetic integration fixture: the rule took the fact key co2.car_g_per_mile, a
+# property name after `ACCESS_BUFFER_MIN,`, for a secret (PR #25). Allowed by name, in that one file, for that rule.
+[[allowlists]]
+description = "A fact key in the synthetic integration fixture (not a secret)"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^src/__tests__/integration/synthetic-data-agent\.ts$''']
+regexTarget = "secret"
+regexes = ['''^co2\.car_g_per_mile$''']
