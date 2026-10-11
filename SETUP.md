@@ -114,8 +114,9 @@ What it asserts, through the app's own response schemas:
   feed version, a stop id away from its point, or an unknown id gives no trip.
 - A schedule reason, or no trip, is `unavailable`: no minutes, departures or alternatives. A malformed, 503 or
   timed-out answer is degraded, never invented.
-- With the agent off or failing: stops are the approximate places labeled as places, the trip is degraded, stats are
-  unavailable, and the fact pages flag the 05 §2 fallback. Disabled means zero requests to the agent.
+- With the agent off or failing: stops are the committed `export-stops` list of the real CARTA feed (cited to that
+  feed), the trip is degraded, stats are unavailable, and the fact pages flag the 05 §2 fallback. Disabled means zero
+  requests to the agent.
 - `/dashboard` shows only cited stats (an uncited one is dropped) or "Data unavailable", never the old 2,847 / 89.3%
   figures; the cost and CO2 pages cite each fact; demo off shows no rewards, demo banner, or demo route.
 - Every request to the synthetic agent is a GET on a contract path with the contract's parameters, and no server log
@@ -187,6 +188,20 @@ TOMTOM_API_KEY=your_tomtom_key
 # NEXT_PUBLIC_DEMO_MODE=true         # enables the demo scenarios
 ```
 See `src/.env.example` for every setting. The web app doesn't call `model_service`.
+
+#### Local real-data pilot (P4b)
+
+To run the app against the local pilot data agent (real CARTA schedule, NTD and EIA data; set up and started as in
+[`data_agent/README.md`](data_agent/README.md#local-real-data-pilot-p4b-2026-10-11)), start the web app with the data
+agent enabled for that process only, on loopback, with no TomTom or LLM key (no paid or personal-data calls):
+```bash
+cd src && npm run build   # a normal build (the integration checks leave a test build in .next)
+LLM_PROVIDER=none DATA_AGENT_ENABLED=true DATA_AGENT_BASE_URL=http://127.0.0.1:18081 \
+  npx next start --hostname 127.0.0.1 --port 3000
+```
+Without a TomTom key there's no drive leg, so no cost comparison; trip results show the scheduled bus, the reason when
+there is none, and the degraded codes. This is a local pilot only: the committed default stays
+`DATA_AGENT_ENABLED=false`, and nothing here is a public deployment.
 
 ### 🐳 Docker Deployment
 
