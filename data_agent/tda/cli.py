@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from tda import __version__
+from tda.agent.cli import report_app
 from tda.api.cli import api_app
 from tda.cli_support import configure_logging
 from tda.config.cli import sources_app
@@ -29,6 +30,7 @@ app.add_typer(metrics_app, name="metrics")
 app.add_typer(api_app, name="api")
 app.add_typer(retention_app, name="retention")
 app.add_typer(scheduler_app, name="scheduler")
+app.add_typer(report_app, name="report")
 
 
 @app.callback()
