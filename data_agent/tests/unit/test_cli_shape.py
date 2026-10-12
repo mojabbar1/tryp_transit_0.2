@@ -25,6 +25,7 @@ EXPECTED = {
     "api": {"serve", "openapi"},
     "retention": {"run"},
     "scheduler": {"run"},
+    "report": {"prepare", "submit", "render"},
 }
 
 

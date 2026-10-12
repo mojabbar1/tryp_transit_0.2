@@ -1,0 +1,24 @@
+{
+  "schema_version": "copilot-report.v1",
+  "mode": "operator-copilot-assisted",
+  "packet_hash": "eea17fe9a575b1d6042ff214e516e034e22bccf48b2407391aeae2bba48bf3cf",
+  "region": "charleston",
+  "period": {"start": "2026-10-05", "end": "2026-10-11"},
+  "opportunities": [
+    {
+      "kind": "ridership_followup",
+      "evidence_id": "ridership_bus_change",
+      "nudge": "Ridership change: {{ridership_bus_change}}."
+    },
+    {
+      "kind": "schedule_information",
+      "evidence_id": "service_b",
+      "nudge": "Scheduled headway: {{service_b}}."
+    },
+    {
+      "kind": "cost_input_review",
+      "evidence_id": "fuel_price",
+      "nudge": "Regional fuel price: {{fuel_price}}."
+    }
+  ]
+}

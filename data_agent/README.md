@@ -110,6 +110,37 @@ which adds the append-only guard and a `current_<table>` view over the latest su
 
 ## CLI
 
+### Minimal Copilot-assisted report
+
+This is the Oct 11 fast-path engineering scope, not a G1 sign-off or the full unattended P5 agent.
+The CLI exports a bounded packet using `tda_reader`. An operator asks Copilot to select opportunities from
+that packet and supplies a structured plan. The runtime validates the plan against the current database,
+renders numbers and provenance itself, then submits a **pending** report for human review.
+There are no paid provider calls, scheduler, source-discovery, forecasting, approval or publication tools.
+The CLI does not attest model authorship; zero recorded runtime API cost excludes the Copilot session's billing.
+
+With the pilot database running and its ignored environment loaded as described above:
+
+```bash
+uv run tda report prepare --start 2026-10-05 --end 2026-10-11 --out /tmp/new-report-evidence.json
+# Ask Copilot to read the packet and create a plan shaped like the committed example below.
+uv run tda report submit --packet /tmp/new-report-evidence.json --plan /tmp/new-report-plan.json --dry-run
+uv run tda report submit --packet /tmp/new-report-evidence.json --plan /tmp/new-report-plan.json
+# Use the returned ID. This exports a DRAFT, never a published report.
+uv run tda report render <review-id> --out /tmp/new-report-draft.md
+uv run tda review show <review-id>
+```
+
+Output files must be new files in existing directories. Packets expire after one day and are rejected when
+facts, source freshness, feed versions, or other exported evidence change. Regenerate and reassess the plan,
+do not edit its hash to bypass rejection. Review and approval remain separate human actions.
+
+The [first plan](../reports/charleston/drafts/2026-10-11-plan.json) selects an NTD ridership follow-up,
+evening schedule-information review and regional fuel-input review from real pilot evidence. Its
+[evidence packet](../reports/charleston/drafts/2026-10-11-evidence.json) is a historical snapshot, not a fixture
+or an automatically renewable approval. The numbers retain their measurement periods, and truncated schedule
+samples are not a ranking of the network. Unsupported driving comparisons and stale alerts remain unavailable.
+
 `tda` is composed of one Typer sub-app per module (`tda --help`). Expected failures print one `error:` line and
 exit 2; logs go to stderr (`TDA_LOG_JSON=true` for JSON lines).
 
